@@ -466,19 +466,24 @@ class Brain:
             """One request = smart curve off + hardware write, atomically (the main loop takes the same lock)."""
             with self.lock:
                 if mode == "smart": self.st.set("smart_fan", True); self.fan_off = False; self.log("setting smart_fan = True", 20); return "smart"
-                if mode == "off":
-                    if not confirm: raise hw.HwError("turning the fans off needs explicit confirmation")
-                    if self.tcpu is None or self.tcpu >= FAN_OFF_START_CPU or (self.tgpu or 0) >= FAN_OFF_START_GPU: raise hw.HwError(f"too warm to stop the fans (CPU {round(self.tcpu or 0)} C, GPU {round(self.tgpu or 0)} C; they may only be turned off below {FAN_OFF_START_CPU} / {FAN_OFF_START_GPU} C)")
-                    self.st.set("smart_fan", False); self.written = None; hw.fan_manual(0, 0); self.fan_off = True; self.log(f"fans turned off by you; watchdog: back to Auto at CPU {FAN_OFF_MAX_CPU} C / GPU {FAN_OFF_MAX_GPU} C", 5); return "off"
-                self.fan_off = False
+                if mode == "off": mode, cpu, gpu = "manual", 0, 0
                 if mode not in ("auto", "max", "manual"): raise hw.HwError(f"fan mode {mode!r}")
-                self.st.set("smart_fan", False); self.log("setting smart_fan = False (fan %s)" % mode, 20); self.written = None; self.lvl, self.calm = [0, 0], 0
+                stop = False
+                if mode == "manual":
+                    c = int(cpu); g = int(c if gpu is None else gpu)
+                    if any(v != 0 and not 20 <= v <= 100 for v in (c, g)): raise hw.HwError("manual fan duty is 20..100 % per fan, or 0 to stop that fan")
+                    stop = 0 in (c, g)
+                    if stop:
+                        if not confirm: raise hw.HwError("stopping a fan needs explicit confirmation")
+                        if self.tcpu is None or self.tcpu >= FAN_OFF_START_CPU or (self.tgpu or 0) >= FAN_OFF_START_GPU: raise hw.HwError(f"too warm to stop a fan (CPU {round(self.tcpu or 0)} C, GPU {round(self.tgpu or 0)} C; a fan may only be stopped below {FAN_OFF_START_CPU} / {FAN_OFF_START_GPU} C)")
+                self.fan_off = False; self.st.set("smart_fan", False); self.log("setting smart_fan = False (fan %s)" % mode, 20); self.written = None; self.lvl, self.calm = [0, 0], 0
                 if mode == "auto": hw.fan_auto()
                 elif mode == "max": hw.fan_max()
                 else:
-                    c = int(cpu); g = int(c if gpu is None else gpu)
-                    if not (20 <= c <= 100 and 20 <= g <= 100): raise hw.HwError("manual fan duty is 20..100 %")
                     hw.fan_manual(c, g)
+                    if stop:
+                        self.fan_off = True; which = "both fans" if c == g == 0 else ("the CPU fan" if c == 0 else "the GPU fan")
+                        self.log(f"{which} stopped by you; watchdog: back to Auto at CPU {FAN_OFF_MAX_CPU} C / GPU {FAN_OFF_MAX_GPU} C", 5); return "off" if c == g == 0 else "partial-off"
                 return mode
 
         def power(mode, hold_minutes=None):

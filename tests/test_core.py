@@ -371,6 +371,31 @@ class TestDaemonLogic(Base):
         self.drive(b, 3, 50, 45, 2); self.assertEqual(device.SIM.fan_duty, [0, 0], "stays off while it is cool")
         self.drive(b, 12, 75, 50, 20); self.assertEqual(device.SIM.fan, "auto", "the watchdog gives the fans back to the firmware when it gets warm"); self.assertFalse(b.fan_off)
 
+    def test_one_fan_can_be_stopped_with_the_same_guards(self):
+        b = self.make(); h = b.handlers(); self.drive(b, 30, 45, 45, 2)
+        for kw in ({"mode": "manual", "cpu": 0, "gpu": 60}, {"mode": "manual", "cpu": 60, "gpu": 0}):
+            with self.assertRaises(device.HwError): h["fan"](**kw)                                      # needs confirmation
+        for bad in ({"cpu": 10, "gpu": 60}, {"cpu": 0, "gpu": 150}):
+            with self.assertRaises(device.HwError): h["fan"](mode="manual", confirm=True, **bad)
+        self.assertEqual(h["fan"](mode="manual", cpu=0, gpu=60, confirm=True), "partial-off")
+        self.assertEqual((device.SIM.fan, device.SIM.fan_duty), ("manual", [0, 60])); self.assertTrue(b.fan_off)
+        self.drive(b, 3, 50, 45, 2); self.assertEqual(device.SIM.fan_duty, [0, 60], "stays while cool")
+        self.drive(b, 12, 75, 50, 20); self.assertEqual(device.SIM.fan, "auto", "the watchdog gives ALL fans back when it gets warm"); self.assertFalse(b.fan_off)
+        self.drive(b, 30, 45, 45, 2); h["fan"](mode="manual", cpu=70, gpu=0, confirm=True); self.assertEqual(device.SIM.fan_duty, [70, 0])
+        h["fan"](mode="manual", cpu=50, gpu=50); self.assertFalse(b.fan_off, "a normal manual speed ends the stopped state")
+        self.drive(b, 10, 66, 50, 20)
+        with self.assertRaises(device.HwError): h["fan"](mode="manual", cpu=0, gpu=60, confirm=True)     # too warm to start
+
+    def test_a_refused_fan_stop_hands_the_fans_back(self):
+        from truesense import backend
+        device.SIM.fan_duty = [30, 30]; real = device.SIM.c_set_fan_manual
+        def stuck(a): device.SIM.fan = "manual"; return "ok fan=manual\n"                               # the firmware says yes but the register does not move
+        device.SIM.c_set_fan_manual = stuck
+        try:
+            with self.assertRaises(device.HwError) as cm: backend.fan_manual(0, 50)
+            self.assertIn("did not accept", str(cm.exception)); self.assertEqual(device.SIM.fan, "auto")
+        finally: device.SIM.c_set_fan_manual = real
+
     def test_charge_to_full_once_restores_the_limit(self):
         b = self.make(); h = b.handlers(); b.last_ac = True; hw = daemon.hw
         hw.set_battery_limit(True); r = h["battery_full"](action="start"); self.assertTrue(r["active"]); self.assertFalse(hw.get_battery_limit())

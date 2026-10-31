@@ -17,7 +17,7 @@ Encodings seen on the laptop:
 - **Power mode** (misc setting index `0x0B`): 0 quiet, 1 balanced, 4 performance, 5 turbo, 6 eco; index `0x0A` is a mask of the supported modes.
 - **GPU mode** (misc index 2): 1 Optimus, 2 NVIDIA only, 3 automatic; takes effect after a reboot.
 - **Boot animation and sound**: misc index 6.
-- **Fans**: behaviour `0x410009` auto, `0x820009` max, `0xC30009` manual for both; the manual speed argument is `((percent * 25600 / 100) & 0xFF00) + fan` with fan 1 = CPU and 4 = GPU; manual duty 20 to 100 %, and 0 for both fans only through TrueSense's guarded path.
+- **Fans**: behaviour `0x410009` auto, `0x820009` max, `0xC30009` manual for both; the manual speed argument is `((percent * 25600 / 100) & 0xFF00) + fan` with fan 1 = CPU and 4 = GPU; manual duty 20 to 100 % per fan, and 0 (stop that fan, either one or both) only through TrueSense's guarded path with a read-back of the duty register; whether the firmware really stops a single fan is UNTESTED.
 - **Sensors**: `0x0101` CPU temperature, `0x0301` board, `0x0A01` GPU, `0x0201` / `0x0601` fan RPM (a 13-bit field, mask `0x1FFF`).
 - **LCD overdrive**: read `0x1000001000000` on, `0x1000000` off; write `0x1000000000010` on, `0x10` off.
 - **USB charging while off**: stop level 0 / 10 / 20 / 30 % as `663296/663300`, `659200/659204`, `1314560/1314564`, `1969920/1969924`.

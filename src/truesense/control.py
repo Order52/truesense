@@ -23,11 +23,15 @@ def _direct_fan(mode, cpu, gpu):
 
 
 def fan(mode, cpu=None, gpu=None, confirm=False):
-    """mode: smart | auto | max | manual (cpu/gpu = 20..100 %) | off (both fans stopped: needs confirm and the service's temperature watchdog)."""
+    """mode: smart | auto | max | manual (cpu/gpu = 20..100 %, or 0 = stop that fan: needs confirm) | off (both fans stopped: needs confirm and the service's temperature watchdog)."""
     if mode == "off":
         if not ipc.available(): raise HwError("turning the fans off needs the TrueSense service (it brings them back when it gets warm)")
         return ipc.call("fan", mode="off", confirm=confirm)
-    if mode == "manual" and (cpu is None or not 20 <= cpu <= 100 or (gpu is not None and not 20 <= gpu <= 100)): raise HwError("manual fan duty is 20..100 %")
+    if mode == "manual":
+        if cpu is None or any(v != 0 and not 20 <= v <= 100 for v in (cpu, cpu if gpu is None else gpu)): raise HwError("manual fan duty is 20..100 % per fan, or 0 to stop that fan")
+        if 0 in (cpu, cpu if gpu is None else gpu):                          # stopping a fan: only through the service (its watchdog gives the fans back when it gets warm), and only when confirmed
+            if not ipc.available(): raise HwError("stopping a fan needs the TrueSense service (it brings the fans back when it gets warm)")
+            return ipc.call("fan", mode="manual", cpu=cpu, gpu=gpu, confirm=confirm)
     if not ipc.available(): return _direct_fan(mode, cpu, gpu)
     try: return ipc.call("fan", mode=mode, cpu=cpu, gpu=gpu)
     except HwError as e:

@@ -62,8 +62,14 @@ def fan_max():
     cmd("set_fan_max"); settle(lambda: fan_state()["mode"], "max", "fan max")
 
 def fan_manual(cpu, gpu):
-    if not (cpu == 0 and gpu == 0) and not (20 <= cpu <= 100 and 20 <= gpu <= 100): raise HwError("manual duty must be 20..100 % (or 0 for both fans off)")
+    if any(v != 0 and not 20 <= v <= 100 for v in (cpu, gpu)): raise HwError("manual duty must be 20..100 % per fan (or 0 to stop that fan)")
     cmd(f"set_fan_manual {cpu} {gpu}"); settle(lambda: fan_state()["mode"], "manual", "fan manual")
+    if 0 in (cpu, gpu):                                     # a stopped fan was never seen working before: prove the firmware took it, or hand the fans back
+        try: settle(lambda: tuple(fan_state()["duty_register_pct"][k] for k in ("cpu", "gpu")), (cpu, gpu), "fan stop")
+        except HwError as e:
+            try: fan_auto()
+            except HwError: pass
+            raise HwError(f"the firmware did not accept the stop ({e}); the fans were returned to Auto")
 
 
 # ---- on/off firmware settings --------------------------------------------------------------------------------------------------------

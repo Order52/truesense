@@ -70,7 +70,7 @@ def build():
     p = sub.add_parser("fan", help="fans: firmware auto, max, manual %%, smart curve"); fs = p.add_subparsers(dest="verb")
     fs.add_parser("status"); fs.add_parser("auto", help="firmware control (0 rpm when cool)"); fs.add_parser("max")
     q = fs.add_parser("off", help="stop both fans (needs --confirm; only when cool; the service returns them to Auto if it gets warm)"); q.add_argument("--confirm", action="store_true", help="I understand the laptop can overheat with the fans off")
-    q = fs.add_parser("set", help="manual duty, 20..100 %%"); q.add_argument("cpu", type=int); q.add_argument("gpu", type=int, nargs="?")
+    q = fs.add_parser("set", help="manual duty per fan, 20..100 %%, or 0 to stop that fan (needs --confirm, only when cool)"); q.add_argument("cpu", type=int); q.add_argument("gpu", type=int, nargs="?"); q.add_argument("--confirm", action="store_true", help="I understand a stopped fan can let the laptop overheat")
     q = fs.add_parser("curve", help="smart-fan curves: list | current | show NAME | use NAME | copy NAME [NEW] | save NAME --cpu PTS --gpu PTS | delete NAME  (built-in curves are read-only: copy them to edit)"); q.add_argument("action", nargs="?", default="current", choices=["list", "current", "show", "use", "save", "delete", "copy"])
     q.add_argument("name", nargs="?"); q.add_argument("new", nargs="?", help="copy: the new name"); q.add_argument("--cpu", help="CPU points, e.g. 52:0,60:35,70:55,80:75,89:100 (temperature:percent, 0 = firmware auto)"); q.add_argument("--gpu", help="GPU points")
     for k_, d_ in (("hysteresis", None), ("down-rate", None), ("predict", None), ("couple", None), ("battery-shift", None)): q.add_argument("--" + k_, type=float, default=d_)
@@ -256,7 +256,7 @@ def h_fan(a):
     elif v == "auto": control.fan("auto"); emit("fans: firmware auto (they stop when cool)")
     elif v == "off": control.fan("off", confirm=a.confirm); emit("fans: OFF   (back on Auto automatically at CPU 70 C / GPU 65 C; `truesense fan auto` now)")
     elif v == "max": control.fan("max"); emit("fans: MAX  (`truesense fan smart on` hands them back)")
-    elif v == "set": control.fan("manual", a.cpu, a.gpu); emit(f"fans: manual {a.cpu} % / {a.gpu if a.gpu is not None else a.cpu} %")
+    elif v == "set": control.fan("manual", a.cpu, a.gpu, confirm=a.confirm); emit(f"fans: manual {a.cpu} % / {a.gpu if a.gpu is not None else a.cpu} %" + ("   (a stopped fan: all fans return to Auto at CPU 70 C / GPU 65 C; `truesense fan auto` now)" if 0 in (a.cpu, a.gpu if a.gpu is not None else a.cpu) else ""))
     elif v == "curve":
         from . import curves
         act = a.action

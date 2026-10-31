@@ -677,7 +677,7 @@ class Window(QMainWindow if Qt else object):
         self.curve_box = QWidget(); cb = QVBoxLayout(self.curve_box); cb.setContentsMargins(0, 0, 0, 0)
         self.curve_cb = QComboBox(); self.curve_cb.setMinimumWidth(140); self.curve_cb.activated.connect(self.curve_picked)
         self.line(cb, "Smart curve", self.curve_cb, self.btn("Edit", lambda: self.go("curves"))); v.addWidget(self.curve_box)
-        self.fan_hint = self.hint("Manual: the slider goes from 0 to 100 %; 0 % on both fans turns them off (asks first, only while cool, and they return to Auto by themselves if it gets warm). Smart follows your fan curve. Auto is the firmware's own control, exactly like Auto in PredatorSense on Windows (fans stop when cool)."); v.addWidget(self.fan_hint)
+        self.fan_hint = self.hint("Manual: the sliders go from 0 to 100 %; 0 % stops that fan (turn off Control both fans together to stop only the CPU or only the GPU fan). Stopping asks first, only works while cool, and all fans return to Auto by themselves if it gets warm. Smart follows your fan curve. Auto is the firmware's own control, exactly like Auto in PredatorSense on Windows (fans stop when cool)."); v.addWidget(self.fan_hint)
         self.fan_box = QWidget(); fb = QVBoxLayout(self.fan_box); fb.setContentsMargins(0, 0, 0, 0); fb.setSpacing(8)      # only shown while Manual is chosen
         self.fan_link = self.switch(fb, "Control both fans together", self.fan_link_changed)
         self.fan_one = QWidget(); o = QVBoxLayout(self.fan_one); o.setContentsMargins(0, 0, 0, 0); o.setSpacing(8)
@@ -703,22 +703,22 @@ class Window(QMainWindow if Qt else object):
         self.fan_box.setVisible(i == 3); self.curve_box.setVisible(i == 0); self.fan_apply(i)
 
     def manual_duty(self):
-        """(cpu %, gpu %) from whichever sliders are showing. 0 on both = fans off; otherwise the firmware's minimum of 20 % applies to each fan."""
+        """(cpu %, gpu %) from whichever sliders are showing. 0 stops that fan; otherwise the firmware's minimum of 20 % applies."""
         c, g = (self.fan_pct.value(),) * 2 if self.fan_link.isChecked() else (self.fan_cpu.value(), self.fan_gpu.value())
-        return (0, 0) if c == 0 and g == 0 else (max(20, c), max(20, g))
+        return (0 if c == 0 else max(20, c), 0 if g == 0 else max(20, g))
 
     def fan_manual_live(self):
         if self.loading: return
         c, g = self.manual_duty()
-        if (c, g) == (0, 0):                                               # fans off is never sent while dragging: ask once the slider is let go
-            if not any(x.isSliderDown() for x in (self.fan_pct, self.fan_cpu, self.fan_gpu)): QTimer.singleShot(0, self.fan_off_ask)
+        if 0 in (c, g):                                                    # stopping a fan is never sent while dragging: ask once the slider is let go
+            if not any(x.isSliderDown() for x in (self.fan_pct, self.fan_cpu, self.fan_gpu)): QTimer.singleShot(0, self.fan_stop_ask)
             return
         self.live("fanpct", lambda: control.fan("manual", c, g))
 
     def fan_released(self, _v=None):
-        """After a drag: show the speeds that really apply (the firmware cannot go below 20 % unless both fans are off), or ask about turning the fans off."""
+        """After a drag: ask about stopping a fan, or show the speeds that really apply (the firmware runs a fan at 20 % at the least, unless it is stopped)."""
         c, g = self.manual_duty()
-        if (c, g) == (0, 0): self.fan_off_ask(); return
+        if 0 in (c, g): self.fan_stop_ask(); return
         self.loading = True
         try:
             if self.fan_link.isChecked(): self.fan_pct.setValue(max(c, g))
@@ -734,23 +734,30 @@ class Window(QMainWindow if Qt else object):
         if box.exec() != QMessageBox.StandardButton.Apply: self.full_refresh(); return
         self.do(lambda: hw.set_gpu_mode(mode), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False)
 
-    def fan_off_ask(self):
+    def fan_stop_ask(self):
         if getattr(self, "fan_asking", False): return
+        c, g = self.manual_duty()
+        if 0 not in (c, g): return
+        which = "both fans" if c == g == 0 else ("the CPU fan" if c == 0 else "the GPU fan"); rest = "" if c == g == 0 else f"\n\nThe other fan keeps running at {g if c == 0 else c} %."
         self.fan_asking = True
         try:
-            box = QMessageBox(QMessageBox.Icon.Warning, "Turn the fans off", "Stop both fans?\n\nWith the fans off the laptop can overheat quickly under any load. This is only for quiet, light use.\n\n"
-                              "It is only allowed while the CPU is under 60 °C and the GPU under 55 °C. If the CPU reaches 70 °C or the GPU 65 °C, TrueSense gives the fans back to the firmware automatically.",
+            box = QMessageBox(QMessageBox.Icon.Warning, "Stop a fan", f"Stop {which}?{rest}\n\nWith a fan stopped the laptop can overheat quickly under any load. This is only for quiet, light use.\n\n"
+                              "It is only allowed while the CPU is under 60 °C and the GPU under 55 °C. If the CPU reaches 70 °C or the GPU 65 °C, TrueSense gives all fans back to the firmware automatically. "
+                              "If the firmware does not accept the stop, the fans are returned to Auto and you are told.",
                               QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, self)
-            box.setDefaultButton(QMessageBox.StandardButton.Cancel); box.button(QMessageBox.StandardButton.Apply).setText("Turn fans off")
+            box.setDefaultButton(QMessageBox.StandardButton.Cancel); box.button(QMessageBox.StandardButton.Apply).setText("Stop " + which)
             ok = box.exec() == QMessageBox.StandardButton.Apply
         finally: self.fan_asking = False
-        if not ok:                                                         # cancelled: back to the lowest speed the fans can run at
+        if not ok:                                                         # cancelled: the stopped fan goes back to its lowest running speed
             self.loading = True
             try:
-                for x in (self.fan_pct, self.fan_cpu, self.fan_gpu): x.setValue(20)
+                for x in (self.fan_pct, self.fan_cpu, self.fan_gpu):
+                    if x.value() == 0: x.setValue(20)
             finally: self.loading = False
             self.fan_manual_live(); return
-        self.do(lambda: control.fan("off", confirm=True), "Fans are off (they come back on Auto automatically if it gets warm)")
+        self.do(lambda: control.fan("manual", c, g, confirm=True), f"Stopped {which} (all fans come back on Auto automatically if it gets warm)")
+
+    fan_off_ask = fan_stop_ask
 
     def fan_link_changed(self, on):
         """One slider for both fans, or one each. Switching keeps the speeds you have: both sliders start from the same value."""
@@ -762,7 +769,7 @@ class Window(QMainWindow if Qt else object):
 
     def fan_apply(self, i):
         mode = ("smart", "auto", "max", "manual")[i]; c, g = self.manual_duty()
-        if mode == "manual" and (c, g) == (0, 0): self.fan_off_ask(); return                       # the slider rests at 0: that means fans off, which is asked first
+        if mode == "manual" and 0 in (c, g): self.fan_stop_ask(); return                              # a slider rests at 0: that means a stopped fan, which is asked first
         self.do(lambda: control.fan(mode, c if mode == "manual" else None, g if mode == "manual" else None),
                 lambda r: {"smart": "Fans: smart", "auto": "Fans: firmware auto", "max": "Fans: MAX", "manual": f"Fans: manual CPU {c} % / GPU {g} %" if c != g else f"Fans: manual {c} %"}[mode], refresh=False)
 
@@ -1708,7 +1715,7 @@ class Window(QMainWindow if Qt else object):
                 fc = d["state"]["live"].get("fan_curve")
                 if fc and self.curve_cb.currentText() != fc and not self.curve_cb.view().isVisible(): self.curve_cb.setCurrentIndex(max(0, self.curve_cb.findText(fc)))
                 if d.get("fan", {}).get("mode") == "manual":
-                    dp = d["fan"]["duty_register_pct"]; c_, g_ = (0, 0) if dp["cpu"] == 0 and dp["gpu"] == 0 else (max(20, dp["cpu"]), max(20, dp["gpu"]))
+                    dp = d["fan"]["duty_register_pct"]; c_, g_ = (0 if dp["cpu"] == 0 else max(20, dp["cpu"])), (0 if dp["gpu"] == 0 else max(20, dp["gpu"]))
                     self._set(self.fan_cpu, c_); self._set(self.fan_gpu, g_); self._set(self.fan_pct, max(c_, g_))
                 fi = 0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1); self.fan.set_index(fi); self.fan_box.setVisible(fi == 3); self.curve_box.setVisible(fi == 0)
             if "ac" in d: self.src = "AC" if d["ac"] else "Battery"

@@ -167,11 +167,12 @@ class TestWindowLogic(unittest.TestCase):
     def test_fan_slider_reaches_zero_which_means_fans_off(self):
         w = gui.Window(); self.assertFalse(hasattr(w, "fan_off_btn"), "the separate Fans off button is gone")
         for sl in (w.fan_pct, w.fan_cpu, w.fan_gpu): self.assertEqual((sl.minimum(), sl.maximum()), (0, 100))
-        asked = []; w.fan_off_ask = lambda: asked.append(1)
+        asked = []; w.fan_stop_ask = lambda: asked.append(1)
         w.fan_link.setChecked(True); w.fan_pct.setValue(0); w.fan_released(); self.assertEqual(w.manual_duty(), (0, 0)); self.assertTrue(asked)
         w.fan_pct.setValue(10); self.assertEqual(w.manual_duty(), (20, 20), "below the firmware minimum the fans run at 20 %")
-        w.fan_link.setChecked(False); w.fan_cpu.setValue(0); w.fan_gpu.setValue(60); self.assertEqual(w.manual_duty(), (20, 60), "one fan alone cannot be stopped")
-        w.fan_released(); self.assertEqual(w.fan_cpu.value(), 20); w.fan_link.setChecked(True); w.close()
+        w.fan_link.setChecked(False); w.fan_cpu.setValue(0); w.fan_gpu.setValue(60); self.assertEqual(w.manual_duty(), (0, 60), "the CPU fan alone can be stopped")
+        w.fan_cpu.setValue(70); w.fan_gpu.setValue(0); self.assertEqual(w.manual_duty(), (70, 0), "so can the GPU fan alone"); w.fan_gpu.setValue(10); self.assertEqual(w.manual_duty(), (70, 20))
+        w.fan_released(); self.assertEqual(w.fan_gpu.value(), 20); w.fan_link.setChecked(True); w.close()
 
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
