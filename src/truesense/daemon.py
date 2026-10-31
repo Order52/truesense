@@ -213,7 +213,7 @@ class Brain:
                      "chassis": round(self.tchassis or 0), "cpu": round(self.cpu_load), "gpu": round(self.gpu_util), "gpuw": round(self.gpu_power),
                      "rpm1": self.rpm[0], "rpm2": self.rpm[1], "cap": self.cap // 1000, "power_mode": self.cur_mode or "?", "ac": bool(self.last_ac), "auto": bool(self.st.get("auto_profile")), "hw_ok": self.hw_ok}
         txt = "".join(f"{k}={v}\n" if not isinstance(v, bool) else f"{k}={int(v)}\n" for k, v in self.live.items())
-        paths = [RUN + "/state"] + (["/tmp/predator-state"] if self.c["compat"]["predator_widgets"] else [])
+        paths = [RUN + "/state", "/tmp/truesense-state"] + (["/tmp/predator-state"] if self.c["compat"]["predator_widgets"] else [])
         for path in paths:
             try:
                 with open(path + ".tmp", "w") as f: f.write(txt)

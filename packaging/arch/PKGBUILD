@@ -1,21 +1,22 @@
-# Maintainer: truesense contributors
-# Acer Predator Helios 16 (PH16-71) control: fans, power, battery, GPU mode, lighting, Fn keys, audio helpers.
+# Maintainer: TrueSense contributors
+# Acer Predator Helios 16 (PH16-71): fans, power modes, battery, GPU mode, lighting, Fn keys, audio helpers.
 # Build from a checkout:  cd packaging/arch && makepkg -si
 pkgname=truesense
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
-pkgdesc='PredatorSense for Linux: Acer Predator Helios 16 PH16-71 (fans, power modes, battery, lighting, Fn keys, Purified Voice)'
-arch=('x86_64')
-url='https://github.com/'
+pkgdesc='PredatorSense for Linux: Acer Predator Helios 16 PH16-71 (fans, power modes, battery, lighting, PREDATOR key, audio)'
+arch=('any')
+url='https://github.com/Order52/truesense'
 license=('GPL-2.0-only')
-depends=('python' 'dkms' 'linux-headers' 'systemd')
-optdepends=('noise-suppression-for-voice: Purified Voice (RNNoise) microphone/speaker noise reduction'
-            'alsa-tools: codec diagnostics (hda-verb)'
-            'msr-tools: undervolt/RAPL diagnostics'
-            'nvidia-utils: GPU temperature and power limit'
-            'openrgb: alternative lighting tools')
+depends=('python' 'dkms' 'systemd')
+optdepends=('linux-headers: build the kernel module (any installed kernel needs its own headers)'
+            'noise-suppression-for-voice: Purified Voice (RNNoise) microphone noise reduction'
+            'python-gobject: optional window (truesense gui)'
+            'libadwaita: optional window (truesense gui)'
+            'nvidia-utils: GPU temperature and power'
+            'alsa-tools: codec diagnostics')
 backup=('etc/truesense/config.toml')
-options=('!strip')
+install=truesense.install
 _src="$startdir/../.."
 
 package() {
@@ -27,19 +28,23 @@ package() {
 exec env PYTHONPATH=/usr/lib/truesense python3 -m truesense "$@"
 WRAP
     install -Dm755 "$_src/packaging/health.sh" "$pkgdir/usr/lib/truesense/health.sh"
-    # services (system daemon + health timer, user key service)
     for f in truesense.service truesense-health.service truesense-health.timer; do
-        sed -e 's|/usr/local/bin/|/usr/bin/|g' -e 's|/usr/local/lib/|/usr/lib/|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/$f"
+        sed -e 's|@PREFIX@|/usr|g' -e 's|@MODPROBE@|/usr/bin/modprobe|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/$f"
     done
-    sed 's|/usr/local/bin/|/usr/bin/|g' "$_src/packaging/truesense-keys.service" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/truesense-keys.service"
-    sed 's|/usr/local/bin/|/usr/bin/|g' "$_src/packaging/truesense-audio.service" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/truesense-audio.service"
+    for f in truesense-keys.service truesense-audio.service; do
+        sed 's|@PREFIX@|/usr|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/$f"
+    done
     install -Dm644 "$_src/packaging/70-truesense.rules" "$pkgdir/usr/lib/udev/rules.d/70-truesense.rules"
-    # kernel helper (WMI whitelist interface) as DKMS source
-    install -d "$pkgdir/usr/src/acer-rear-wmi-1.2"
-    install -m644 "$_src"/kernel/acer-rear-wmi/{acer_rear_wmi.c,Makefile,dkms.conf} "$pkgdir/usr/src/acer-rear-wmi-1.2/"
+    install -Dm644 "$_src/packaging/truesense.modprobe.conf" "$pkgdir/usr/lib/modprobe.d/truesense.conf"
+    install -Dm644 "$_src/packaging/truesense.modules-load.conf" "$pkgdir/usr/lib/modules-load.d/truesense.conf"
+    install -d "$pkgdir/usr/share/truesense/profiles"
+    install -m644 "$_src"/packaging/profiles/*.toml "$pkgdir/usr/share/truesense/profiles/"
+    install -d "$pkgdir/usr/src/truesense-wmi-0.2.0"
+    install -m644 "$_src"/kernel/truesense-wmi/{truesense_wmi.c,Makefile,dkms.conf} "$pkgdir/usr/src/truesense-wmi-0.2.0/"
     install -Dm644 /dev/stdin "$pkgdir/etc/truesense/config.toml" <<'CFG'
-# overrides for the built-in defaults (see /usr/lib/truesense/truesense/config.py)
-user = "CHANGE_ME"
+# TrueSense system configuration. Built-in defaults apply to everything not set here.
+# user = "your-login-name"   # who may talk to the daemon besides root
 CFG
+    install -Dm644 "$_src/README.md" "$pkgdir/usr/share/doc/truesense/README.md"
     install -Dm644 "$_src/docs/STATUS.md" "$pkgdir/usr/share/doc/truesense/STATUS.md"
 }

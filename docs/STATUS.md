@@ -53,9 +53,13 @@ Meaning of the labels: **VERIFIED** = set, read back (or measured / seen by the 
 | Item | Status | Notes |
 |---|---|---|
 | Install / uninstall script, DKMS module, systemd units, udev rule | VERIFIED | survives reboots: modules load, services start, devices renumbering handled |
-| `rpredatorsense selftest` | 15 / 15 pass | firmware settings, daemon, key service, keyboard read-back, audio profile, Purified Voice config |
-| Arch package (PKGBUILD) | BUILT | builds cleanly; not installed during testing |
+| `truesense selftest`, `truesense doctor` | doctor: all checks pass on the test laptop | selftest covers firmware settings, daemon, key service, keyboard read-back, audio, Purified Voice config; both are in the unit suite via the simulator (28 tests, 119 CLI commands) |
+| Single kernel module `truesense_wmi` (replaces earlier helper drivers), DKMS for two kernels | VERIFIED | built clean on 7.3.0-4-cachyos and 6.18.55-2-cachyos-lts; 18/18 kernel-side validation checks; 4 concurrent clients, 0 errors |
+| Daemon IPC, saved profiles, key actions | VERIFIED | on hardware; unit-tested in the simulator |
+| Optional window (`truesense gui`) | PARTIAL | opens and shows live values on the test laptop; individual controls have not each been clicked on hardware |
+| Noctalia bar widgets (`contrib/noctalia`) | PARTIAL | power-mode and fan widgets show live state and respond to IPC; the RGB widget and the panels were not exercised interactively |
+| Arch package (PKGBUILD) | WRITTEN | updated for 0.2.0; not built with makepkg during testing |
 | Secure Boot module signing | UNTESTED | DKMS signs with its own key; Secure Boot was off on the test machine |
 
 ## Not built
-`.deb` package, a socket / D-Bus API for the daemon, a tray icon or GUI, an OpenRGB plugin, live GPU switching, automatic restore of per-key lighting after a firmware reset.
+`.deb` package, a D-Bus API (the daemon has a UNIX-socket API), a tray icon, an OpenRGB plugin, live GPU switching, automatic restore of per-key lighting after a firmware reset.

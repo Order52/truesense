@@ -1,71 +1,74 @@
-# Usage and troubleshooting
+# TrueSense usage and troubleshooting
 
-`rpredatorsense` is the installed command. From a checkout use `./rps` (same arguments).
+`truesense` is the installed command (from a checkout: `./truesense`). `--json` works anywhere and prints machine-readable output. `truesense <area> --help` lists the sub-commands.
 
-## Install
+## Install, check, remove
 ```
-sudo tools/install.sh              # kernel helper (DKMS), daemon, user services, udev rule
-sudo tools/install.sh --with-audio # also installs the RNNoise LADSPA plugin (Arch: noise-suppression-for-voice)
-rpredatorsense selftest            # checks every firmware feature and prints PASS/FAIL
+sudo tools/install.sh                  # module (DKMS), daemon, user services, udev rule, health timer
+sudo tools/install.sh --with-audio     # also the RNNoise plugin (Arch: noise-suppression-for-voice)
+sudo tools/install.sh --module-only    # only the kernel module
+truesense doctor                       # 15 checks; exit 1 if anything fails; --json available
+truesense selftest                     # set -> read back -> restore for every firmware feature
+sudo tools/uninstall.sh [--purge]      # --purge also removes settings and saved state
 ```
-`install.sh` is safe to re-run; it restarts the daemon so upgrades take effect. On Arch you can instead build the package: `cd packaging/arch && makepkg -si`, then set `user = "<your login>"` in `/etc/rpredatorsense/config.toml`.
-
-Requirements: Linux with ACPI-WMI for the Acer gaming interface, `dkms` + kernel headers, Python 3.11+, systemd, PipeWire (audio features). For battery limit/calibration, USB charging and the keyboard-backlight timeout the **Linuwu-Sense** driver must also be installed (it provides `/sys/devices/platform/acer-wmi/predator_sense/`; not bundled). A kernel that carries the ALC245 quirk for subsystem 1025:166c is needed for the headset microphone.
-
-Secure Boot: DKMS signs the module with its own key (`/var/lib/dkms/mok.pub`); enrol it once with `mokutil --import` before enabling Secure Boot. This path was not tested (Secure Boot was off on the test machine).
+Flags: `--no-services`, `--force` (unsupported model, at your own risk), `--prefix=DIR`. The install log is `/var/log/truesense-install.log`. Secure Boot: DKMS signs the module with its own key; enrol it with `mokutil --import /var/lib/dkms/mok.pub` before enabling Secure Boot (untested here, Secure Boot was off).
 
 ## Commands
+Areas that are switches accept `on | off | toggle | status`.
+
 | Command | What it does |
 |---|---|
-| `status`, `sensors` | everything / firmware temperatures and fan RPM |
-| `mode [quiet\|balanced\|performance\|turbo\|eco]` | power mode (a manual choice holds for 30 min against the automatic profile) |
-| `fan auto\|max\|set CPU% [GPU%]\|status\|curve` | fans; manual duty 20-100 %; one write holds |
-| `overdrive`, `battery`, `boot-sound`, `kb-timeout [on\|off]`, `usb-charge [0\|10\|20\|30]` | firmware settings, each read back after writing |
-| `gpu [optimus\|nvidia\|auto]` | GPU mode (reboot needed to take effect) |
-| `rear static\|breathing\|neon\|wave\|twinkling --color RRGGBB [--speed 1..5 --brightness 0..100]`, `rear off`, `rear get` | rear light bar |
-| `keyboard fill COLOR`, `gradient C1 C2`, `rainbow`, `keys "wasd=ff0000" "esc=00ff00" --base 101010`, `list-keys` | per-key RGB |
-| `keyboard effect NAME --color RRGGBB --speed 1..11 --brightness 0..50` | built-in effects (static breathing wave snake ripple neon raindrop lightning spot star fireball snow heartbeat operatingmode; neon needs brightness 50) |
-| `keyboard profile save NAME fill COLOR\|gradient C1 C2\|rainbow`, `profile load NAME`, `profile list` | saved per-key profiles |
-| `keyboard get`, `keyboard brightness N`, `keyboard off`, `keyboard restore` | brightness read-back (0-50) / set / off / the stock cyan per-key state |
-| `output speakers\|headphones\|toggle\|cycle\|status` | switch speakers and headphones while the aux jack is plugged in |
-| `mic toggle`, `mic status` | mute / state |
-| `voice status`, `voice headset MODE`, `voice array MODE`, `voice apply`, `voice watch` | Purified Voice per input; MODE = off, conference, personal |
-| `speaker on\|off` | Purified Voice filter in front of the output (off by default; it also gates music) |
-| `cpu info`, `cpu limits PL1 PL2`, `cpu uv-get`, `cpu uv-set MV --confirm`, `cpu uv-reset` | power limits (root) and a guarded undervolt |
-| `daemon`, `keys` | the services |
-| `selftest [--skip-fans]` | set, read back and restore every firmware feature, plus service checks |
+| `status`, `sensors` | everything / temperatures and fan RPM |
+| `power set MODE`, `next`, `prev`, `list`, `status` | eco, quiet, balanced, performance, turbo |
+| `power auto on\|off`, `power hold [MIN]`, `power release` | the automatic profile (AC / battery / load); a manual choice is held 30 min by default |
+| `fan auto \| max \| set CPU [GPU] \| status` | fans; manual duty 20-100 % |
+| `fan smart on\|off\|toggle` | the daemon's smart curve |
+| `battery limit`, `battery calibration`, `battery usb-charge [0\|10\|20\|30]` | 80 % limit, calibration flag, USB charging while off |
+| `display overdrive`, `boot sound` | LCD overdrive, boot animation/sound |
+| `gpu status`, `gpu set optimus\|nvidia\|auto` | MUX mode (reboot to apply) |
+| `rear on\|off\|toggle`, `rear set EFFECT --color RRGGBB --speed 1..5 --brightness 0..100` | static breathing neon wave twinkling |
+| `keyboard on\|off\|toggle`, `restore`, `brightness N` (0-50), `timeout on\|off` | backlight |
+| `keyboard effect NAME --color --speed --brightness` | static breathing wave snake ripple neon raindrop lightning spot star fireball snow heartbeat (neon needs brightness 50) |
+| `keyboard fill C`, `gradient C1 C2`, `rainbow`, `keys "wasd=ff0000" --base 101010`, `list-keys` | per-key RGB |
+| `keyboard operating on\|off` | keyboard colour follows the power mode (re-sent on each change) |
+| `keyboard profile list\|save\|load\|delete` | saved lighting, e.g. `profile save work gradient ff3300 6600ff` |
+| `audio output speakers\|headphones\|toggle\|cycle\|status` | output switch (the two share one PCM) |
+| `audio mic status\|mute\|unmute\|toggle\|boost`, `audio jack` | microphones, headset-mic boost, what the codec sees on the jack |
+| `audio voice status\|headset MODE\|array MODE\|apply\|watch` | AI noise reduction; MODE = off, conference, personal |
+| `audio speaker-filter`, `audio dts` | noise filter on the output (off by default); Acer DTS via AcerUltraX |
+| `keys show\|set GESTURE ACTION\|reset\|test ACTION\|actions\|timing` | the PREDATOR key (see below) |
+| `profile list\|show\|save\|apply\|delete\|next` | bundles of power, fans, lighting, battery, audio |
+| `cpu info`, `cpu limits PL1 PL2`, `cpu undervolt ...` | RAPL limits (root); undervolt needs `--confirm` |
+| `touchpad on\|off\|toggle` | touchpad inhibit |
+| `service status\|restart\|logs`, `config show\|validate\|path`, `completion bash\|zsh\|fish`, `gui` | housekeeping |
+
+## The PREDATOR key and Fn keys
+`truesense keys set GESTURE ACTION` with GESTURE = `tap`, `double`, `triple`, `long`, `fn_esc`. `truesense keys actions` lists every action: `power-next`, `power:turbo`, `power-cycle:eco,balanced,turbo`, `fan:smart`, `fan-max-toggle`, `profile:gaming`, `output-toggle`, `mic-toggle`, `voice-next`, `touchpad-toggle`, `keyboard-effect-next`, `rear:toggle`, `battery-limit-toggle`, `overdrive-toggle`, `exec:<command>`, `notify:<text>`, `none`. Actions are checked when you set them, never at key-press time. `truesense keys test ACTION` runs one now. Fn+F11/F12 brightness is done by the keyboard itself and is left alone. Defaults: tap = next power mode, double = output toggle, long = fans to max (toggle).
 
 ## Services
-* `rpredatorsense.service` (root): fan ladder, thermal governor, power limits, automatic power profile. Always hands the fans back to firmware Auto and uncaps clocks on stop, crash or exit.
-* `rpredatorsense-keys.service` (user): Fn+F10, Fn+Esc, PREDATOR key (finds the keyboard's HID interface by itself).
-* `rpredatorsense-audio.service` (user): picks the right Purified Voice filter when a headset is plugged or unplugged.
-* `rpredatorsense-health.timer`: restarts the daemon if it stalls and rebuilds the DKMS module after a kernel update.
+* `truesense.service` (root, `Type=notify`, watchdog, always restarted): smart fan curve, thermal governor, power limits, automatic profile, IPC socket `/run/truesense/truesense.sock` (root and the configured user only). On stop, crash or exit the fans return to firmware Auto and clock caps are lifted.
+* `truesense-keys.service` and `truesense-audio.service` (user): PREDATOR/Fn keys; switches the right microphone filter on plug events.
+* `truesense-health.timer`: restarts a stalled daemon and rebuilds the module after a kernel update.
 
 ## Configuration
-* `/etc/rpredatorsense/config.toml`: `user`, fan ladder (`[fan]`), power limits and governor (`[cpu]`), `[profile] auto/osd`, `[keyboard] operating_follow` and `operating_colors`.
-* `~/.config/rpredatorsense/config.toml`: `[buttons]` with `tap`, `long`, `double`, `fn_esc` = `mode-cycle | fan-max-toggle | touchpad | mic-toggle | output-toggle | none`; `[audio]` with `notify`.
-* State files: `~/.cache/predator-fan-mode` (`smart` = daemon controls fans, `manual` = leave them alone), `~/.cache/predator-auto-off` (exists = no automatic power profile), `/tmp/predator-state` (live state for status bars).
-* `RPS_OSD=native|noctalia|none` chooses how the output switch is announced (native desktop notification by default).
+`/etc/truesense/config.toml` (system: `user`, `[daemon]`, `[fan]`, `[cpu]`, `[profile]`, `[keyboard]`) and `~/.config/truesense/config.toml` (yours: `[keys]`, `[audio]`, `[osd]`). `truesense config show` prints the merged result and `config validate` checks it. Profiles live in `~/.config/truesense/profiles/*.toml` (four ship in `<prefix>/share/truesense/profiles`), lighting in `~/.config/truesense/lighting/*.json`. Live state for status bars: `/run/truesense/state` and `/tmp/truesense-state` (`key=value` lines: power_mode, fan, rpm1, rpm2, tcpu, tgpu, auto, ac, ...).
 
 ## Purified Voice
-Acer's Purified Voice runs a proprietary Realtek model that cannot run on Linux. This project builds an open equivalent: a PipeWire filter chain with RNNoise (voice-activity gating). `conference` is gentle, `personal` is strict (sometimes clips very soft words). Modes map to Acer's labels: All Off, Personal Call, Conference Call. The filters survive plug/unplug events; only the default source is switched.
+Acer's Purified Voice uses a proprietary Realtek model that cannot run on Linux. TrueSense builds an open equivalent: a PipeWire filter chain with RNNoise voice-activity gating, one filter per input (headset mic, built-in array). `conference` is gentle, `personal` is strict (can clip very soft words). The default microphone follows the active input and the filters survive plug/unplug events.
 
-## Audio output switching
-Speakers and the 3.5 mm headphones use the same analog playback PCM, so ALSA/UCM exposes them as two mutually exclusive card profiles and a volume applet can only show the active one. `rpredatorsense output ...` flips the card profile (instant notification, then a silent switch). Flipping only the codec playback switches does not work: the codec feeds the two pins from different DACs and the single stream is bound to one.
-
-## Optional desktop integration (examples, not installed)
-A Hyprland key bind: `bind = , F5, exec, rpredatorsense output cycle` (speakers -> headphones -> other devices). When the shell has Noctalia, popups it generates while the profile flips are silenced with `noctalia msg osd-disable` / `osd-enable`. Without Noctalia, `hyprctl notify` or `notify-send` is used.
+## Desktop integration
+`contrib/noctalia/` holds Noctalia bar widgets (power mode, fan, RGB with panels) that read the state file and call the CLI. Copy them into a plugin that declares `profile`, `fan`, `rgb` widgets and panels. Any status bar can read `/tmp/truesense-state` or run `truesense --json status`.
 
 ## Troubleshooting
-* `/dev/acer-rear` missing: `sudo modprobe acer_rear_wmi`; after a kernel update the health timer rebuilds DKMS within 10 minutes (or `sudo dkms autoinstall`).
-* Fans stuck: `rpredatorsense fan auto`. Stopping the service also returns them to firmware Auto.
-* Headset mic missing: unplug and replug the headset (the codec classifies it on the plug event); `amixer -c1 cget iface=CARD,name='Headset Mic Jack'` must read `on`. `sudo tools/headset_diag.sh` collects data. **Never write the codec's `reconfig` file**: it deadlocked the kernel on the test laptop and needed a hard reboot.
-* Per-key colours shifted by a few keys: hidraw writes without report IDs drop the first byte; writes must be 65 bytes (leading 0 + 64).
-* A firmware setting reads -1 right after a write: the firmware needs a moment; the tool retries for 1 s.
-* Another fan/profile daemon (an older script, `tuned`, ...) will fight over the fans: stop it.
+* Run `truesense doctor` first.
+* `/dev/truesense` missing: `sudo modprobe truesense_wmi`; after a kernel update the health timer rebuilds within minutes (or `sudo dkms autoinstall`).
+* Fans stuck: `truesense fan auto`; stopping the daemon also hands them back.
+* Headset mic missing: unplug and replug (the codec classifies it on the plug event). **Never write `/sys/class/sound/hwC*D*/reconfig`**: it deadlocked the kernel here and needed a hard reboot.
+* A firmware value reads -1 right after a write: normal; the tool retries for 1 s.
+* Another fan or profile daemon (older scripts, `tuned`, `auto-cpufreq` also caps frequency) will fight TrueSense: stop it.
 
-## Safety rules the tools follow
-Read the current value, write, read back, keep a restore path. Fans return to firmware Auto on any exit. No firmware flashing, no boot-logo writes, no EC access outside the whitelisted WMI calls. The undervolt interface needs `--confirm`, steps are limited to -120 mV and `uv-reset` writes 0.
+## Safety rules
+Read the current value, write, read back, keep a restore path. Fans return to firmware Auto on any exit. No firmware flashing, no boot-logo writes, no EC access outside the whitelisted WMI calls. Undervolt needs `--confirm`, steps are limited, and `undervolt reset` writes 0.
 
-## Collecting data for another model
-`sudo tools/collect_hardware_data.sh` (read-only: ACPI tables, codec, RAPL/MSR facts) and `tools/headset_diag.sh` help port the project. **Do not publish the raw ACPI dump**: it contains firmware tables, including one with the OEM Windows product key.
+## Porting to another model
+`sudo tools/collect_hardware_data.sh` (read-only) collects ACPI/codec facts. **Never publish the raw ACPI dump**: it contains firmware tables, including one that holds the OEM Windows product key.

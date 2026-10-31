@@ -1,18 +1,46 @@
 # Release notes
 
+## 0.2.0 (2026-10-31): TrueSense
+
+The project is now **TrueSense**: one kernel module, one daemon, one CLI, an optional window. Tested only on the **Acer Predator Helios 16 PH16-71** (BIOS V1.18, CachyOS, kernel 7.3.0-4 and 6.18 LTS, PipeWire 1.6). See [docs/STATUS.md](docs/STATUS.md).
+
+### Changed
+* **One kernel module** `truesense_wmi` replaces `acer_rear_wmi` and the separate Linuwu-Sense dependency. DMI-guarded, stable WMI API only, per-open reply buffers (fixes a shared-buffer race), a global command mutex, fans back to firmware Auto when unloaded. Builds warning-free on two kernels; DKMS rebuilds on every kernel update.
+* **Installer** removes the old drivers and files (backed up to `/var/backups/truesense`), blocks conflicting modules, keeps your Purified Voice modes and lighting profiles, runs `doctor` at the end. `tools/uninstall.sh [--purge]` reverses it.
+* **CLI redesign**: 23 areas, `on|off|toggle|status` wherever a switch exists, `--json` anywhere, shell completion for bash, zsh and fish.
+* **Daemon** talks over a UNIX socket (peer-credential checked), keeps its settings across reboots, survives a missing device, is `Type=notify` with a watchdog and `Restart=always`, and publishes live state for status bars (now including fan RPM and the automatic-profile flag).
+
+### Added
+* `truesense doctor` (15 checks, exit code for scripts) and a health timer.
+* **Customisable PREDATOR key**: tap, double, triple and long press, plus Fn+Esc, each bound to any action (power modes, fans, profiles, output switch, mic, lighting, `exec:`...). Validated when set.
+* **Profiles**: save and apply bundles of power, fans, lighting, battery and audio. Four ship by default.
+* Fn+F10 touchpad toggle through the same action system.
+* Audio: default microphone follows the active Purified Voice input; per-input modes; headset-mic boost; jack status.
+* **Optional window** (`truesense gui`, GTK 4 + libadwaita) and Noctalia bar widgets in `contrib/noctalia`.
+* A hardware simulator (`TRUESENSE_SIM=1`) and 28 unit tests including a smoke run of 119 CLI commands.
+
+### Fixed
+* The simulator was more lenient than the kernel (accepted values the firmware refuses); it now mirrors every validation.
+* The microphone watcher only reacted to jack events; it now reacts to filter and mode changes.
+* `keyboard profile` crashed in one code path; the doctor mis-reported services when run under `sudo`.
+* A forced-reboot lesson recorded: never write the codec `reconfig` file on this laptop.
+
+### Still not working or untested
+F8 mic-mute LED, headset detection when plugged in at boot (replug), NVIDIA power limit, undervolt write, battery calibration cycle, GPU mode effect after reboot, Secure Boot signing, `.deb`.
+
 ## 0.1.0 (2026-10-31): first release
 
 First working version for the **Acer Predator Helios 16 PH16-71** (BIOS V1.18; tested on CachyOS, kernel 7.3.0-4, PipeWire 1.6, WirePlumber 0.5.18, Secure Boot off). Everything below was checked on that one machine. See [docs/STATUS.md](docs/STATUS.md) for the evidence and for what does not work.
 
 ### Added
-* **CLI** `rpredatorsense` (and `./rps` from a checkout): status, sensors, power mode, fans, firmware settings, GPU mode, rear light, keyboard lighting, audio output, Purified Voice, CPU limits, selftest.
+* **CLI** `truesense` (and `./rps` from a checkout): status, sensors, power mode, fans, firmware settings, GPU mode, rear light, keyboard lighting, audio output, Purified Voice, CPU limits, selftest.
 * **Kernel helper** `acer_rear_wmi` (DKMS, `/dev/acer-rear`): whitelisted, validated ACPI-WMI commands for power mode, fans, sensors, GPU mode, boot sound, overdrive and the rear light. Returns the fans to firmware Auto when unloaded.
-* **Daemon** `rpredatorsense.service`: smart-fan ladder with hysteresis and prediction, thermal governor, power limits, automatic power profile (AC/battery/load), health timer that restarts it and rebuilds DKMS after kernel updates.
-* **Keys** `rpredatorsense-keys.service`: Fn+F10 touchpad toggle (no root, via udev rule), PREDATOR key tap / hold / double tap with configurable actions, Fn+Esc hook. Finds the keyboard's HID interface by itself.
+* **Daemon** `truesense.service`: smart-fan ladder with hysteresis and prediction, thermal governor, power limits, automatic power profile (AC/battery/load), health timer that restarts it and rebuilds DKMS after kernel updates.
+* **Keys** `truesense-keys.service`: Fn+F10 touchpad toggle (no root, via udev rule), PREDATOR key tap / hold / double tap with configurable actions, Fn+Esc hook. Finds the keyboard's HID interface by itself.
 * **Lighting**: rear light bar (5 effects); keyboard per-key RGB (fill, gradient, rainbow, per-key, named groups, saved profiles), 13 built-in effects, brightness read-back, and an opt-in operating-mode colour that follows the power mode.
 * **Audio**: speakers <-> headphones switching while the aux jack is plugged in (instant notification); Purified Voice equivalent using RNNoise on PipeWire (conference and personal modes, per-input filters, automatic headset/array switching with a notification); integration notes for AcerUltraX (Acer DTS sound).
 * **Safety**: read -> write -> read back -> restore on every firmware setting; manual fan duty limited to 20-100 %; undervolt refuses without `--confirm`; no firmware flashing.
-* **Selftest**: `rpredatorsense selftest` (15 checks).
+* **Selftest**: `truesense selftest` (15 checks).
 * **Packaging**: `tools/install.sh`, an Arch `PKGBUILD`, systemd units, a udev rule.
 
 ### Verified highlights
@@ -40,4 +68,4 @@ First working version for the **Acer Predator Helios 16 PH16-71** (BIOS V1.18; t
 * Not tested: Secure Boot signing, an undervolt write (read-only checked), GPU mode taking effect after a reboot, a full battery-calibration cycle, any other model or BIOS version.
 
 ### Upgrade notes
-First release. Re-running `sudo tools/install.sh` upgrades in place and restarts the daemon. The user services (`rpredatorsense-keys`, `rpredatorsense-audio`) restart for the invoking user; other logged-in users restart theirs on next login.
+First release. Re-running `sudo tools/install.sh` upgrades in place and restarts the daemon. The user services (`truesense-keys`, `truesense-audio`) restart for the invoking user; other logged-in users restart theirs on next login.
