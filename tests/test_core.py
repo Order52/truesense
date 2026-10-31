@@ -224,6 +224,40 @@ class TestDaemonLogic(Base):
         self.assertEqual(undervolt.load("stock")["core"], 0)
         with self.assertRaises(device.HwError): undervolt.save("truesense", {"core": -10, "cache": -10})
 
+    def test_your_pick_ends_by_itself_when_the_situation_changes(self):
+        b = self.make(); h = b.handlers(); h["set"](key="auto_mode", value="smart")
+        self.drive(b, 70, 40, 40, 5); self.assertEqual(device.SIM.mode, 1)
+        h["power"](mode="eco", hold_minutes=30); self.assertEqual(device.SIM.mode, 6)
+        self.drive(b, 30, 40, 40, 5); self.assertEqual(device.SIM.mode, 6, "same situation: your pick stays")
+        self.drive(b, 8, 70, 60, 90); self.assertEqual(device.SIM.mode, 4, "a game starts: smart auto takes over without anyone pressing resume")
+        h["power"](mode="eco", hold_minutes=30); daemon.hw.on_ac = lambda: False; self.drive(b, 8, 70, 60, 90)
+        self.assertNotEqual(device.SIM.mode, 4); daemon.hw.on_ac = lambda: True                            # unplugging also ends the hold
+
+    def test_choosing_smart_or_native_applies_immediately_even_during_a_hold(self):
+        b = self.make(); h = b.handlers(); h["set"](key="auto_mode", value="off"); self.drive(b, 5, 40, 40, 5)
+        h["power"](mode="turbo", hold_minutes=30); self.assertEqual(device.SIM.mode, 5); h["set"](key="auto_mode", value="native"); self.drive(b, 3, 40, 40, 5)
+        self.assertEqual(device.SIM.mode, 1, "native auto (AC: balanced) must not wait for the old hold to run out"); self.assertEqual(h["state"]()["hold_left_s"], 0)
+
+    def test_gpu_undervolt_needs_confirmation_and_boot_has_a_crash_guard(self):
+        import tempfile
+        from truesense import gpuundervolt as gu
+        state = {"offset": 0, "cap": 0}
+        gu.read = lambda: {"offset_mhz": state["offset"], "range_mhz": [-1000, 1000]}
+        def fake_apply(o, c): state.update(offset=o, cap=c); return {"offset_mhz": o, "cap_mhz": c}
+        gu.apply = fake_apply; gu.reset = lambda: (state.update(offset=0, cap=0), {"offset_mhz": 0, "cap_mhz": 0})[1]
+        daemon.GPU_UV_PENDING = tempfile.mkdtemp() + "/gpu-uv-pending"
+        b = self.make(); uv = b.handlers()["gpu_undervolt"]
+        with self.assertRaises(device.HwError): uv(action="apply", offset=100, cap=2400)
+        with self.assertRaises(device.HwError): uv(action="apply", offset=900, cap=2400, confirm=True)
+        with self.assertRaises(device.HwError): uv(action="apply", offset=100, cap=50, confirm=True)
+        self.assertEqual(state, {"offset": 0, "cap": 0})
+        uv(action="apply", offset=120, cap=2400, confirm=True, name="truesense"); self.assertEqual(state, {"offset": 120, "cap": 2400}); self.assertEqual(uv(action="get")["applied"]["name"], "truesense")
+        uv(action="reset"); self.assertEqual(state, {"offset": 0, "cap": 0})
+        uv(action="boot", offset=60, cap=2500, confirm=True, name="mild"); b.apply_gpu_uv_boot(); self.assertEqual(state["offset"], 60); self.assertTrue(os.path.exists(daemon.GPU_UV_PENDING))
+        state.update(offset=0, cap=0); b2 = self.make(); b2.st.set("gpu_uv_boot", {"name": "mild", "offset": 60, "cap": 2500}); b2.apply_gpu_uv_boot()
+        self.assertEqual(state["offset"], 0, "the previous boot never proved stable"); self.assertIsNone(b2.st.get("gpu_uv_boot"))
+        with self.assertRaises(device.HwError): gu.save("truesense", {"offset": 10, "cap": 0})
+
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run
         device.SIM.run = lambda c: "err no such device\n"

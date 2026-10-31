@@ -73,7 +73,8 @@ class TestWindowLogic(unittest.TestCase):
         import tempfile
         from truesense import actions
         ed = gui.ActionEditor()
-        script = tempfile.mkdtemp() + "/my script.sh"; open(script, "w").write("#!/bin/sh\n")
+        script = tempfile.mkdtemp() + "/my script.sh"
+        with open(script, "w") as fh: fh.write("#!/bin/sh\n")
         specs = ["none", "power-next", "power:turbo", "power-cycle:eco,balanced", "fan:smart", "fan:60", "fan:max", "auto:smart", "auto-next", "profile:gaming", "output-toggle", "mic-toggle",
                  "touchpad-toggle", "keyboard:toggle", "rear-effect-next", "notify:hello there", "exec:notify-send hi", "exec:sh " + gui.shlex.quote(script)]
         for s in specs:

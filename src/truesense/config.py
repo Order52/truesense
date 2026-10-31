@@ -23,7 +23,7 @@ DEFAULTS = {
     "smart": {"ac_idle": "balanced", "ac_browsing": "balanced", "ac_busy": "performance", "ac_turbo": True, "turbo_after_s": 30, "turbo_max_cpu": 85, "turbo_max_gpu": 75,
               "backoff_hold_s": 90, "idle_after_s": 60, "battery_idle": "eco", "battery_browsing": "eco", "battery_busy": "balanced", "battery_hot": "quiet", "battery_low_pct": 20,
               "up_dwell_s": 5, "down_dwell_s": 30},
-    "profile": {"osd": True, "hold_minutes": 30,
+    "profile": {"osd": True, "hold_minutes": 10,
                 "auto": {"ac_busy": "turbo", "ac_normal": "balanced", "battery_busy": "balanced", "battery_idle": "eco"}},
     "keys": {"profile": "default", "tap": "power-next", "double": "output-toggle", "triple": "none", "long": "fan-max-toggle", "fn_esc": "none",
              "long_ms": 800, "multi_ms": 450, "power_cycle": ["eco", "quiet", "balanced", "performance", "turbo"]},

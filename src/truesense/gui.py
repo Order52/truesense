@@ -3,7 +3,7 @@
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
 import os, shlex, sys, threading, time
-from . import actions, audio, backend as hw, config, control, curves, ipc, keybinds, keyboard, keymap, looks, profiles, smartprofiles, undervolt, userstate
+from . import actions, audio, backend as hw, config, control, curves, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, profiles, smartprofiles, undervolt, userstate
 from .device import HwError
 
 try:
@@ -142,7 +142,7 @@ QLabel { background: transparent; }
 AUTO_KEYS = ["off", "native", "smart"]
 AUTO_HINT = {"off": "You choose the mode. A mode you pick stays until you change it.",
              "native": "Like PredatorSense on Windows: Balanced on power, Eco on battery, nothing else.",
-             "smart": "Switches by heat, load and battery: Performance and Turbo when gaming or heavy work (backs off if it overheats), Eco on battery."}
+             "smart": "Switches by heat, load and battery: Performance and Turbo when gaming or heavy work (backs off if it overheats), Eco on battery. A mode you pick yourself ends by itself when the situation changes."}
 FAN_MODES = ["Smart", "Auto", "Max", "Manual"]
 KB_EFFECTS = ["static", "breathing", "wave", "snake", "ripple", "neon", "raindrop", "lightning", "spot", "star", "fireball", "snow", "heartbeat"]
 KEY_GROUPS = ["all", "wasd", "arrows", "fkeys", "numrow", "letters", "numpad", "esc", "space", "enter", "predator", "lshift"]
@@ -895,8 +895,11 @@ class Window(QMainWindow if Qt else object):
     # ---- Undervolt ---------------------------------------------------------------------------------------------------------------------
     def p_undervolt(self):
         lay = self.page("Undervolt")
-        warn = self.hint("Lowers the CPU voltage to run cooler. Too much can freeze or reboot the laptop. Nothing is applied unless you confirm, and a reboot always returns to stock. Test a profile under load before relying on it.")
+        warn = self.hint("Lowers CPU or GPU voltage to run cooler. Too much can freeze, reboot or crash games. Nothing is applied unless you confirm, and a reboot always returns to stock. Test a profile under load before relying on it.")
         warn.setStyleSheet("color: #ffb347;"); lay.addWidget(warn)
+        self.uv_tabs = Segmented(["CPU", "GPU"], tiles=True, icons=["performance", "gpu"]); lay.addWidget(self.uv_tabs); uvstack = QStackedWidget(); lay.addWidget(uvstack)
+        self.uv_tabs.picked.connect(uvstack.setCurrentIndex); self.uv_tabs.set_index(0); page_lay = lay
+        cpu_w = QWidget(); lay = QVBoxLayout(cpu_w); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(14)
         v = self.card(lay, "Right now", "", True); self.uv_now = v.right; self.uv_state = self.hint("…"); v.addWidget(self.uv_state)
         v = self.card(lay, "Profile")
         self.uv_list = QComboBox(); self.uv_list.setMinimumWidth(150); self.uv_list.activated.connect(lambda i: self.load_uv(self.uv_list.currentText()))
@@ -908,7 +911,74 @@ class Window(QMainWindow if Qt else object):
         self.line(v, "Default", self.btn("Reset to default (stock)", self.uv_reset))
         v = self.card(lay, "At boot")
         self.uv_boot = self.switch(v, "Apply the selected profile at boot", self.uv_boot_set, "Off by default. Guarded: if the laptop does not stay up for 10 minutes after applying it, the next boot skips it and turns this off.")
-        self.reload_uv(); lay.addStretch()
+        self.reload_uv(); lay.addStretch(); uvstack.addWidget(cpu_w)
+        gpu_w = QWidget(); lay = QVBoxLayout(gpu_w); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(14); self.build_gpu_uv(lay); uvstack.addWidget(gpu_w); page_lay.addStretch()
+
+    def build_gpu_uv(self, lay):
+        lay.addWidget(self.hint("GPU undervolt shifts the GPU's voltage/frequency curve up and caps the top clock, so it reaches its speed at a lower voltage. Neither setting survives a reboot."))
+        v = self.card(lay, "Right now", "", True); self.gpu_now = v.right; self.gpu_state = self.hint("…"); v.addWidget(self.gpu_state)
+        v = self.card(lay, "Profile")
+        self.gp_list = QComboBox(); self.gp_list.setMinimumWidth(150); self.gp_list.activated.connect(lambda i: self.load_gpu_uv(self.gp_list.currentText()))
+        self.line(v, "Profile", self.gp_list, self.btn("Apply", self.gpu_uv_apply, True)); self.gp_copy = self.btn("Copy to edit", self.gpu_uv_copy); self.gp_del = self.btn("Delete", self.gpu_uv_delete)
+        self.line(v, "Edit", self.gp_copy, self.gp_del)
+        self.gp_off = self.slider(v, "Curve offset", gpuundervolt.OFFSET_RANGE[0], gpuundervolt.OFFSET_RANGE[1], 10, lambda x: None, suffix=" MHz")
+        self.gp_cap = self.slider(v, "Clock cap (below 600 = none)", 0, gpuundervolt.CAP_RANGE[1], 50, lambda x: None, suffix=" MHz")
+        self.gp_name = QLineEdit(); self.gp_name.setPlaceholderText("name"); self.gp_name.setMinimumWidth(120); self.gp_save = self.btn("Save", self.gpu_uv_save)
+        self.line(v, "Save as", self.gp_name, self.gp_save); self.gp_msg = self.hint(""); v.addWidget(self.gp_msg); self.line(v, "Default", self.btn("Reset to default (stock)", self.gpu_uv_reset))
+        v = self.card(lay, "At boot")
+        self.gp_boot = self.switch(v, "Apply the selected profile at boot", self.gpu_boot_set, "Off by default. Guarded: if the laptop does not stay up for 10 minutes after applying it, the next boot skips it and turns this off.")
+        self.reload_gpu_uv(); lay.addStretch()
+
+    def reload_gpu_uv(self, select=None):
+        ns = gpuundervolt.names(); self.gp_list.clear(); self.gp_list.addItems(ns); self.gp_list.setCurrentIndex(max(0, self.gp_list.findText(select or "truesense"))); self.load_gpu_uv(self.gp_list.currentText())
+
+    def load_gpu_uv(self, name):
+        try: p = gpuundervolt.load(name)
+        except Exception as e: self.say(f"Error: {e}"); return
+        locked = name in gpuundervolt.BUILTIN; self.loading = True; self.gp_off.setValue(p["offset"]); self.gp_cap.setValue(p["cap"]); self.loading = False
+        for s_ in (self.gp_off, self.gp_cap): s_.setEnabled(not locked)
+        self.gp_copy.setVisible(locked); self.gp_save.setEnabled(not locked); self.gp_del.setEnabled(not locked)
+        self.gp_msg.setText(p.get("description") or ("Built-in profiles can't be edited. Press Copy to edit." if locked else ""))
+
+    def gpu_uv_values(self): return {"offset": self.gp_off.value(), "cap": self.gp_cap.value() if self.gp_cap.value() >= gpuundervolt.CAP_RANGE[0] else 0}
+
+    def gpu_uv_apply(self):
+        name = self.gp_list.currentText(); v = self.gpu_uv_values()
+        if v["offset"] == 0 and v["cap"] == 0: self.gpu_uv_reset(); return
+        ok = QMessageBox.warning(self, "Apply GPU undervolt", f"Apply '{name}': curve offset {v['offset']:+d} MHz, clock cap {v['cap'] or 'none'} MHz?\n\nIf a game crashes or the screen glitches, this is too aggressive. "
+                                 "A reboot always returns to stock. Save your work first.", QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
+        if ok != QMessageBox.StandardButton.Apply: return
+        self.do(lambda: ipc.call("gpu_undervolt", action="apply", offset=v["offset"], cap=v["cap"], confirm=True, name=name), lambda r: f"GPU undervolt applied: offset {r['offset_mhz']:+d} MHz, cap {r['cap_mhz'] or 'none'} MHz", refresh=False); QTimer.singleShot(900, self.uv_refresh)
+
+    def gpu_uv_reset(self):
+        self.do(lambda: (ipc.call("gpu_undervolt", action="boot_clear"), ipc.call("gpu_undervolt", action="reset"))[1], "GPU undervolt reset to stock (no GPU undervolt at boot)", refresh=False); self.reload_gpu_uv("stock"); QTimer.singleShot(900, self.uv_refresh)
+
+    def gpu_boot_set(self, on):
+        if self.loading: return
+        name = self.gp_list.currentText(); v = self.gpu_uv_values()
+        if not on: self.do(lambda: ipc.call("gpu_undervolt", action="boot_clear"), "GPU undervolt at boot: off", refresh=False); return
+        ok = QMessageBox.warning(self, "GPU undervolt at boot", f"Apply '{name}' every time the laptop starts?\n\nIf the laptop does not stay up for 10 minutes after applying it, the next boot skips it and this switches off.",
+                                 QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
+        if ok != QMessageBox.StandardButton.Apply: self.loading = True; self.gp_boot.setChecked(False); self.loading = False; return
+        self.do(lambda: ipc.call("gpu_undervolt", action="boot", offset=v["offset"], cap=v["cap"], confirm=True, name=name), f"GPU undervolt at boot: {name}", refresh=False)
+
+    def gpu_uv_save(self):
+        name = self.gp_name.text().strip() or self.gp_list.currentText()
+        try: gpuundervolt.save(name, self.gpu_uv_values())
+        except Exception as e: self.gp_msg.setText(str(e)); self.say(f"Error: {e}"); return
+        self.reload_gpu_uv(name); self.say(f"Saved GPU undervolt profile '{name}'")
+
+    def gpu_uv_copy(self):
+        src = self.gp_list.currentText()
+        try: n = gpuundervolt.copy(src, self.gp_name.text().strip() or None)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_gpu_uv(n); self.gp_msg.setText(f"Copied to '{n}'. Change it, then Save and Apply."); self.say(f"Copied '{src}' to '{n}'")
+
+    def gpu_uv_delete(self):
+        name = self.gp_list.currentText()
+        try: gpuundervolt.delete(name)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_gpu_uv(); self.say(f"Deleted GPU undervolt profile '{name}'")
 
     def reload_uv(self, select=None):
         ns = undervolt.names(); self.uv_list.clear(); self.uv_list.addItems(ns); self.uv_list.setCurrentIndex(max(0, self.uv_list.findText(select or "truesense"))); self.load_uv(self.uv_list.currentText())
@@ -947,6 +1017,8 @@ class Window(QMainWindow if Qt else object):
         def work():
             try: r = ipc.call("undervolt", action="get")
             except Exception as e: r = {"error": str(e)}
+            try: r["gpu"] = ipc.call("gpu_undervolt", action="get")
+            except Exception as e: r["gpu"] = {"error": str(e)}
             self.say_uv(r)
         threading.Thread(target=work, daemon=True).start()
 
@@ -960,6 +1032,11 @@ class Window(QMainWindow if Qt else object):
             self.uv_state.setText((f"Applied: {r['applied']['name']}. " if r.get("applied") else "Stock voltage. ") + (f"At boot: {r['boot']['name']}. " if r.get("boot") else "") + ("A boot undervolt is waiting to prove stable." if r.get("pending") else ""))
         else: self.uv_now.setText("not readable"); self.uv_state.setText(str(r.get("error", ""))[:160])
         self.loading = True; self.uv_boot.setChecked(bool(r.get("boot"))); self.loading = False
+        g = r.get("gpu") or {}
+        if "offset_mhz" in g:
+            self.gpu_now.setText(f"offset {g['offset_mhz']:+d} MHz"); self.gpu_state.setText((f"Applied: {g['applied']['name']} (cap {g['applied']['cap'] or 'none'} MHz). " if g.get("applied") else "Not applied by TrueSense. ") + (f"At boot: {g['boot']['name']}. " if g.get("boot") else "") + f"Driver range {g['range_mhz'][0]} to {g['range_mhz'][1]} MHz.")
+        else: self.gpu_now.setText("not readable"); self.gpu_state.setText(str(g.get("error", ""))[:160])
+        self.loading = True; self.gp_boot.setChecked(bool(g.get("boot"))); self.loading = False
 
     def uv_save_do(self):
         name = self.uv_name.text().strip() or self.uv_list.currentText()
@@ -1173,7 +1250,7 @@ class Window(QMainWindow if Qt else object):
                 lv = d["state"]["live"]; sp_ = lv.get("smart_profile")
                 if sp_ and self.smart_cb.currentText() != sp_ and not self.smart_cb.view().isVisible(): self.smart_cb.setCurrentIndex(max(0, self.smart_cb.findText(sp_)))
                 self.smart_status.setText(f"Now: {lv.get('mode_reason')}" if lv.get("mode_reason") and am != "off" else "")
-                hl = d["state"].get("hold_left_s", 0); self.hold_box.setVisible(bool(hl) and am != "off"); self.hold_lbl.setText(f"You picked a mode: held for {max(1, hl // 60)} more min, then {am} auto takes over.")
+                hl = d["state"].get("hold_left_s", 0); self.hold_box.setVisible(bool(hl) and am != "off"); self.hold_lbl.setText(f"Your pick stays until something changes (plug, a game starting or stopping, heat) or {max(1, hl // 60)} more min. Then {am} auto takes over by itself.")
                 fc = d["state"]["live"].get("fan_curve")
                 if fc and self.curve_cb.currentText() != fc and not self.curve_cb.view().isVisible(): self.curve_cb.setCurrentIndex(max(0, self.curve_cb.findText(fc)))
                 if d.get("fan", {}).get("mode") == "manual": self._set(self.fan_pct, max(20, d["fan"]["duty_register_pct"]["cpu"]))

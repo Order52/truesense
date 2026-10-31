@@ -83,6 +83,9 @@ def build():
     p = sub.add_parser("display", help="LCD overdrive"); ds = p.add_subparsers(dest="verb"); q = ds.add_parser("overdrive"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
     p = sub.add_parser("boot", help="boot animation and sound"); bs2 = p.add_subparsers(dest="verb"); q = bs2.add_parser("sound"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
     p = sub.add_parser("gpu", help="GPU mode (MUX); a change needs a reboot"); gs = p.add_subparsers(dest="verb"); gs.add_parser("status"); q = gs.add_parser("set"); q.add_argument("mode", choices=list(hw.GPU_MODES))
+    q = gs.add_parser("undervolt", help="GPU undervolt profiles (clock-curve offset + clock cap; reset on reboot; applying needs --confirm): get | list | show NAME | use NAME --confirm | reset | copy NAME [NEW] | save NAME --offset MHZ [--cap MHZ] | delete NAME | boot NAME|off --confirm")
+    q.add_argument("action", choices=["get", "list", "show", "use", "reset", "copy", "save", "delete", "boot"]); q.add_argument("name", nargs="?"); q.add_argument("new", nargs="?")
+    q.add_argument("--offset", type=int); q.add_argument("--cap", type=int, default=0); q.add_argument("--confirm", action="store_true", help="I understand this can crash games or the driver")
     # rear
     p = sub.add_parser("rear", help="rear light bar"); rs = p.add_subparsers(dest="verb")
     rs.add_parser("status"); rs.add_parser("on"); rs.add_parser("off"); rs.add_parser("toggle")
@@ -282,6 +285,26 @@ def h_boot(a):
 
 def h_gpu(a):
     from . import backend as hw
+    if a.verb == "undervolt":
+        from . import gpuundervolt as gu
+        act = a.action; ipc = _ipc()
+        def show(r): return f"offset {r.get('offset_mhz'):+d} MHz (driver range {r['range_mhz'][0]}..{r['range_mhz'][1]})" if "offset_mhz" in r else f"not readable: {r.get('error')}"
+        if act == "get": r = ipc.call("gpu_undervolt", action="get"); emit(r, show(r) + (f"   (applied: {r['applied']['name']}, cap {r['applied']['cap']} MHz)" if r.get("applied") else "") + (f"   (at boot: {r['boot']['name']})" if r.get("boot") else ""))
+        elif act == "list": r = gu.names(); emit(r, "\n".join(f"  {n:11} offset {gu.load(n)['offset']:>+4} MHz  cap {gu.load(n)['cap'] or 'none':>5}" + ("  - " + gu.BUILTIN[n]["description"] if n in gu.BUILTIN else "") for n in r))
+        elif act == "show": p = gu.load(a.name or "truesense"); emit(p, f"{a.name or 'truesense'}: offset {p['offset']:+d} MHz, cap {p['cap'] or 'none'} MHz   {p['description']}")
+        elif act == "reset": r = ipc.call("gpu_undervolt", action="reset"); emit(r, "GPU undervolt reset: offset 0, no clock cap")
+        elif act == "use":
+            p = gu.load(a.name or ""); r = ipc.call("gpu_undervolt", action="apply", offset=p["offset"], cap=p["cap"], confirm=a.confirm, name=a.name)
+            emit(r, f"applied '{a.name}': offset {r['offset_mhz']:+d} MHz, cap {r['cap_mhz'] or 'none'} MHz   (a reboot returns to stock; `truesense gpu undervolt reset` does it now)")
+        elif act == "copy": n = gu.copy(a.name or "", a.new); emit(n, f"copied '{a.name}' to '{n}'")
+        elif act == "save":
+            if not a.name or a.offset is None: raise HwError("usage: truesense gpu undervolt save NAME --offset 100 --cap 2400")
+            emit(gu.save(a.name, {"offset": a.offset, "cap": a.cap}), f"saved GPU undervolt profile '{a.name}' (use it: truesense gpu undervolt use {a.name} --confirm)")
+        elif act == "delete": gu.delete(a.name or ""); emit(a.name, f"deleted GPU undervolt profile '{a.name}'")
+        elif act == "boot":
+            if a.name in (None, "off"): ipc.call("gpu_undervolt", action="boot_clear"); emit(None, "no GPU undervolt is applied at boot")
+            else: p = gu.load(a.name); emit(ipc.call("gpu_undervolt", action="boot", offset=p["offset"], cap=p["cap"], confirm=a.confirm, name=a.name), f"'{a.name}' will be applied at boot (guarded, like the CPU undervolt)")
+        return
     if a.verb == "set": m = hw.set_gpu_mode(a.mode); emit(m, f"GPU mode: {m}   (takes effect after a reboot)")
     else: emit(hw.get_gpu_mode(), f"GPU mode: {hw.get_gpu_mode()}")
 

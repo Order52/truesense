@@ -9,7 +9,7 @@ fan|fan curve list|fan curve show truesense|fan curve show quiet|fan curve copy 
 battery|battery status|battery limit status|battery limit on|battery limit off|battery limit toggle|battery calibration on|battery calibration off|battery usb-charge|battery usb-charge 10|battery usb-charge 30
 display overdrive|display overdrive on|display overdrive off|display overdrive toggle
 boot sound|boot sound on|boot sound off|boot sound toggle
-gpu|gpu status|gpu set auto|gpu set nvidia
+gpu|gpu undervolt list|gpu undervolt show truesense|gpu undervolt copy truesense gmine|gpu undervolt save gmine2 --offset 80 --cap 2300|gpu undervolt show gmine2|gpu undervolt delete gmine2|gpu undervolt delete gmine|gpu undervolt get|gpu undervolt use stock|gpu undervolt reset|gpu undervolt boot off|gpu status|gpu set auto|gpu set nvidia
 rear|rear status|rear on|rear off|rear toggle|rear set breathing --color 00ff88 --brightness 70|rear set static --color ff0000 --speed 2 --direction 0
 keyboard|keyboard status|keyboard on|keyboard off|keyboard toggle|keyboard restore|keyboard list-keys|keyboard effect wave|keyboard effect neon --brightness 50|keyboard effect operatingmode --color 00ff00
 keyboard effect breathing|keyboard speed 3|keyboard speed 11|keyboard color 00ff00|look list|startup boot|startup boot current|startup boot clear|startup boot smokelook|look save smokelook|look show smokelook|look apply smokelook|startup set keyboard look:smokelook|startup set rear look:smokelook|startup apply|look delete smokelook|keyboard paint w=ff0000 arrows=00ff00|keyboard layout|startup|startup show|startup set keyboard last|startup set rear off|startup set keyboard none|startup apply|rear set static --zones ff0000,00ff00,0000ff|rear set static --zones ff0000|keyboard fill ff0000|keyboard gradient ff3300 6600ff|keyboard rainbow|keyboard keys wasd=ff0000 esc=00ff00 --base 101010|keyboard brightness|keyboard brightness 30
@@ -24,6 +24,7 @@ completion bash|completion zsh|completion fish
 """.replace("|doctor-skip", "").strip()
 
 FAILING_BY_DESIGN = [
+    "gpu undervolt save truesense --offset 50", "gpu undervolt save x --offset 900", "gpu undervolt save x --offset 50 --cap 100", "gpu undervolt delete truesense", "gpu undervolt show nosuch", "gpu undervolt save x",
     "keys profile save default --tap power:eco", "keys profile delete default", "keys profile show nosuch", "keys profile save q --tap frobnicate", "keys profile save q --long-ms 5", "keys profile use",
     "cpu undervolt save truesense --core -10 --cache -10", "cpu undervolt save x --core -200 --cache -10", "cpu undervolt save x --core 5 --cache -10", "cpu undervolt delete truesense", "cpu undervolt show nosuch", "cpu undervolt set -10",
     "power smart save truesense --set ac_busy=turbo", "power smart delete truesense", "power smart show nosuch", "power smart save q --set ac_busy=warp", "power smart save q --set turbo_after_s=1", "power smart use",

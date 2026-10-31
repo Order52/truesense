@@ -22,7 +22,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `power set MODE`, `next`, `prev`, `list`, `status` | eco, quiet, balanced, performance, turbo |
 | `power auto off\|native\|smart` | who picks the power mode: you (`off`), **native** (like PredatorSense on Windows: Balanced on power, Eco on battery), or **smart** (heat, load and battery aware: Performance when you game or work hard, Turbo when that is sustained and cool enough, a back-off if it overheats, Eco on battery); `on` = smart |
 | `power smart list\|current\|show NAME\|use NAME\|copy NAME [NEW]\|save NAME [--from BASE] --set key=value\|delete NAME` | Smart auto profiles (how it chooses the mode): built in `truesense` (ours), `battery-first`, `performance-first`, `silent`; built-ins are read-only, copy one to edit |
-| `power hold [MIN]`, `power release` | keep your manual choice against the automatic mode (30 min by default) |
+| `power hold [MIN]`, `power release` | a mode you pick yourself overrides auto only until the situation changes (you plug or unplug, a game starts or stops, it overheats, the battery gets low) or the time is up (10 min by default); then auto takes over again on its own. Choosing Native or Smart auto applies at once |
 | `fan auto \| max \| set CPU [GPU] \| status` | fans; manual duty 20-100 % |
 | `fan smart on\|off\|toggle` | the daemon's smart curve |
 | `fan curve list\|current\|show NAME\|use NAME` | fan curves (temperature to duty, CPU and GPU separately): built in `truesense` (tuned for this laptop), `quiet`, `performance`, `max-cooling`, plus yours |
@@ -50,6 +50,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `keys show\|set GESTURE ACTION\|reset\|test ACTION\|actions\|timing` | the PREDATOR key (see below) |
 | `keys profile list\|current\|show NAME\|use NAME\|copy NAME [NEW]\|save NAME [--from BASE] [--tap A --double A --triple A --long A --fn-esc A --long-ms N --multi-ms N]\|delete NAME` | PREDATOR key profiles: built in `default` (the standard behaviour), `gaming`, `work`, `lights`; built-ins are read-only, copy to edit |
 | `profile list\|show\|save\|apply\|delete\|next` | bundles of power, fans, lighting, battery, audio |
+| `gpu undervolt get\|list\|show NAME\|use NAME --confirm\|reset\|copy NAME [NEW]\|save NAME --offset MHZ [--cap MHZ]\|delete NAME\|boot NAME\|off --confirm` | NVIDIA GPU undervolt through NVML: a clock-curve offset plus an optional clock cap (profiles `stock`, `truesense`, `mild`, `cool`, `efficient`; built-ins are read-only). Same safeguards as the CPU undervolt: `--confirm`, reboot returns to stock, guarded boot apply |
 | `cpu info`, `cpu limits PL1 PL2` | RAPL power limits |
 | `cpu undervolt get\|list\|show NAME\|use NAME --confirm\|reset\|copy NAME [NEW]\|save NAME --core MV --cache MV\|delete NAME\|boot NAME\|off --confirm` | undervolt profiles (`stock`, `truesense`, `mild`, `balanced`, `aggressive`; built-ins are read-only): nothing applies without `--confirm`, a reboot returns to stock, and "at boot" is guarded (skipped and switched off if the previous boot did not stay up 10 minutes). The offsets are conservative starting points, not validated on every unit |
 | `touchpad on\|off\|toggle` | touchpad inhibit |

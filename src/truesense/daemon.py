@@ -5,9 +5,10 @@ a missing/failing device never kills the daemon (it keeps waiting and retrying).
 20 % ~1700 rpm, 30 2160, 40 2850, 50 3460, 60 4070, 70 4600, 80 5100, 100 6050. Firmware Auto is the only way to reach 0 rpm, so when calm control goes back to it.
 """
 import glob, os, pwd, signal, socket, subprocess, sys, threading, time
-from . import backend as hw, config, cpu, curves, ipc, looks, smartprofiles, undervolt, osd, state as statemod, touchpad
+from . import backend as hw, config, cpu, curves, gpuundervolt, ipc, looks, smartprofiles, undervolt, osd, state as statemod, touchpad
 
 RUN = os.environ.get("TRUESENSE_RUN", "/run/truesense")
+GPU_UV_PENDING = os.environ.get("TRUESENSE_GPU_UV_PENDING", "/var/lib/truesense/gpu-uv-pending")
 UV_PENDING = os.environ.get("TRUESENSE_UV_PENDING", "/var/lib/truesense/uv-pending")      # exists while an undervolt applied at boot has not yet proven stable
 RAPL = "/sys/class/powercap/intel-rapl:0/"
 
@@ -53,7 +54,7 @@ class Brain:
         self.tcpu = self.tgpu = self.tchassis = None; self.rpm = (0, 0)
         self.hist_c, self.hist_g = [], []
         self.tick = self.calm = self.busy_hold = self.last_try = 0
-        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self._smart = None; self.uv_since = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
+        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self._smart = None; self.uv_since = None; self.gpu_uv_since = None; self.hold_ctx = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
         self.written = None                      # (cpu, gpu) last written, (0, 0) = firmware Auto
         self.activity = "idle"; self.last_target = None; self.last_ac = None; self.cur_mode = None
         self.cap = self.p["cap_max_khz"]; self.cap_changed = 0
@@ -186,6 +187,24 @@ class Brain:
             if v is not None: return v
         return 100
 
+    def bucket(self): return "busy" if self.activity in ("gaming", "heavy", "hot") else "light"
+
+    def set_hold(self, minutes):
+        """A mode you pick yourself only overrides auto until the situation changes (plug or unplug, load starts or stops, heat) or the time is up; then auto takes over by itself."""
+        if not minutes: self.st.set("profile_hold_until", 0); self.hold_ctx = None; return 0
+        self.st.set("profile_hold_until", time.time() + float(minutes) * 60); self.hold_ctx = {"ac": self.last_ac, "bucket": self.bucket()}; return float(minutes)
+
+    def hold_broken(self):
+        """True (and the hold is dropped) once the situation you picked the mode in no longer holds."""
+        c = self.hold_ctx
+        if not c: return False
+        low = (not self.last_ac) and self.battery_pct() < self._smart_low()
+        if c["ac"] != self.last_ac or c["bucket"] != self.bucket() or self.activity == "hot" or low:
+            self.set_hold(0); self.mode_changed = -999; self.last_target = None; return True
+        return False
+
+    def _smart_low(self): return (self._smart or self.smart_cfg())["battery_low_pct"]
+
     def smart_cfg(self):
         data = self.st.get("smart_profile_data")
         try: return smartprofiles.validate(data) if data else smartprofiles.load(self.st.get("smart_profile", "truesense"))
@@ -214,7 +233,8 @@ class Brain:
     def auto_profile(self):
         """Automatic power mode. native = PredatorSense-like (power source only); smart = temperature, load and battery aware; off = hands off."""
         kind = self.auto_kind()
-        if kind == "off" or self.legacy("predator-auto-off") or time.time() < self.st.get("profile_hold_until", 0) or not self.cur_mode: return
+        if kind == "off" or self.legacy("predator-auto-off") or not self.cur_mode: return
+        if time.time() < self.st.get("profile_hold_until", 0) and not self.hold_broken(): return          # your own pick is still in force
         if kind == "native": target, urgent = self.c["native"]["ac" if self.last_ac else "battery"], True        # follows the plug at once
         else: target, urgent = self.smart_target()
         self.reason = f"{self.activity}, {'on power' if self.last_ac else 'on battery'}" + (f", {int(self.heavy_for)} s heavy" if kind == "smart" and self.heavy_for else "")
@@ -274,6 +294,24 @@ class Brain:
             try: os.remove(UV_PENDING)
             except OSError: pass
 
+    def apply_gpu_uv_boot(self):
+        """Same guard as the CPU undervolt: skipped and switched off if the previous boot did not stay up 10 minutes after applying it."""
+        b = self.st.get("gpu_uv_boot")
+        if not b: return
+        if os.path.exists(GPU_UV_PENDING):
+            self.st.set("gpu_uv_boot", None)
+            try: os.remove(GPU_UV_PENDING)
+            except OSError: pass
+            print("GPU undervolt at boot disabled: the previous boot did not stay up for 10 minutes after applying it", flush=True); return
+        try:
+            os.makedirs(os.path.dirname(GPU_UV_PENDING), exist_ok=True)
+            with open(GPU_UV_PENDING, "w") as f: f.write(str(time.time()))
+            gpuundervolt.apply(b["offset"], b["cap"]); self.gpu_uv_since = time.monotonic(); print(f"GPU undervolt at boot: offset {b['offset']} MHz, cap {b['cap']} MHz", flush=True)
+        except (hw.HwError, OSError) as e:
+            print(f"GPU undervolt at boot failed: {e}", flush=True)
+            try: os.remove(GPU_UV_PENDING)
+            except OSError: pass
+
     def apply_boot_look(self, why):
         """Put the look chosen for boot on the lights (the keyboard may enumerate a little after we start, so retry for ~20 s)."""
         def work():
@@ -290,6 +328,10 @@ class Brain:
 
     def step(self):
         wall, mono = time.time(), time.monotonic()
+        if self.gpu_uv_since and mono - self.gpu_uv_since > 600:
+            self.gpu_uv_since = None
+            try: os.remove(GPU_UV_PENDING)
+            except OSError: pass
         if self.uv_since and mono - self.uv_since > 600:                                 # the boot undervolt survived 10 minutes: drop the crash-guard flag
             self.uv_since = None
             try: os.remove(UV_PENDING)
@@ -345,7 +387,9 @@ class Brain:
         def set_(key, value):
             if key == "auto_mode":
                 if value not in ("off", "native", "smart"): raise hw.HwError("auto_mode: off | native | smart")
-                self.st.set("auto_mode", value); self.st.set("auto_profile", value != "off"); self.log(f"setting auto_mode = {value}", 20); return self.st.snapshot()
+                self.st.set("auto_mode", value); self.st.set("auto_profile", value != "off"); self.log(f"setting auto_mode = {value}", 20)
+                if value != "off": self.set_hold(0); self.mode_changed = -999; self.last_target = None; self.heavy_for = 0         # choosing auto means: take over now
+                return self.st.snapshot()
             if key not in ("smart_fan", "auto_profile", "operating_follow"): raise hw.HwError(f"unknown setting {key!r}")
             if not isinstance(value, bool): raise hw.HwError("value must be true or false")
             if key == "auto_profile": self.st.set("auto_mode", "smart" if value else "off")
@@ -370,7 +414,7 @@ class Brain:
         def power(mode, hold_minutes=None):
             with self.lock:
                 new = hw.set_mode(mode); self.cur_mode = new
-                if hold_minutes: self.st.set("profile_hold_until", time.time() + float(hold_minutes) * 60)
+                if hold_minutes: self.set_hold(hold_minutes)
                 return new
 
         def fan_curve(action="get", name=None, data=None):
@@ -413,6 +457,27 @@ class Brain:
                     return {"core_mv": cpu.uv_get(0), "cache_mv": cpu.uv_get(2)}
                 raise hw.HwError("undervolt: get | apply | reset | boot | boot_clear")
 
+        def gpu_undervolt(action="get", offset=None, cap=0, confirm=False, name=None):
+            """get | apply (offset MHz, cap MHz; needs confirm) | reset | boot | boot_clear. Neither setting survives a reboot."""
+            with self.lock:
+                if action == "get":
+                    try: cur = gpuundervolt.read()
+                    except hw.HwError as e: cur = {"error": str(e)}
+                    return {**cur, "applied": self.st.get("gpu_uv_applied"), "boot": self.st.get("gpu_uv_boot"), "pending": os.path.exists(GPU_UV_PENDING)}
+                if action == "reset": r = gpuundervolt.reset(); self.st.set("gpu_uv_applied", None); self.log("GPU undervolt reset", 5); return r
+                if action == "boot_clear": self.st.set("gpu_uv_boot", None); return None
+                if action in ("apply", "boot"):
+                    if not confirm: raise hw.HwError("a GPU undervolt needs explicit confirmation (it can crash games or the driver if too aggressive)")
+                    p = gpuundervolt.validate({"offset": offset, "cap": cap})
+                    if action == "boot": self.st.set("gpu_uv_boot", {"name": name, **p}); return self.st.get("gpu_uv_boot")
+                    try: r = gpuundervolt.apply(p["offset"], p["cap"])
+                    except hw.HwError:
+                        try: gpuundervolt.reset()
+                        except hw.HwError: pass
+                        raise
+                    self.st.set("gpu_uv_applied", {"name": name, **p}); self.log(f"GPU undervolt applied: offset {p['offset']} MHz, cap {p['cap']} MHz", 5); return r
+                raise hw.HwError("gpu_undervolt: get | apply | reset | boot | boot_clear")
+
         def boot_look(action="get", look=None):
             if action == "get": return looks.read_boot()
             if action == "clear": looks.write_boot(None); return None
@@ -422,8 +487,7 @@ class Brain:
             raise hw.HwError("boot_look: get | set | clear")
 
         def hold(minutes=None):
-            if minutes is None: self.st.set("profile_hold_until", 0); return 0
-            self.st.set("profile_hold_until", time.time() + float(minutes) * 60); return float(minutes)
+            with self.lock: return self.set_hold(minutes)
 
         def limits(pl1, pl2): return cpu.set_limits(float(pl1), float(pl2))
 
@@ -432,7 +496,7 @@ class Brain:
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "gpu_undervolt": gpu_undervolt, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
 
 
 def main():
@@ -443,12 +507,12 @@ def main():
         cfg = config.merge(config.copy.deepcopy(config.DEFAULTS), {"user": cfg["user"]})
     os.makedirs(RUN, exist_ok=True)
     st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "smart" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "smart_profile": "truesense", "smart_profile_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
-    st.set("uv_applied", None)                                       # offsets never survive a reboot, so nothing is applied now
+    st.set("uv_applied", None); st.set("gpu_uv_applied", None)                                       # offsets never survive a reboot, so nothing is applied now
     brain = Brain(cfg, st)
     uids = [brain.pw.pw_uid] if brain.pw else []
     server = ipc.Server(brain.handlers(), uids); server.start()
     signal.signal(signal.SIGTERM, brain.shutdown); signal.signal(signal.SIGINT, brain.shutdown)
-    brain.apply_boot_look("boot"); brain.apply_uv_boot()
+    brain.apply_boot_look("boot"); brain.apply_uv_boot(); brain.apply_gpu_uv_boot()
     sd_notify("READY=1"); nxt = time.monotonic()
     try:
         while True:
