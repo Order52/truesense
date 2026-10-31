@@ -9,7 +9,7 @@ from .device import HwError
 try:
     from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QRectF
     from PyQt6.QtNetwork import QLocalServer, QLocalSocket
-    from PyQt6.QtGui import QColor, QPainter, QFont, QPen
+    from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
                                  QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox, QGridLayout)
 except ImportError as _e:
@@ -18,7 +18,7 @@ except ImportError as _e:
 
 ACCENT = "#19e3ff"
 STYLE = """
-* { font-family: "Inter", "Noto Sans", "Segoe UI", sans-serif; font-size: 13px; }
+* { font-family: "Inter", "Noto Sans", "Segoe UI", sans-serif; font-size: 14px; }
 QMainWindow, QWidget { background: #0b0e13; color: #e8edf3; }
 #side { background: #080a0e; border-right: 1px solid #151a22; }
 #brand { font-size: 17px; font-weight: 800; letter-spacing: 3px; color: #19e3ff; }
@@ -28,13 +28,13 @@ QListWidget::item { padding: 11px 14px; border-radius: 10px; margin: 2px 0; colo
 QListWidget::item:selected { background: #10252b; color: #19e3ff; }
 QListWidget::item:hover:!selected { background: #11161d; color: #cfd6e0; }
 #card { background: transparent; border: none; }
-#cardtitle { font-size: 14px; font-weight: 700; color: #e8edf3; }
+#cardtitle { font-size: 15px; font-weight: 700; color: #e8edf3; }
 #tile { background: #11151c; border: 1px solid #1b222c; border-radius: 16px; }
 #tilevalue { font-size: 26px; font-weight: 700; color: #ffffff; }
 #tilelabel { font-size: 11px; letter-spacing: 1px; color: #6c7787; }
 #hint { color: #6c7787; font-size: 12px; }
 #h1 { font-size: 20px; font-weight: 700; }
-#stats { color: #aab3c0; font-size: 12px; }
+#stats { color: #aab3c0; font-size: 13px; }
 QPushButton { background: #171d26; border: 1px solid #222b37; border-radius: 10px; padding: 8px 16px; color: #dfe5ee; }
 QPushButton:hover { background: #1d2530; border-color: #2c3847; }
 QPushButton:pressed { background: #10252b; }
@@ -164,11 +164,12 @@ class KeyboardView(QWidget if Qt else object):
 
 class Window(QMainWindow if Qt else object):
     def __init__(self):
-        super().__init__(); self.setWindowTitle("TrueSense"); self.resize(470, 860); self.setMinimumSize(440, 560)
+        super().__init__(); self.setWindowTitle("TrueSense"); geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(500, min(900, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it instead of stretching it
         self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.refreshed.connect(self._apply); self.busy = {}; self.loading = False
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready"); self.names = []
         for build in (self.p_home, self.p_keys, self.p_audio, self.p_settings): build()
+        self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == 2 else "home"))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(2000); self.full_refresh(); self.tick()
 
     # ---- plumbing --------------------------------------------------------------------------------------------------------------------
@@ -378,22 +379,27 @@ class Window(QMainWindow if Qt else object):
 
     # ---- refresh -----------------------------------------------------------------------------------------------------------------------
     def tick(self):
+        if not self.isVisible() or self.isMinimized(): return
         try:
             s = hw.sensors(); self.stat_cpu.setText(f"CPU: {s['cpu_temp']} °C · {s['cpu_fan_rpm']} RPM"); self.stat_gpu.setText(f"GPU: {s['gpu_temp']} °C · {s['gpu_fan_rpm']} RPM")
             self.stat_fan.setText(f"{max(s['cpu_fan_rpm'], s['gpu_fan_rpm'])} RPM"); self.stat_bat.setText(self.src)
         except HwError: pass
 
-    def full_refresh(self):
+    def full_refresh(self, scope=None):
+        """Read the hardware off the UI thread. The audio page (pactl, amixer, DTS) is only read while it is shown, so the main page stays quick."""
+        scope = scope or ("audio" if self.pages.currentIndex() == 2 else "home")
         def work():
             d = {}
             def get(k, fn):
                 try: d[k] = fn()
                 except Exception: pass
-            get("state", lambda: ipc.call("state")); get("mode", hw.get_mode); get("fan", hw.fan_state); get("rear", hw.rear_get); get("kb", keyboard.get_brightness)
-            get("kbtimeout", hw.get_kb_timeout); get("limit", hw.get_battery_limit); get("calib", hw.get_calibration); get("usb", hw.get_usb_charge); get("od", hw.get_overdrive)
-            get("boot", hw.get_boot_sound); get("gpu", hw.get_gpu_mode); get("out", audio.output_status); get("jack", audio.jack_status); get("mic", audio.mic_state)
-            get("boost", audio.headset_boost); get("voice", audio.voice_modes); get("look", keyboard.last); get("cells", keyboard.current_cells); get("ac", hw.on_ac)
-            get("jackset", lambda: config.load()["audio"]["jack"]); get("dts", lambda: "DTS:            on" in audio.dts_status())
+            if scope == "audio":
+                get("out", audio.output_status); get("jack", audio.jack_status); get("mic", audio.mic_state); get("boost", audio.headset_boost); get("voice", audio.voice_modes)
+                get("jackset", lambda: config.load()["audio"]["jack"]); get("dts", lambda: "DTS:            on" in audio.dts_status())
+            else:
+                get("state", lambda: ipc.call("state")); get("mode", hw.get_mode); get("fan", hw.fan_state); get("rear", hw.rear_get); get("kb", keyboard.get_brightness)
+                get("kbtimeout", hw.get_kb_timeout); get("limit", hw.get_battery_limit); get("calib", hw.get_calibration); get("usb", hw.get_usb_charge); get("od", hw.get_overdrive)
+                get("boot", hw.get_boot_sound); get("gpu", hw.get_gpu_mode); get("look", keyboard.last); get("cells", keyboard.current_cells); get("ac", hw.on_ac)
             self.bus.refreshed.emit(d)
         threading.Thread(target=work, daemon=True).start()
 
@@ -427,15 +433,23 @@ class Window(QMainWindow if Qt else object):
             if d.get("boost") is not None: self.boost.setValue(d["boost"])
             if "voice" in d:
                 v = d["voice"]; self.v_head.set_index(VOICE.index(v["headset"]) if v.get("headset") in VOICE else 0); self.v_arr.set_index(VOICE.index(v["array"]) if v.get("array") in VOICE else 0)
-            self.v_note.setChecked(bool(config.load()["audio"]["notify"]))
+            if "voice" in d: self.v_note.setChecked(bool(config.load()["audio"]["notify"]))
         finally: self.loading = False
+
+
+def _icon():
+    """A small drawn app icon (no image files to ship): a cyan ring with a T."""
+    pm = QPixmap(128, 128); pm.fill(Qt.GlobalColor.transparent); p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setBrush(QColor("#0b0e13")); p.setPen(QPen(QColor(ACCENT), 9)); p.drawEllipse(10, 10, 108, 108)
+    f = QFont(); f.setBold(True); f.setPixelSize(70); p.setFont(f); p.setPen(QColor(ACCENT)); p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "T"); p.end(); return QIcon(pm)
 
 
 def main(page=None):
     if Qt is None:
         print(f"The window needs python-pyqt6 ({_IMPORT_ERROR}).  Arch: sudo pacman -S python-pyqt6.  Everything works from the command line without it.")
         return 1
-    app = QApplication(sys.argv[:1]); app.setApplicationName("TrueSense"); app.setDesktopFileName("truesense"); app.setStyle("Fusion"); app.setStyleSheet(STYLE)
+    __import__("os").environ.setdefault("QT_LOGGING_RULES", "qt.qpa.wayland.textinput=false")
+    app = QApplication(sys.argv[:1]); app.setApplicationName("TrueSense"); app.setWindowIcon(_icon()); app.setDesktopFileName("truesense"); app.setStyle("Fusion"); app.setStyleSheet(STYLE)
     name = "truesense-gui-" + str(__import__("os").getuid())
     probe = QLocalSocket(); probe.connectToServer(name)
     if probe.waitForConnected(150):                                   # already open: bring that window forward instead of starting a second one
