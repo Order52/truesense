@@ -16,7 +16,7 @@ Or, without cloning: `curl -fsSL https://raw.githubusercontent.com/Order52/trues
 
 The installer is safe to re-run (it upgrades). It removes older helper drivers from earlier versions of this project (backing them up first), builds the DKMS module for every installed kernel (so kernel updates keep working), installs the daemon and user services, a udev rule, and a health timer that repairs a stalled daemon or missing module. `sudo tools/uninstall.sh [--purge]` removes it all. On Arch: `cd packaging/arch && makepkg -si`.
 
-Needs: Linux 6.6+, `dkms` and matching kernel headers, Python 3.11+, systemd. For audio features: PipeWire and the RNNoise plugin (`--with-audio` installs it on Arch). The window needs `python-gobject`, GTK 4 and libadwaita.
+Needs: Linux 6.6+, `dkms` and matching kernel headers, Python 3.11+, systemd. For audio features: PipeWire and the RNNoise plugin (`--with-audio` installs it on Arch). The window needs `python-pyqt6` (Qt 6; native on Wayland and X11).
 
 ## What it does
 

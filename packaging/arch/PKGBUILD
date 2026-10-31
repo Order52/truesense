@@ -11,8 +11,7 @@ license=('GPL-2.0-only')
 depends=('python' 'dkms' 'systemd')
 optdepends=('linux-headers: build the kernel module (any installed kernel needs its own headers)'
             'noise-suppression-for-voice: Purified Voice (RNNoise) microphone noise reduction'
-            'python-gobject: optional window (truesense gui)'
-            'libadwaita: optional window (truesense gui)'
+            'python-pyqt6: optional window (truesense gui)'
             'nvidia-utils: GPU temperature and power'
             'alsa-tools: codec diagnostics')
 backup=('etc/truesense/config.toml')
