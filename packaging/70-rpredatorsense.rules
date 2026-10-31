@@ -1,0 +1,4 @@
+# /dev/acer-rear (whitelisted WMI interface) usable by the plugdev group
+KERNEL=="acer-rear", SUBSYSTEM=="misc", GROUP="plugdev", MODE="0660"
+# touchpad toggle (Fn+F10) without root: let plugdev write the kernel inhibit switch
+SUBSYSTEM=="input", KERNEL=="input[0-9]*", ATTR{name}=="SYNA7DB5:00 06CB:CEAF Touchpad", RUN+="/bin/sh -c 'chgrp plugdev /sys%p/inhibited; chmod g+w /sys%p/inhibited'"

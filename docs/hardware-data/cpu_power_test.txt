@@ -1,0 +1,42 @@
+== 13:01:55 RAPL baseline
+{
+  "pl1_w": 80.0,
+  "pl2_w": 80.0,
+  "rapl_enabled": "1",
+  "msr_lock_bit": false,
+  "nvidia_power_limit_w": {
+    "current": "[N/A]",
+    "default": "80.00",
+== RAPL write test: PL1=70 W PL2=80 W (the running daemon re-asserts 80/80 within ~3 s anyway)
+{
+  "pl1_w": 70.0,
+  "pl2_w": 80.0
+}
+-- restore 80/80
+{
+  "pl1_w": 80.0,
+  "pl2_w": 80.0
+}
+== range check (must refuse 200 W)
+error: PL1/PL2 must be 25..120 W with PL2 >= PL1
+== NVIDIA power limit
+power.limit [W], power.default_limit [W], power.min_limit [W], power.max_limit [W]
+[N/A], 80.00 W, 5.00 W, 140.00 W
+-- try setting the default limit (80 W) back to itself:
+Changing power management limit is not supported for GPU: 00000000:01:00.0.
+Treating as warning and moving on.
+All done.
+== MSR / undervolt (READ ONLY)
+-- core plane offset:
+{
+  "plane": 0,
+  "offset_mv": 0
+}
+-- cache plane offset:
+{
+  "plane": 2,
+  "offset_mv": 0
+}
+-- MSR 0x610 lock bit / FLEX_RATIO:
+  "msr_lock_bit": false,
+1f0000

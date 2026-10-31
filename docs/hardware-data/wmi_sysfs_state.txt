@@ -1,0 +1,138 @@
+== /sys/bus/wmi/devices/05901221-D566-11D1-B2F0-00A0C9062910-12
+wmi:05901221-D566-11D1-B2F0-00A0C9062910
+../../../../../../bus/wmi/drivers/wmi-bmof
+== /sys/bus/wmi/devices/05901221-D566-11D1-B2F0-00A0C9062910-16
+wmi:05901221-D566-11D1-B2F0-00A0C9062910
+../../../../../../bus/wmi/drivers/wmi-bmof
+== /sys/bus/wmi/devices/05901221-D566-11D1-B2F0-00A0C9062910-18
+wmi:05901221-D566-11D1-B2F0-00A0C9062910
+../../../../../../bus/wmi/drivers/wmi-bmof
+== /sys/bus/wmi/devices/1EA0BC57-521E-461B-A7A9-5D36F141A82A-3
+wmi:1EA0BC57-521E-461B-A7A9-5D36F141A82A
+== /sys/bus/wmi/devices/1F13AB7F-6220-4210-8F8E-8BB5E71EE969-17
+wmi:1F13AB7F-6220-4210-8F8E-8BB5E71EE969
+== /sys/bus/wmi/devices/2BC49DEF-7B15-4F05-8BB7-EE37B9547C0B-14
+wmi:2BC49DEF-7B15-4F05-8BB7-EE37B9547C0B
+== /sys/bus/wmi/devices/2E6B3CE2-6A58-4AF2-8767-4640CA8A38E3-1
+wmi:2E6B3CE2-6A58-4AF2-8767-4640CA8A38E3
+== /sys/bus/wmi/devices/4BB53443-488A-430D-A25C-874660E23BDD-9
+wmi:4BB53443-488A-430D-A25C-874660E23BDD
+== /sys/bus/wmi/devices/603E9613-EF25-4338-A3D0-C46177516DB7-13
+wmi:603E9613-EF25-4338-A3D0-C46177516DB7
+== /sys/bus/wmi/devices/61EF69EA-865C-4BC3-A502-A0DEBA0CB531-2
+wmi:61EF69EA-865C-4BC3-A502-A0DEBA0CB531
+== /sys/bus/wmi/devices/676AA15E-6A47-4D9F-A2CC-1E6D18D14026-0
+wmi:676AA15E-6A47-4D9F-A2CC-1E6D18D14026
+== /sys/bus/wmi/devices/77B0C3A7-F71D-43CB-B749-91CBFF5DDC43-7
+wmi:77B0C3A7-F71D-43CB-B749-91CBFF5DDC43
+== /sys/bus/wmi/devices/79772EC5-04B1-4BFD-843C-61E7F77B6CC9-4
+wmi:79772EC5-04B1-4BFD-843C-61E7F77B6CC9
+== /sys/bus/wmi/devices/7A4DDFE7-5B5D-40B4-8595-4408E0CC7F56-8
+wmi:7A4DDFE7-5B5D-40B4-8595-4408E0CC7F56
+../../../../../../bus/wmi/drivers/acer-rear-wmi
+== /sys/bus/wmi/devices/9F98130E-3B48-40B3-9402-DE8E160F30CC-11
+wmi:9F98130E-3B48-40B3-9402-DE8E160F30CC
+== /sys/bus/wmi/devices/A6FEA33E-DABF-46F5-BFC8-460D961BEC9F-15
+wmi:A6FEA33E-DABF-46F5-BFC8-460D961BEC9F
+== /sys/bus/wmi/devices/A9D77EF6-55E0-4706-B139-96ACE13F2269-10
+wmi:A9D77EF6-55E0-4706-B139-96ACE13F2269
+== /sys/bus/wmi/devices/F75F5666-B8B3-4A5D-A91C-7488F62E5637-5
+wmi:F75F5666-B8B3-4A5D-A91C-7488F62E5637
+== /sys/bus/wmi/devices/FE1DBBDA-3014-4856-870C-5B3A744BF341-6
+wmi:FE1DBBDA-3014-4856-870C-5B3A744BF341
+
+/sys/devices/platform/acer-wmi:
+driver
+driver_override
+hwmon
+modalias
+platform-profile
+power
+predator_sense
+rfkill
+subsystem
+uevent
+
+/sys/devices/platform/acer-wmi/hwmon:
+hwmon5
+
+/sys/devices/platform/acer-wmi/hwmon/hwmon5:
+device
+fan1_input
+fan2_input
+name
+power
+subsystem
+temp1_input
+temp2_input
+temp3_input
+uevent
+
+/sys/devices/platform/acer-wmi/hwmon/hwmon5/power:
+autosuspend_delay_ms
+control
+runtime_active_time
+runtime_status
+runtime_suspended_time
+
+/sys/devices/platform/acer-wmi/platform-profile:
+platform-profile-0
+
+/sys/devices/platform/acer-wmi/platform-profile/platform-profile-0:
+choices
+device
+name
+power
+profile
+subsystem
+uevent
+
+/sys/devices/platform/acer-wmi/platform-profile/platform-profile-0/power:
+autosuspend_delay_ms
+control
+runtime_active_time
+runtime_status
+runtime_suspended_time
+
+/sys/devices/platform/acer-wmi/power:
+autosuspend_delay_ms
+control
+runtime_active_time
+runtime_status
+runtime_suspended_time
+
+/sys/devices/platform/acer-wmi/predator_sense:
+backlight_timeout
+battery_calibration
+battery_limiter
+boot_animation_sound
+fan_speed
+lcd_override
+usb_charging
+
+/sys/devices/platform/acer-wmi/rfkill:
+rfkill0
+rfkill1
+
+/sys/devices/platform/acer-wmi/rfkill/rfkill0:
+device
+hard
+hard_block_reasons
+index
+name
+persistent
+
+low-power
+low-power quiet balanced balanced-performance performance
+
+xargs: warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value
+/sys/class/hwmon/hwmon0/name: ACAD
+/sys/class/hwmon/hwmon1/name: acpitz
+/sys/class/hwmon/hwmon2/name: BAT1
+/sys/class/hwmon/hwmon3/name: nvme
+/sys/class/hwmon/hwmon4/name: nvme
+/sys/class/hwmon/hwmon5/name: acer
+/sys/class/hwmon/hwmon6/name: spd5118
+/sys/class/hwmon/hwmon7/name: spd5118
+/sys/class/hwmon/hwmon8/name: coretemp
+/sys/class/hwmon/hwmon9/name: iwlwifi_1

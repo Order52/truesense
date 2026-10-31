@@ -1,0 +1,22 @@
+[Unit]
+Description=rpredatorsense: smart fan curve, thermal governor and power-profile automation (Acer Predator PH16-71)
+After=systemd-modules-load.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=main
+WatchdogSec=15
+ExecStartPre=-/usr/bin/modprobe acer_rear_wmi
+ExecStartPre=-/usr/bin/modprobe linuwu_sense
+ExecStart=/usr/local/bin/rpredatorsense daemon
+# however it ends (crash, kill, hang, stop, update): fans back to firmware control, clocks uncapped
+ExecStopPost=-/usr/local/bin/rpredatorsense fan auto
+ExecStopPost=/bin/sh -c 'for f in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_max_freq; do echo 5000000 > $f; done; true'
+Restart=always
+RestartSec=1
+Nice=-10
+OOMScoreAdjust=-1000
+
+[Install]
+WantedBy=multi-user.target

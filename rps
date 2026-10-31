@@ -1,0 +1,2 @@
+#!/bin/sh
+exec env PYTHONPATH="$(dirname "$(readlink -f "$0")")/src" python3 -m rpredatorsense "$@"

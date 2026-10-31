@@ -1,0 +1,15 @@
+enp109s0-0::lan
+enp109s0-1::lan
+enp109s0-2::lan
+input28::capslock
+input28::compose
+input28::kana
+input28::numlock
+input28::scrolllock
+input3::capslock
+input3::numlock
+input3::scrolllock
+input5::capslock
+input5::numlock
+input5::scrolllock
+phy0-led

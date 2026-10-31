@@ -1,0 +1,11 @@
+codec /dev/snd/hwC1D0
+GET_GPIO_MASK: value = 0x0
+GET_GPIO_DIRECTION: value = 0x0
+GET_GPIO_DATA: value = 0x0
+GET_GPIO_ENABLE_MASK: No key matching with 'GET_GPIO_ENABLE_MASK'
+GET_GPIO_UNSOLICITED_RSP_MASK: value = 0x0
+COEF idx 0x07: value = 0x200
+COEF idx 0x10: value = 0x20
+COEF idx 0x45: value = 0x5289
+COEF idx 0x46: value = 0x4
+COEF idx 0x47: value = 0xa47a

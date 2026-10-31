@@ -1,0 +1,33 @@
+=== BEFORE (headset plugged in) 11:53:34
+NID 0x19 pin_sense=0x80000000 widget_ctl=0x24 config=0x411111f0
+NID 0x21 pin_sense=0x80000000 widget_ctl=0xc0 config=0x3211020
+NID 0x1a pin_sense=0x0 widget_ctl=0x0 config=0x411111f0
+NID 0x1b pin_sense=0x0 widget_ctl=0x0 config=0x411111f0
+COEF[0x07]=0x200 COEF[0x10]=0x20 COEF[0x1b]=0x4a6b COEF[0x45]=0x5289 COEF[0x46]=0xaf4 COEF[0x47]=0xa47a COEF[0x4a]=0x2010 COEF[0x63]=0xc000 
+driver_pin_configs: 0x19 0x03a1103c 
+numid=12,iface=CARD,name='Headphone Jack'	
+ : values=on	numid=11,iface=CARD,name='Headset Mic Jack'
+	 : values=on
+numid=13,iface=CARD,name='Speaker Phantom Jack'	
+ : values=on	numid=7,iface=MIXER,name='Capture Switch'
+	 : values=on,on
+numid=21,iface=MIXER,name='Dmic0 Capture Switch'	
+ : values=on,on	numid=8,iface=MIXER,name='Headset Mic Boost Volume'
+ ; type=INTEGER,access=rw---R--,values=2,min=0,max=3,step=0	 : values=0,0
+>>> UNPLUG and REPLUG the headset now (12 s)
+=== AFTER replug 11:53:46
+NID 0x19 pin_sense=0x80000000 widget_ctl=0x24 config=0x411111f0
+NID 0x21 pin_sense=0x80000000 widget_ctl=0xc0 config=0x3211020
+NID 0x1a pin_sense=0x0 widget_ctl=0x0 config=0x411111f0
+NID 0x1b pin_sense=0x0 widget_ctl=0x0 config=0x411111f0
+COEF[0x07]=0x200 COEF[0x10]=0x20 COEF[0x1b]=0x4a6b COEF[0x45]=0x5289 COEF[0x46]=0xaf4 COEF[0x47]=0xa47a COEF[0x4a]=0x2010 COEF[0x63]=0xc000 
+driver_pin_configs: 0x19 0x03a1103c 
+numid=12,iface=CARD,name='Headphone Jack'	
+ : values=on	numid=11,iface=CARD,name='Headset Mic Jack'
+	 : values=on
+numid=13,iface=CARD,name='Speaker Phantom Jack'	
+ : values=on	numid=7,iface=MIXER,name='Capture Switch'
+	 : values=on,on
+numid=21,iface=MIXER,name='Dmic0 Capture Switch'	
+ : values=on,on	numid=8,iface=MIXER,name='Headset Mic Boost Volume'
+ ; type=INTEGER,access=rw---R--,values=2,min=0,max=3,step=0	 : values=0,0

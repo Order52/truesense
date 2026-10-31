@@ -1,0 +1,26 @@
+# build and Python artefacts
+__pycache__/
+*.pyc
+*.ko
+*.o
+*.mod
+*.mod.c
+*.cmd
+.tmp_versions/
+Module.symvers
+modules.order
+*.pkg.tar.*
+packaging/arch/pkg/
+packaging/arch/src/
+
+# raw hardware dumps: firmware tables (incl. the OEM Windows key table MSDM), serials, logs. Never commit these.
+collected-hardware-data/
+docs/hardware-data/acpi/
+**/*.dat
+**/*.dsl
+**/alsa-info*.txt
+**/dmesg*.txt
+
+# local state
+*.bak*
+.venv/
