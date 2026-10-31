@@ -48,7 +48,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `service status\|restart\|logs`, `config show\|validate\|path`, `completion bash\|zsh\|fish`, `gui` | housekeeping |
 
 ## The window
-`truesense gui` (or the TrueSense launcher): one compact page with power mode, fans, GPU mode, keyboard, rear light bar and battery/screen, in the style of G-Helper; buttons open Per-key colours (a picture of the keyboard to select keys from), Audio (output, 3.5 mm jack, microphones, Purified Voice, DTS) and Settings (hardware extras, CPU power limits, PREDATOR key, what comes back at login). `truesense gui --page keys|audio|settings` opens a page directly; a second launch brings the open window forward. Colours and sliders apply live. Needs `python-pyqt6`.
+`truesense gui` (or the TrueSense launcher): a short home page with power mode, GPU mode and fans (in the style of PreySense and G-Helper), and a button grid to the other pages: Lighting (keyboard and rear light bar), Per-key colours (a picture of the keyboard to select keys from), Battery and Screen, Audio (output, 3.5 mm jack, microphones, AI noise reduction, DTS) and Settings (PREDATOR key, what comes back at login, CPU power limits). `truesense gui --page lighting|keys|battery|audio|settings` opens a page directly; a second launch brings the open window forward. Colours and sliders apply live. Needs `python-pyqt6`.
 
 `truesense-fast fan smart|auto|max|<20-100>`, `truesense-fast power <mode>` and `truesense-fast auto on|off` talk to the daemon directly (about 5 ms) for status-bar buttons; they fall back to the CLI.
 

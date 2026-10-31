@@ -82,7 +82,7 @@ class TileButton(QPushButton if Qt else object):
         else: bg, fg, border = QColor("#272b32" if hot else "#202328"), "#aab3c0", QColor("#1f2733")
         p.setBrush(bg); p.setPen(QPen(border, 1.4)); p.drawRoundedRect(r, 12, 12)
         px = icon_pixmap(self.icon_name, fg, 22); p.drawPixmap(int(r.center().x() - 11), int(r.top() + 10), px)
-        f = QFont(self.font()); f.setBold(on); p.setFont(f); p.setPen(QColor(fg)); p.drawText(QRectF(r.left(), r.top() + 36, r.width(), r.height() - 38), Qt.AlignmentFlag.AlignCenter, self.label)
+        f = QFont(self.font()); f.setBold(on); f.setPixelSize(12); p.setFont(f); p.setPen(QColor(fg)); p.drawText(QRectF(r.left(), r.top() + 36, r.width(), r.height() - 38), Qt.AlignmentFlag.AlignCenter, self.label)
 
 
 ACCENT = "#58a6ff"
@@ -97,6 +97,8 @@ QListWidget::item { padding: 11px 14px; border-radius: 10px; margin: 2px 0; colo
 QListWidget::item:selected { background: #10252b; color: #58a6ff; }
 QListWidget::item:hover:!selected { background: #11161d; color: #cfd6e0; }
 #card { background: transparent; border: none; }
+#sep { background: #272a30; max-height: 1px; min-height: 1px; border: none; }
+#section { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: #7d8590; padding-top: 6px; }
 #cardtitle { font-size: 15px; font-weight: 700; color: #e8edf3; }
 #tile { background: #1d1f24; border: 1px solid #1b222c; border-radius: 16px; }
 #tilevalue { font-size: 26px; font-weight: 700; color: #ffffff; }
@@ -114,6 +116,7 @@ QPushButton#seg:checked { background: #363c46; color: #ffffff; font-weight: 700;
 QPushButton#tilebtn { background: #202328; border: 1px solid #1f2733; border-radius: 12px; padding: 8px 4px; color: #aab3c0; font-size: 13px; }
 QPushButton#tilebtn:hover { background: #272b32; }
 QPushButton#tilebtn:checked { background: #243247; color: #58a6ff; border: 1px solid #58a6ff; font-weight: 700; }
+QPushButton#quiet { background: transparent; border: 1px solid #2e3239; padding: 5px 12px; }
 QPushButton#primary { background: #58a6ff; color: #031418; border: none; font-weight: 700; }
 QPushButton#primary:hover { background: #4aeaff; }
 QComboBox { background: #1b1d22; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; min-height: 20px; }
@@ -145,7 +148,7 @@ JACK_HINT = {"auto": "Uses what the codec detects when you plug something in.",
              "headset": "Always use the headset microphone, even if the codec has not detected it (try this if it is missing after boot)."}
 
 
-PAGES = {"home": 0, "keys": 1, "audio": 2, "settings": 3}
+PAGES = {"home": 0, "lighting": 1, "keys": 2, "battery": 3, "audio": 4, "settings": 5}
 
 
 class Segmented(QWidget if Qt else object):
@@ -232,19 +235,22 @@ class KeyboardView(QWidget if Qt else object):
 
 class Window(QMainWindow if Qt else object):
     def __init__(self):
-        super().__init__(); self.setWindowTitle("TrueSense"); geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(500, min(900, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it instead of stretching it
+        super().__init__(); self.setWindowTitle("TrueSense")
+        geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
         self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.refreshed.connect(self._apply); self.busy = {}; self.loading = False
         self.cfg = config.load(); self.src = ""
-        self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready"); self.names = []
-        for build in (self.p_home, self.p_keys, self.p_audio, self.p_settings): build()
-        self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == 2 else "home"))
+        self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
+        for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings): build()
+        self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(2000); self.full_refresh(); self.tick()
 
     # ---- plumbing --------------------------------------------------------------------------------------------------------------------
     def _msg(self, t): self.statusBar().showMessage(t, 6000)
 
+    def go(self, name): self.pages.setCurrentIndex(PAGES[name])
+
     def do(self, fn, ok="done", refresh=True):
-        """Run a backend call off the UI thread; show its result or its error. Only calls that change things the page does not already show re-read everything."""
+        """Run a backend call off the UI thread; show its result or its error."""
         def work():
             try: r = fn(); self.bus.message.emit(ok(r) if callable(ok) else ok)
             except Exception as e: self.bus.message.emit(f"Error: {e}")
@@ -262,22 +268,21 @@ class Window(QMainWindow if Qt else object):
             if again: self.live(key, fn)
         threading.Thread(target=work, daemon=True).start()
 
-    def page(self, title, heading):
-        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(22, 16, 22, 18); lay.setSpacing(12)
-        sc = QScrollArea(); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); sc.setWidget(w)
-        self.pages.addWidget(sc); h = QHBoxLayout()
-        if self.pages.count() > 1:
-            back = self.btn(" Back", lambda: self.pages.setCurrentIndex(0)); back.setIcon(make_icon("back")); h.addWidget(back)
-        t_ = QLabel(heading); t_.setObjectName("brand" if self.pages.count() == 1 else "h1"); h.addWidget(t_); h.addStretch(); self.head = h; lay.addLayout(h); return lay
+    def page(self, heading, back=True):
+        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(24, 18, 24, 20); lay.setSpacing(14)
+        sc = QScrollArea(); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); sc.setWidget(w); self.pages.addWidget(sc)
+        h = QHBoxLayout(); h.setSpacing(10)
+        if back:
+            b = self.btn(" Back", lambda: self.pages.setCurrentIndex(0)); b.setIcon(make_icon("back")); b.setObjectName("quiet"); h.addWidget(b)
+        t_ = QLabel(heading); t_.setObjectName("brand" if not back else "h1"); h.addWidget(t_); h.addStretch(); lay.addLayout(h); return lay
 
     def card(self, lay, title, icon="", right=False):
-        """A flat section like PreySense / G-Helper: icon and title on the left, a live value on the right."""
-        c = QFrame(); c.setObjectName("card"); v = QVBoxLayout(c); v.setContentsMargins(0, 8, 0, 4); v.setSpacing(10)
+        """A plain section: icon and title on the left, a live value on the right, rows underneath."""
+        c = QFrame(); c.setObjectName("card"); v = QVBoxLayout(c); v.setContentsMargins(0, 4, 0, 2); v.setSpacing(10)
         h = QHBoxLayout(); h.setSpacing(8)
         if icon:
             il = QLabel(); il.setPixmap(icon_pixmap(icon, "#dfe5ee", 20)); il.setFixedSize(22, 22); h.addWidget(il)
-        t_ = QLabel(title); t_.setObjectName("cardtitle"); h.addWidget(t_); h.addStretch()
-        v.right = None
+        t_ = QLabel(title); t_.setObjectName("cardtitle"); h.addWidget(t_); h.addStretch(); v.right = None
         if right: v.right = QLabel(""); v.right.setObjectName("stats"); v.right.setMinimumWidth(190); v.right.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter); h.addWidget(v.right)
         v.addLayout(h); lay.addWidget(c); return v
 
@@ -285,25 +290,26 @@ class Window(QMainWindow if Qt else object):
     def hint(text):
         l = QLabel(text); l.setObjectName("hint"); l.setWordWrap(True); return l
 
-    def tile(self, label):
-        f = QFrame(); f.setObjectName("tile"); v = QVBoxLayout(f); v.setContentsMargins(18, 14, 18, 14); v.setSpacing(2)
-        val = QLabel("–"); val.setObjectName("tilevalue"); lab = QLabel(label.upper()); lab.setObjectName("tilelabel"); v.addWidget(val); v.addWidget(lab); f.val = val; return f
+    @staticmethod
+    def sep(v):
+        f = QFrame(); f.setObjectName("sep"); v.addWidget(f)
 
-    def line(self, v, text, *widgets):
-        h = QHBoxLayout(); h.setSpacing(10); lab = QLabel(text); h.addWidget(lab); h.addStretch()
+    def line(self, v, text, *widgets, sub=None):
+        """One settings row: the name on the left, the control on the right."""
+        h = QHBoxLayout(); h.setSpacing(10); h.setContentsMargins(0, 2, 0, 2); lab = QLabel(text); h.addWidget(lab); h.addStretch()
         for w in widgets: h.addWidget(w)
-        v.addLayout(h); return lab
+        v.addLayout(h)
+        if sub: v.addWidget(self.hint(sub))
+        return lab
 
     def switch(self, v, text, cb, sub=None):
-        c = Switch(); c.toggled.connect(lambda x: None if self.loading else cb(x)); self.line(v, text, c)
-        if sub: v.addWidget(self.hint(sub))
-        return c
+        c = Switch(); c.toggled.connect(lambda x: None if self.loading else cb(x)); self.line(v, text, c, sub=sub); return c
 
     def seg(self, v, text, labels, cb):
         s = Segmented(labels); s.picked.connect(lambda i: None if self.loading else cb(i)); self.line(v, text, s); return s
 
     def slider(self, v, text, lo, hi, step, cb, final=None, suffix=""):
-        """Like PreySense: the name on the left, the current value on the right, a full-width slider underneath."""
+        """The name on the left, the current value on the right, a full-width slider underneath."""
         s = QSlider(Qt.Orientation.Horizontal); s.setRange(lo, hi); s.setSingleStep(step); s.setPageStep(step)
         val = QLabel(f"{s.value()}{suffix}"); val.setObjectName("stats"); s.vlabel = val
         s.valueChanged.connect(lambda x: val.setText(f"{x}{suffix}")); s.valueChanged.connect(lambda x: None if self.loading else cb(x))
@@ -315,9 +321,9 @@ class Window(QMainWindow if Qt else object):
         if primary: b.setObjectName("primary")
         b.clicked.connect(lambda *_: cb()); return b
 
-    # ---- Home (everything you reach for daily, on one compact page) ------------------------------------------------------------------
+    # ---- Home: modes, GPU, fans, then where to go ---------------------------------------------------------------------------------------
     def p_home(self):
-        lay = self.page("Home", "TrueSense")
+        lay = self.page("TrueSense", back=False)
         v = self.card(lay, "Performance Mode", "performance", True); self.stat_cpu = v.right
         try: self.modes = hw.supported_modes()
         except Exception: self.modes = list(hw.MODES)
@@ -326,40 +332,43 @@ class Window(QMainWindow if Qt else object):
         self.power = Segmented([m.capitalize() for m in order], tiles=True, icons=[m if m in _P else "balanced" for m in order], colors=[cols.get(m, "#58a6ff") for m in order]); v.addWidget(self.power)
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
         self.auto = self.switch(v, "Choose automatically", lambda x: self.do(lambda: ipc.call("set", key="auto_profile", value=x), "Saved", refresh=False), "By power source and load. A mode you pick holds for 30 minutes.")
+        v = self.card(lay, "GPU Mode", "gpu", True); self.stat_gpu = v.right
+        self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True, icons=["optimus", "gpu", "auto"]); v.addWidget(self.gpu)
+        self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False))
         v = self.card(lay, "Fans", "fan", True); self.stat_fan = v.right
         self.fan = Segmented(FAN_MODES, tiles=True, icons=["smart", "auto", "max", "manual"]); self.fan.picked.connect(lambda i: None if self.loading else self.fan_apply(i)); v.addWidget(self.fan)
         self.fan_pct = self.slider(v, "Manual speed", 20, 100, 5, lambda x: None, lambda x: self.fan_apply(3), suffix=" %")
-        v = self.card(lay, "GPU Mode", "gpu", True); self.stat_gpu = v.right
-        self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True, icons=["optimus", "gpu", "auto"]); v.addWidget(self.gpu)
-        self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False)); v.addWidget(self.hint("Takes effect after a reboot."))
-        v = self.card(lay, "Keyboard", "keyboard")
-        self.kb_on = self.switch(v, "Backlight", lambda x: self.do(lambda: actions.run("keyboard:on" if x else "keyboard:off"), lambda r: r))
-        self.kb_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("kbl", lambda: keyboard.set_brightness(x)))
-        self.kb_fx = QComboBox(); self.kb_fx.addItems([e.capitalize() for e in KB_EFFECTS]); self.kb_color = ColorButton("00aec7")
-        self.kb_fx.activated.connect(lambda i: self.do(lambda: keyboard.set_effect(KB_EFFECTS[i], self.kb_color.hex, self.kb_speed.value() or 5, max(self.kb_level.value(), 50 if KB_EFFECTS[i] == "neon" else 10)), "Effect applied", refresh=False))
-        self.kb_color.changed.connect(lambda h_: self.live("kbc", lambda: keyboard.set_color(h_)))
-        self.line(v, "Effect and colour", self.kb_fx, self.kb_color)
-        self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x)))
-        v = self.card(lay, "Rear Light Bar", "bar")
-        self.rear_on = self.switch(v, "Light", lambda x: self.do(lambda: actions.run("rear:on" if x else "rear:off"), lambda r: r, refresh=False))
-        self.rear_fx = self.seg(v, "Effect", [m.capitalize() for m in hw.REAR_MODES], lambda i: self.rear_apply())
-        self.zc = [ColorButton("00aec7") for _ in range(3)]; self.rear_color = ColorButton("00aec7")
-        for b in self.zc + [self.rear_color]: b.changed.connect(lambda h_: self.rear_apply())
-        self.line(v, "Static: left · middle · right", *self.zc); self.line(v, "Colour (other effects)", self.rear_color)
-        self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply(), suffix=" %")
-        v = self.card(lay, "Battery and Screen", "battery", True); self.stat_bat = v.right
-        self.limit = self.switch(v, "80 % charge limit", lambda x: self.do(lambda: hw.set_battery_limit(x), lambda r: f"80 % limit: {'on' if r else 'off'}", refresh=False))
-        self.od = self.switch(v, "LCD overdrive", lambda x: self.do(lambda: hw.set_overdrive(x), lambda r: f"Overdrive: {'on' if r else 'off'}", refresh=False))
-        self.usb = self.seg(v, "USB charging while off", ["Off", "10 %", "20 %", "30 %"], lambda i: self.do(lambda: hw.set_usb_charge(hw.USB_LEVELS[i]), lambda r: f"USB charge stops at {r} %", refresh=False))
         g = QGridLayout(); g.setSpacing(8)
-        for n, (label, ic, cb) in enumerate((("Per-key colours", "palette", lambda: self.pages.setCurrentIndex(1)), ("Audio", "audio", lambda: self.pages.setCurrentIndex(2)),
-                                              ("Settings", "settings", lambda: self.pages.setCurrentIndex(3)), ("Quit", "power", self.close))):
-            b_ = self.btn(label, cb); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); g.addWidget(b_, n // 2, n % 2)
-        lay.addLayout(g); lay.addStretch()
+        for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Per-key colours", "palette", "keys"), ("Battery and Screen", "battery", "battery"),
+                                               ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
+            b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); g.addWidget(b_, n // 2, n % 2)
+        lay.addSpacing(4); lay.addLayout(g); lay.addStretch()
 
     def fan_apply(self, i):
         mode = ("smart", "auto", "max", "manual")[i]; p = self.fan_pct.value()
         self.do(lambda: control.fan(mode, p if mode == "manual" else None), lambda r: {"smart": "Fans: smart", "auto": "Fans: firmware auto", "max": "Fans: MAX", "manual": f"Fans: manual {p} %"}[mode], refresh=False)
+
+    # ---- Lighting: keyboard and rear bar on one page, one at a time ------------------------------------------------------------------------
+    def p_lighting(self):
+        lay = self.page("Lighting")
+        self.light_tabs = Segmented(["Keyboard", "Rear light bar"], tiles=True, icons=["keyboard", "bar"]); lay.addWidget(self.light_tabs); stack = QStackedWidget(); lay.addWidget(stack)
+        self.light_tabs.picked.connect(stack.setCurrentIndex); self.light_tabs.set_index(0)
+        kb = QWidget(); v = QVBoxLayout(kb); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
+        self.kb_on = self.switch(v, "Backlight", lambda x: self.do(lambda: actions.run("keyboard:on" if x else "keyboard:off"), lambda r: r, refresh=False)); self.sep(v)
+        self.kb_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("kbl", lambda: keyboard.set_brightness(x)))
+        self.kb_fx = QComboBox(); self.kb_fx.addItems([e.capitalize() for e in KB_EFFECTS]); self.kb_fx.setMinimumWidth(170); self.kb_color = ColorButton("00aec7")
+        self.kb_fx.activated.connect(lambda i: self.do(lambda: keyboard.set_effect(KB_EFFECTS[i], self.kb_color.hex, self.kb_speed.value() or 5, max(self.kb_level.value(), 50 if KB_EFFECTS[i] == "neon" else 10)), "Effect applied", refresh=False))
+        self.kb_color.changed.connect(lambda h_: self.live("kbc", lambda: keyboard.set_color(h_)))
+        self.sep(v); self.line(v, "Lighting mode", self.kb_fx); self.line(v, "Colour", self.kb_color)
+        self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x))); v.addStretch(); stack.addWidget(kb)
+        rr = QWidget(); v = QVBoxLayout(rr); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
+        self.rear_on = self.switch(v, "Light", lambda x: self.do(lambda: actions.run("rear:on" if x else "rear:off"), lambda r: r, refresh=False)); self.sep(v)
+        self.rear_fx = Segmented([m.capitalize() for m in hw.REAR_MODES]); self.rear_fx.picked.connect(lambda i: self.rear_apply()); self.line(v, "Effect", self.rear_fx)
+        self.zc = [ColorButton("00aec7") for _ in range(3)]; self.rear_color = ColorButton("00aec7")
+        for b in self.zc + [self.rear_color]: b.changed.connect(lambda h_: self.rear_apply())
+        self.sep(v); self.line(v, "Static: left, middle, right", *self.zc); self.line(v, "Colour (other effects)", self.rear_color)
+        self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply(), suffix=" %"); v.addStretch(); stack.addWidget(rr)
+        lay.addStretch()
 
     def rear_apply(self):
         def go():
@@ -368,27 +377,25 @@ class Window(QMainWindow if Qt else object):
             else: hw.rear_set(mode, self.rear_color.hex, sp, br)
         if not self.loading: self.live("rear", go)
 
-
-    # ---- Per-key -----------------------------------------------------------------------------------------------------------------------
+    # ---- Per-key -------------------------------------------------------------------------------------------------------------------------
     def p_keys(self):
-        lay = self.page("Per-key", "Per-key colours"); v = self.card(lay, "Keyboard")
-        v.addWidget(self.hint("Click or drag to choose keys (Ctrl adds more), then pick a colour. Only the chosen keys change."))
-        self.kv = KeyboardView(); self.kv.selection_changed.connect(self.sel_changed); hk = QHBoxLayout(); hk.addWidget(self.kv); hk.addStretch(); v.addLayout(hk)
-        for chunk in (KEY_GROUPS[:6], KEY_GROUPS[6:]):
+        lay = self.page("Per-key colours"); lay.addWidget(self.hint("Click or drag to choose keys (Ctrl adds more), then pick a colour."))
+        self.kv = KeyboardView(); self.kv.selection_changed.connect(self.sel_changed); hk = QHBoxLayout(); hk.addWidget(self.kv); hk.addStretch(); lay.addLayout(hk)
+        for chunk in (KEY_GROUPS[:4], KEY_GROUPS[4:8], KEY_GROUPS[8:]):
             h = QHBoxLayout(); h.setSpacing(6)
             for g in chunk: h.addWidget(self.btn(g, lambda g=g: self.kv.select_group(g)))
-            h.addStretch(); v.addLayout(h)
+            h.addStretch(); lay.addLayout(h)
         self.pk_color = ColorButton("ff0000"); self.pk_color.changed.connect(lambda h_: self.paint_sel()); self.sel_lbl = QLabel("no keys chosen"); self.sel_lbl.setObjectName("hint")
-        self.line(v, "Colour of the chosen keys", self.pk_color, self.btn("Paint", self.paint_sel, True), self.btn("Black", lambda: (self.pk_color.set_hex("000000"), self.paint_sel())))
-        v.addWidget(self.sel_lbl)
-        v = self.card(lay, "Presets")
-        self.line(v, "Whole keyboard", self.btn("Rainbow", lambda: self.do(lambda: keyboard.per_key(keymap.to_list(keymap.rainbow()), None), "Rainbow")),
-                  self.btn("Fill colour", lambda: self.do(lambda: keyboard.per_key(keymap.to_list(keymap.canvas(keymap.hexcolor(self.pk_color.hex))), None), "Filled")),
+        v = self.card(lay, "Colour of the chosen keys")
+        self.line(v, "Colour", self.pk_color, self.btn("Paint", self.paint_sel, True), self.btn("Black", lambda: (self.pk_color.set_hex("000000"), self.paint_sel()))); v.addWidget(self.sel_lbl)
+        v = self.card(lay, "Whole keyboard")
+        self.line(v, "Presets", self.btn("Rainbow", lambda: self.do(lambda: keyboard.per_key(keymap.to_list(keymap.rainbow()), None), "Rainbow")),
+                  self.btn("Fill", lambda: self.do(lambda: keyboard.per_key(keymap.to_list(keymap.canvas(keymap.hexcolor(self.pk_color.hex))), None), "Filled")),
                   self.btn("Stock", lambda: self.do(lambda: keyboard.restore_default(None), "Stock look")))
         lay.addStretch()
 
     def sel_changed(self):
-        names = sorted({self.kv.labels[c] for c in self.kv.sel if c in self.kv.labels}); self.sel_lbl.setText(f"{len(self.kv.sel)} key(s): " + ", ".join(names[:10]) + ("…" if len(names) > 10 else ""))
+        names = sorted({self.kv.labels[c] for c in self.kv.sel if c in self.kv.labels}); self.sel_lbl.setText(f"{len(self.kv.sel)} key(s): " + ", ".join(names[:8]) + ("…" if len(names) > 8 else ""))
 
     def paint_sel(self):
         if not self.kv.sel or self.loading: return
@@ -396,52 +403,57 @@ class Window(QMainWindow if Qt else object):
         for c in self.kv.sel: self.kv.cells[c] = hexc
         self.kv.update(); self.live("paint", lambda: keyboard.paint_cells(ch))
 
-    # ---- Audio -------------------------------------------------------------------------------------------------------------------------
+    # ---- Battery and screen ------------------------------------------------------------------------------------------------------------
+    def p_battery(self):
+        lay = self.page("Battery and Screen"); v = self.card(lay, "Battery", "", True); self.stat_bat = v.right
+        self.limit = self.switch(v, "80 % charge limit", lambda x: self.do(lambda: hw.set_battery_limit(x), lambda r: f"80 % limit: {'on' if r else 'off'}", refresh=False)); self.sep(v)
+        self.usb = self.seg(v, "USB charging while off", ["Off", "10 %", "20 %", "30 %"], lambda i: self.do(lambda: hw.set_usb_charge(hw.USB_LEVELS[i]), lambda r: f"USB charge stops at {r} %", refresh=False)); self.sep(v)
+        self.calib = self.switch(v, "Calibration", lambda x: self.do(lambda: hw.set_calibration(x), lambda r: f"Calibration: {'on' if r else 'off'}", refresh=False), "Needs AC power and takes hours. Switch off to cancel.")
+        v = self.card(lay, "Screen and boot")
+        self.od = self.switch(v, "LCD overdrive", lambda x: self.do(lambda: hw.set_overdrive(x), lambda r: f"Overdrive: {'on' if r else 'off'}", refresh=False)); self.sep(v)
+        self.boot = self.switch(v, "Boot animation and sound", lambda x: self.do(lambda: hw.set_boot_sound(x), lambda r: f"Boot sound: {'on' if r else 'off'}", refresh=False)); self.sep(v)
+        self.kb_timeout = self.switch(v, "Keyboard light off after 30 s", lambda x: self.do(lambda: hw.set_kb_timeout(x), "Saved", refresh=False))
+        lay.addStretch()
+
+    # ---- Audio -----------------------------------------------------------------------------------------------------------------------------
     def p_audio(self):
-        lay = self.page("Audio", "Audio"); v = self.card(lay, "Output")
+        lay = self.page("Audio"); v = self.card(lay, "Output")
         self.out = self.seg(v, "Play sound on", ["Speakers", "Headphones"], lambda i: self.do(lambda: audio.set_output(("speakers", "headphones")[i]), f"Output: {('speakers', 'headphones')[i]}"))
-        v.addWidget(self.hint("This laptop plays on the speakers or the headphone jack, not both at once."))
-        self.dts = self.switch(v, "Acer DTS sound", lambda x: self.do(lambda: audio.dts_power(x), "DTS " + ("on" if x else "off")), "Through AcerUltraX.")
+        self.sep(v); self.dts = self.switch(v, "Acer DTS sound", lambda x: self.do(lambda: audio.dts_power(x), "DTS " + ("on" if x else "off")), "This laptop plays on the speakers or the headphone jack, not both at once.")
         v = self.card(lay, "3.5 mm jack")
         self.jack = self.seg(v, "I plugged in", [l for _, l in JACK], self.jack_pick); self.jack_hint = self.hint(""); v.addWidget(self.jack_hint)
         self.jack_state = QLabel("…"); self.jack_state.setObjectName("hint"); v.addWidget(self.jack_state)
         self.boost = self.slider(v, "Headset mic boost", 0, 3, 1, lambda x: None, lambda x: self.do(lambda: audio.headset_boost(x), lambda r: f"Boost: {r}"))
         v = self.card(lay, "Microphone")
-        self.mute = self.switch(v, "Mute every microphone", lambda x: self.do(lambda: audio.mic_set_mute(x), "Microphones muted" if x else "Microphones live"))
-        v.addWidget(self.hint("Purified Voice: AI noise reduction. Conference is gentle, Personal is strict."))
-        self.v_head = self.seg(v, "Headset microphone", [x.capitalize() for x in VOICE], lambda i: self.do(lambda: (audio.voice_set("headset", VOICE[i]), audio.apply_mic_policy(False))[0], f"Headset mic: {VOICE[i]}"))
-        self.v_arr = self.seg(v, "Built-in microphones", [x.capitalize() for x in VOICE], lambda i: self.do(lambda: (audio.voice_set("array", VOICE[i]), audio.apply_mic_policy(False))[0], f"Built-in mics: {VOICE[i]}"))
+        self.mute = self.switch(v, "Mute every microphone", lambda x: self.do(lambda: audio.mic_set_mute(x), "Microphones muted" if x else "Microphones live")); self.sep(v)
+        self.v_head = self.seg(v, "Headset (AI noise reduction)", [x.capitalize() for x in VOICE], lambda i: self.do(lambda: (audio.voice_set("headset", VOICE[i]), audio.apply_mic_policy(False))[0], f"Headset mic: {VOICE[i]}"))
+        self.v_arr = self.seg(v, "Built-in (AI noise reduction)", [x.capitalize() for x in VOICE], lambda i: self.do(lambda: (audio.voice_set("array", VOICE[i]), audio.apply_mic_policy(False))[0], f"Built-in mics: {VOICE[i]}")); self.sep(v)
         self.v_note = self.switch(v, "Notify when the microphone changes", lambda x: self.do(lambda: config.write_user({"audio": {"notify": x}}), "Saved")); lay.addStretch()
 
     def jack_pick(self, i):
         val = JACK[i][0]; self.jack_hint.setText(JACK_HINT[val])
         self.do(lambda: (config.write_user({"audio": {"jack": val}}), audio.apply_mic_policy(False))[0], f"3.5 mm jack: {val}")
 
-    # ---- Settings ----------------------------------------------------------------------------------------------------------------------
+    # ---- Settings --------------------------------------------------------------------------------------------------------------------------
     def p_settings(self):
-        lay = self.page("Settings", "Settings"); v = self.card(lay, "Hardware extras")
-        self.kb_timeout = self.switch(v, "Keyboard light off after 30 s without typing", lambda x: self.do(lambda: hw.set_kb_timeout(x), "Saved", refresh=False))
-        self.boot = self.switch(v, "Boot animation and sound", lambda x: self.do(lambda: hw.set_boot_sound(x), lambda r: f"Boot sound: {'on' if r else 'off'}", refresh=False))
-        self.calib = self.switch(v, "Battery calibration", lambda x: self.do(lambda: hw.set_calibration(x), lambda r: f"Calibration: {'on' if r else 'off'}", refresh=False), "Needs AC power and takes hours. Switch off to cancel.")
-        v = self.card(lay, "CPU power limits")
-        v.addWidget(self.hint("Sustained (PL1) and burst (PL2) watts. The daemon also sets these itself per mode; use this to try a value. Range 25 to 120 W."))
-        self.pl1, self.pl2 = QDoubleSpinBox(), QDoubleSpinBox()
-        for s_, val in ((self.pl1, 65), (self.pl2, 80)): s_.setRange(25, 120); s_.setDecimals(0); s_.setSuffix(" W"); s_.setValue(val)
-        self.line(v, "PL1 · PL2", self.pl1, self.pl2, self.btn("Apply", lambda: self.do(lambda: ipc.call("cpu_limits", pl1=self.pl1.value(), pl2=self.pl2.value()), "CPU limits applied", refresh=False)))
-        v = self.card(lay, "PREDATOR key")
-        v.addWidget(self.hint("What each press does. Examples: power-next, power:turbo, profile:gaming, output-toggle, mic-toggle, exec:firefox. See `truesense keys actions`."))
+        lay = self.page("Settings"); v = self.card(lay, "PREDATOR key")
+        v.addWidget(self.hint("What each press does: power-next, power:turbo, profile:gaming, output-toggle, mic-toggle, exec:firefox ..."))
         self.key_edits = {}
         for g, label in GESTURES:
-            e = QLineEdit(self.cfg["keys"][g]); e.setMinimumWidth(240); self.line(v, label, e, self.btn("Save", lambda g=g, e=e: self.save_key(g, e)), self.btn("Test", lambda e=e: self.do(lambda: actions.run(e.text()) or "ok", lambda r: str(r))))
+            e = QLineEdit(self.cfg["keys"][g]); e.setMinimumWidth(170); self.line(v, label, e, self.btn("Save", lambda g=g, e=e: self.save_key(g, e)), self.btn("Test", lambda e=e: self.do(lambda: actions.run(e.text()) or "ok", lambda r: str(r))))
             self.key_edits[g] = e
-        self.line(v, "Saved changes apply after", self.btn("Restart key service", lambda: self.do(lambda: __import__("subprocess").run(["systemctl", "--user", "restart", "truesense-keys"], check=False), "Key service restarted")))
-        v = self.card(lay, "At login"); v.addWidget(self.hint("Lighting is saved on every change. Choose what comes back when you log in."))
+        self.line(v, "Apply saved changes", self.btn("Restart keys", lambda: self.do(lambda: __import__("subprocess").run(["systemctl", "--user", "restart", "truesense-keys"], check=False), "Key service restarted")))
+        v = self.card(lay, "At login"); v.addWidget(self.hint("Lighting is saved on every change. Choose what comes back."))
         s = self.cfg["startup"]; keys = [k for k, _ in START]
         for key, title in (("keyboard", "Keyboard"), ("rear", "Rear light")):
             sg = Segmented([l for _, l in START]); sg.set_index(keys.index(s[key]) if s[key] in keys else 0)
             sg.picked.connect(lambda i, key=key: self.do(lambda: config.write_user({"startup": {key: keys[i]}}), f"{key} at login: {keys[i]}")); self.line(v, title, sg)
         from . import startup
         self.line(v, "Try it now", self.btn("Apply", lambda: self.do(lambda: startup.apply(), lambda r: "; ".join(r))))
+        v = self.card(lay, "CPU power limits")
+        self.pl1, self.pl2 = QDoubleSpinBox(), QDoubleSpinBox()
+        for s_, val in ((self.pl1, 65), (self.pl2, 80)): s_.setRange(25, 120); s_.setDecimals(0); s_.setSuffix(" W"); s_.setValue(val)
+        self.line(v, "PL1 / PL2 (25 to 120 W)", self.pl1, self.pl2, self.btn("Apply", lambda: self.do(lambda: ipc.call("cpu_limits", pl1=self.pl1.value(), pl2=self.pl2.value()), "CPU limits applied", refresh=False)))
         lay.addStretch()
 
     def save_key(self, g, e):
@@ -459,7 +471,7 @@ class Window(QMainWindow if Qt else object):
 
     def full_refresh(self, scope=None):
         """Read the hardware off the UI thread. The audio page (pactl, amixer, DTS) is only read while it is shown, so the main page stays quick."""
-        scope = scope or ("audio" if self.pages.currentIndex() == 2 else "home")
+        scope = scope or ("audio" if self.pages.currentIndex() == PAGES["audio"] else "home")
         def work():
             d = {}
             def get(k, fn):
