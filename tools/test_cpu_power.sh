@@ -4,7 +4,7 @@
 set -u
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
 ROOT=$(realpath "$(dirname "$0")/.."); OUT="$ROOT/docs/hardware-data/cpu_power_test.txt"
-RPS() { PYTHONPATH="$ROOT/src" python3 -I -c "import sys; sys.path.insert(0,'$ROOT/src'); from rpredatorsense.cli import main; main()" "$@" 2>&1; }
+RPS() { PYTHONPATH="$ROOT/src" python3 -I -c "import sys; sys.path.insert(0,'$ROOT/src'); from truesense.cli import main; main()" "$@" 2>&1; }
 {
 echo "== $(date +%T) RAPL baseline"; RPS cpu info | head -8
 echo "== RAPL write test: PL1=70 W PL2=80 W (the running daemon re-asserts 80/80 within ~3 s anyway)"

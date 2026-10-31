@@ -1,4 +1,4 @@
-"""`rpredatorsense selftest`: set -> read back -> restore for every firmware feature; prints PASS/FAIL. Fans, GPU mode and battery limit are restored in finally blocks."""
+"""`truesense selftest`: set -> read back -> restore for every firmware feature; prints PASS/FAIL. Fans, GPU mode and battery limit are restored in finally blocks."""
 import os, subprocess, time
 from . import backend as hw, daemon_ctl
 
@@ -58,8 +58,8 @@ def run(skip_fans=False):
     def active(unit, user=False):
         r = subprocess.run(["systemctl"] + (["--user"] if user else []) + ["is-active", unit], capture_output=True, text=True).stdout.strip()
         assert r == "active", f"{unit} is {r}"; return "active"
-    res.append(_check("daemon service running", lambda: active("rpredatorsense.service")))
-    res.append(_check("Fn/PREDATOR key service running", lambda: active("rpredatorsense-keys.service", True)))
+    res.append(_check("daemon service running", lambda: active("truesense.service")))
+    res.append(_check("Fn/PREDATOR key service running", lambda: active("truesense-keys.service", True)))
     def kbd():
         from . import keyboard; b = keyboard.get_brightness(); assert 0 <= b <= 50; return f"brightness {b}/50 read back from the keyboard"
     res.append(_check("keyboard lighting interface", kbd))

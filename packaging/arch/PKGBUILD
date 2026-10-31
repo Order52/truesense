@@ -1,7 +1,7 @@
-# Maintainer: rpredatorsense contributors
+# Maintainer: truesense contributors
 # Acer Predator Helios 16 (PH16-71) control: fans, power, battery, GPU mode, lighting, Fn keys, audio helpers.
 # Build from a checkout:  cd packaging/arch && makepkg -si
-pkgname=rpredatorsense
+pkgname=truesense
 pkgver=0.1.0
 pkgrel=1
 pkgdesc='PredatorSense for Linux: Acer Predator Helios 16 PH16-71 (fans, power modes, battery, lighting, Fn keys, Purified Voice)'
@@ -14,32 +14,32 @@ optdepends=('noise-suppression-for-voice: Purified Voice (RNNoise) microphone/sp
             'msr-tools: undervolt/RAPL diagnostics'
             'nvidia-utils: GPU temperature and power limit'
             'openrgb: alternative lighting tools')
-backup=('etc/rpredatorsense/config.toml')
+backup=('etc/truesense/config.toml')
 options=('!strip')
 _src="$startdir/../.."
 
 package() {
-    install -d "$pkgdir/usr/lib/rpredatorsense"
-    cp -r "$_src/src/rpredatorsense" "$pkgdir/usr/lib/rpredatorsense/"
-    find "$pkgdir/usr/lib/rpredatorsense" -name __pycache__ -prune -exec rm -rf {} +
-    install -Dm755 /dev/stdin "$pkgdir/usr/bin/rpredatorsense" <<'WRAP'
+    install -d "$pkgdir/usr/lib/truesense"
+    cp -r "$_src/src/truesense" "$pkgdir/usr/lib/truesense/"
+    find "$pkgdir/usr/lib/truesense" -name __pycache__ -prune -exec rm -rf {} +
+    install -Dm755 /dev/stdin "$pkgdir/usr/bin/truesense" <<'WRAP'
 #!/bin/sh
-exec env PYTHONPATH=/usr/lib/rpredatorsense python3 -m rpredatorsense "$@"
+exec env PYTHONPATH=/usr/lib/truesense python3 -m truesense "$@"
 WRAP
-    install -Dm755 "$_src/packaging/health.sh" "$pkgdir/usr/lib/rpredatorsense/health.sh"
+    install -Dm755 "$_src/packaging/health.sh" "$pkgdir/usr/lib/truesense/health.sh"
     # services (system daemon + health timer, user key service)
-    for f in rpredatorsense.service rpredatorsense-health.service rpredatorsense-health.timer; do
+    for f in truesense.service truesense-health.service truesense-health.timer; do
         sed -e 's|/usr/local/bin/|/usr/bin/|g' -e 's|/usr/local/lib/|/usr/lib/|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/$f"
     done
-    sed 's|/usr/local/bin/|/usr/bin/|g' "$_src/packaging/rpredatorsense-keys.service" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/rpredatorsense-keys.service"
-    sed 's|/usr/local/bin/|/usr/bin/|g' "$_src/packaging/rpredatorsense-audio.service" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/rpredatorsense-audio.service"
-    install -Dm644 "$_src/packaging/70-rpredatorsense.rules" "$pkgdir/usr/lib/udev/rules.d/70-rpredatorsense.rules"
+    sed 's|/usr/local/bin/|/usr/bin/|g' "$_src/packaging/truesense-keys.service" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/truesense-keys.service"
+    sed 's|/usr/local/bin/|/usr/bin/|g' "$_src/packaging/truesense-audio.service" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/truesense-audio.service"
+    install -Dm644 "$_src/packaging/70-truesense.rules" "$pkgdir/usr/lib/udev/rules.d/70-truesense.rules"
     # kernel helper (WMI whitelist interface) as DKMS source
     install -d "$pkgdir/usr/src/acer-rear-wmi-1.2"
     install -m644 "$_src"/kernel/acer-rear-wmi/{acer_rear_wmi.c,Makefile,dkms.conf} "$pkgdir/usr/src/acer-rear-wmi-1.2/"
-    install -Dm644 /dev/stdin "$pkgdir/etc/rpredatorsense/config.toml" <<'CFG'
-# overrides for the built-in defaults (see /usr/lib/rpredatorsense/rpredatorsense/config.py)
+    install -Dm644 /dev/stdin "$pkgdir/etc/truesense/config.toml" <<'CFG'
+# overrides for the built-in defaults (see /usr/lib/truesense/truesense/config.py)
 user = "CHANGE_ME"
 CFG
-    install -Dm644 "$_src/docs/STATUS.md" "$pkgdir/usr/share/doc/rpredatorsense/STATUS.md"
+    install -Dm644 "$_src/docs/STATUS.md" "$pkgdir/usr/share/doc/truesense/STATUS.md"
 }

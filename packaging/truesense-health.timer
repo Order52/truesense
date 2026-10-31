@@ -1,8 +1,10 @@
 [Unit]
-Description=rpredatorsense health check every 30 s
+Description=TrueSense health check every 30 s
+
 [Timer]
 OnBootSec=60
 OnUnitActiveSec=30
 AccuracySec=1s
+
 [Install]
 WantedBy=timers.target

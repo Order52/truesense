@@ -1,5 +1,0 @@
-[Unit]
-Description=rpredatorsense health check
-[Service]
-Type=oneshot
-ExecStart=/usr/local/lib/rpredatorsense/health.sh

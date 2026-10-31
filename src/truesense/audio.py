@@ -130,7 +130,7 @@ def announce(label, icon="headphones"):
     mode = os.environ.get("RPS_OSD", "native")
     if mode == "none": return
     if mode == "native" and _run(["hyprctl", "notify", "1", "1700", "rgb(00aec7)", f"Audio output: {label}"]).stdout.strip() == "ok": return
-    if mode == "native" and _run(["notify-send", "-t", "1700", "rpredatorsense", f"Audio output: {label}"]).returncode == 0: return
+    if mode == "native" and _run(["notify-send", "-t", "1700", "truesense", f"Audio output: {label}"]).returncode == 0: return
     show_osd(icon, label)
 
 def show_osd(icon, text):
@@ -164,7 +164,7 @@ def cycle_output():
     """F5-style round robin: laptop speakers -> headphones (only if the jack is plugged) -> other devices; flips the card profile when needed.
     The AcerUltraX virtual sink (if present) stays the default so the DTS processing keeps working; it follows the hardware output."""
     import fcntl
-    with open("/tmp/rpredatorsense-output.lock", "w") as lk:          # two quick presses must not interleave (one could re-enable popups mid-flip)
+    with open("/tmp/truesense-output.lock", "w") as lk:          # two quick presses must not interleave (one could re-enable popups mid-flip)
         fcntl.flock(lk, fcntl.LOCK_EX)
         with quiet_osd():
             return _cycle_output()
@@ -257,7 +257,7 @@ def _node_exists(name): return any(l.split("\t")[1:2] == [name] for l in _run(["
 
 def _announce_mic(text):
     if _run(["hyprctl", "notify", "1", "2200", "rgb(00aec7)", text]).stdout.strip() != "ok":
-        _run(["notify-send", "-t", "2200", "rpredatorsense", text])
+        _run(["notify-send", "-t", "2200", "truesense", text])
 
 def apply_mic_policy(notify=True, settings=None):
     """Point the default microphone at the right input: headset plugged -> headset filter (or raw headset mic); else the array filter (or raw array)."""

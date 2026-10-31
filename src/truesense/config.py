@@ -1,8 +1,8 @@
-"""Configuration: built-in defaults (tuned on the PH16-71 by the previous predator-daemon), overridden by /etc/rpredatorsense/config.toml."""
+"""Configuration: built-in defaults (tuned on the PH16-71 by the previous predator-daemon), overridden by /etc/truesense/config.toml."""
 import os, tomllib
 
 DEFAULTS = {
-    "user": os.environ.get("RPS_USER") or os.environ.get("SUDO_USER") or os.environ.get("USER") or "",   # owner of the compat files and the OSD session (install.sh writes it to /etc/rpredatorsense/config.toml)
+    "user": os.environ.get("RPS_USER") or os.environ.get("SUDO_USER") or os.environ.get("USER") or "",   # owner of the compat files and the OSD session (install.sh writes it to /etc/truesense/config.toml)
     "fan": {
         "levels": [30, 40, 50, 60, 70, 85, 100],          # fan %
         "cpu_up": [52, 60, 68, 75, 80, 85, 89],           # deg C at which each level is entered
@@ -23,7 +23,7 @@ def _merge(a, b):
     return a
 
 
-def load(path="/etc/rpredatorsense/config.toml"):
+def load(path="/etc/truesense/config.toml"):
     cfg = _merge({k: (dict(v) if isinstance(v, dict) else v) for k, v in DEFAULTS.items()}, {})
     try:
         with open(path, "rb") as f:

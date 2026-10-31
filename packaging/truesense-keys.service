@@ -1,9 +1,9 @@
 [Unit]
-Description=rpredatorsense Fn keys and PREDATOR key
+Description=TrueSense Fn keys and PREDATOR key
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/local/bin/rpredatorsense keys
+ExecStart=@PREFIX@/bin/truesense keys
 Restart=always
 RestartSec=2
 

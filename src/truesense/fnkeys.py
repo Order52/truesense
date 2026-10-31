@@ -6,7 +6,7 @@ Reports on the vendor page 0x88 (report id 4, handoff extras section 4): 04 80 F
 import glob, json, os, re, select, subprocess, threading, time
 from . import backend as hw, keyboard, daemon_ctl
 
-STATE = os.path.expanduser("~/.cache/rpredatorsense-kb")
+STATE = os.path.expanduser("~/.cache/truesense-kb")
 LONG_S, DOUBLE_S, STEP = 0.8, 0.45, 2          # STEP: keyboard brightness per Fn+F11/F12 press (0..50 range => 25 levels); config [buttons] kb_step
 ACTIONS = ("mode-cycle", "fan-max-toggle", "touchpad", "mic-toggle", "output-toggle", "none")
 
@@ -22,7 +22,7 @@ def find_node():
 def sh(cmd): return subprocess.run(cmd, capture_output=True, text=True)
 
 def osd(text):
-    for cmd in (["noctalia", "msg", "osd-show", "gauge", text], ["notify-send", "-t", "1700", "rpredatorsense", text]):
+    for cmd in (["noctalia", "msg", "osd-show", "gauge", text], ["notify-send", "-t", "1700", "truesense", text]):
         try: subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); return
         except OSError: continue
 

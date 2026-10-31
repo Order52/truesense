@@ -1,4 +1,4 @@
-"""rpredatorsense daemon: smart fan curve + thermal governor + automatic power profile (Acer Predator Helios 16 PH16-71).
+"""truesense daemon: smart fan curve + thermal governor + automatic power profile (Acer Predator Helios 16 PH16-71).
 
 Port of the earlier predator-daemon.py (measured fan table, activity classes, hysteresis, RAPL, governor) onto the verified backend.
 Measured fan response (manual %, both fans): 20% ~1700 rpm, 30 2160, 40 2850, 50 3460, 60 4070, 70 4600, 80 5100, 100 6050.

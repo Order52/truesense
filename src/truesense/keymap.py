@@ -30,7 +30,7 @@ def cells_for(name):
     if n in GROUPS: return GROUPS[n]
     if n in NAMES: return NAMES[n]
     if re.fullmatch(r"cell\d+", n) and int(n[4:]) < 128: return [int(n[4:])]
-    raise HwError(f"unknown key '{name}' (see: rpredatorsense keyboard list-keys)")
+    raise HwError(f"unknown key '{name}' (see: truesense keyboard list-keys)")
 
 def hexcolor(c):
     c = c.lstrip("#")

@@ -1,9 +1,9 @@
-"""Saved keyboard lighting profiles: ~/.config/rpredatorsense/profiles/<name>.json (128 colours)."""
+"""Saved keyboard lighting profiles: ~/.config/truesense/profiles/<name>.json (128 colours)."""
 import json, os
 from . import keyboard as kb, keymap as km
 from .backend import HwError
 
-DIR = os.path.expanduser("~/.config/rpredatorsense/profiles")
+DIR = os.path.expanduser("~/.config/truesense/profiles")
 
 def _path(n):
     if not n.replace("-", "").replace("_", "").isalnum(): raise HwError("profile names: letters, digits, - and _")
@@ -14,7 +14,7 @@ def save(name, cells):
 
 def load(name, brightness=None):
     try: cells = [tuple(c) for c in json.load(open(_path(name)))["cells"]]
-    except FileNotFoundError: raise HwError(f"no profile '{name}' (rpredatorsense keyboard profile list)")
+    except FileNotFoundError: raise HwError(f"no profile '{name}' (truesense keyboard profile list)")
     kb.per_key(cells, brightness)
 
 def cli(V, B):

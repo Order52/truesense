@@ -1,4 +1,4 @@
-# rpredatorsense
+# truesense
 
 **PredatorSense for Linux, for one laptop: the Acer Predator Helios 16 (PH16-71).**
 Fans and power modes, battery and charging settings, the rear light bar, per-key keyboard RGB and effects, the Fn / PREDATOR keys, and the audio extras (headset mic, Purified Voice equivalent, Acer DTS sound), as a small CLI plus a few systemd services. Written in Python with one tiny kernel helper.
@@ -33,9 +33,9 @@ Not working or not built: the F8 mic-mute LED, headset mic detection when the he
 Requirements: Linux with the Acer WMI gaming interface, `dkms` and kernel headers, Python 3.11+, systemd, PipeWire (for audio). For battery limit/calibration, USB charging and the backlight timeout you also need the **Linuwu-Sense** driver (not bundled). The headset mic needs a kernel with the ALC245 quirk for subsystem 1025:166c.
 
 ```
-git clone <this repository> rpredatorsense && cd rpredatorsense
+git clone <this repository> truesense && cd truesense
 sudo tools/install.sh              # add --with-audio on Arch to also install the RNNoise plugin
-rpredatorsense selftest            # every firmware feature: set -> read back -> restore -> PASS/FAIL
+truesense selftest            # every firmware feature: set -> read back -> restore -> PASS/FAIL
 ```
 
 The installer builds and signs the DKMS module, installs the daemon and user services, a udev rule and a health timer. Re-running it upgrades and restarts the daemon. On Arch you can also `cd packaging/arch && makepkg -si`. Secure Boot signing is untested (see [docs/USAGE.md](docs/USAGE.md)).
@@ -43,15 +43,15 @@ The installer builds and signs the DKMS module, installs the daemon and user ser
 ## Quick start
 
 ```
-rpredatorsense status                       # everything at a glance
-rpredatorsense mode turbo                   # power mode
-rpredatorsense fan set 60                   # both fans 60 %; `fan auto` hands them back to the firmware
-rpredatorsense battery on                   # 80 % charge limit
-rpredatorsense keyboard rainbow             # per-key RGB; also fill, gradient, keys "wasd=ff0000"
-rpredatorsense keyboard effect wave --brightness 50
-rpredatorsense rear breathing --color 00ff88
-rpredatorsense output toggle                # speakers <-> headphones while the jack is plugged in
-rpredatorsense voice headset personal       # Purified Voice mode for the headset mic
+truesense status                       # everything at a glance
+truesense mode turbo                   # power mode
+truesense fan set 60                   # both fans 60 %; `fan auto` hands them back to the firmware
+truesense battery on                   # 80 % charge limit
+truesense keyboard rainbow             # per-key RGB; also fill, gradient, keys "wasd=ff0000"
+truesense keyboard effect wave --brightness 50
+truesense rear breathing --color 00ff88
+truesense output toggle                # speakers <-> headphones while the jack is plugged in
+truesense voice headset personal       # Purified Voice mode for the headset mic
 ```
 
 All commands, configuration and troubleshooting: [docs/USAGE.md](docs/USAGE.md).
@@ -59,12 +59,12 @@ All commands, configuration and troubleshooting: [docs/USAGE.md](docs/USAGE.md).
 ## How it works
 
 ```
- CLI (rpredatorsense) ----+----> /dev/acer-rear  (kernel/acer-rear-wmi, DKMS)
- rpredatorsense.service --+        whitelisted ACPI-WMI calls: power mode, fans, sensors,
+ CLI (truesense) ----+----> /dev/acer-rear  (kernel/acer-rear-wmi, DKMS)
+ truesense.service --+        whitelisted ACPI-WMI calls: power mode, fans, sensors,
    (root: fan ladder,              GPU mode, boot sound, overdrive, rear light.
     governor, profile)    +----> Linuwu-Sense sysfs (external): battery, USB charge, backlight timeout
- rpredatorsense-keys -----+----> keyboard HID (hidraw): lighting, Fn / PREDATOR key reports
- rpredatorsense-audio ----+----> PipeWire: Purified Voice filters, output switching
+ truesense-keys -----+----> keyboard HID (hidraw): lighting, Fn / PREDATOR key reports
+ truesense-audio ----+----> PipeWire: Purified Voice filters, output switching
 ```
 
 The kernel helper is deliberately **not** a generic "call any WMI method" interface: each command is validated and only the methods needed here are reachable. On unload, or when the daemon stops, the fans go back to firmware Auto.
@@ -90,7 +90,7 @@ The kernel helper is deliberately **not** a generic "call any WMI method" interf
 ## Repository layout
 
 ```
-src/rpredatorsense/   the Python package (CLI, backend, daemon, keys, lighting, audio, cpu, selftest)
+src/truesense/   the Python package (CLI, backend, daemon, keys, lighting, audio, cpu, selftest)
 kernel/acer-rear-wmi/ the DKMS kernel helper (/dev/acer-rear)
 packaging/            systemd units, udev rule, health script, Arch PKGBUILD
 tools/                install scripts and read-only diagnostics
@@ -110,4 +110,4 @@ This repository's own code is licensed **GPL-2.0-only** (see [LICENSE](LICENSE))
 
 ## Contributing
 
-Reports from other models are welcome, but run the read-only tools first (`tools/collect_hardware_data.sh`, `tools/headset_diag.sh`) and please do not paste raw ACPI dumps anywhere public. Include your BIOS version, kernel and the `rpredatorsense selftest` output.
+Reports from other models are welcome, but run the read-only tools first (`tools/collect_hardware_data.sh`, `tools/headset_diag.sh`) and please do not paste raw ACPI dumps anywhere public. Include your BIOS version, kernel and the `truesense selftest` output.

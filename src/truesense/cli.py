@@ -18,7 +18,7 @@ def status():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="rpredatorsense", description="Acer Predator Helios 16 (PH16-71) control")
+    ap = argparse.ArgumentParser(prog="truesense", description="Acer Predator Helios 16 (PH16-71) control")
     sp = ap.add_subparsers(dest="cmd", required=True)
     sp.add_parser("status"); sp.add_parser("sensors")
     p = sp.add_parser("mode"); p.add_argument("value", nargs="?", choices=list(hw.MODES))
@@ -111,7 +111,7 @@ def main(argv=None):
             from . import audio, config
             if a.action == "status": _show({"modes": audio.pv_modes(), "plugged": audio.amixer_on("Headset Mic Jack"), "default_source": audio._run(["pactl", "get-default-source"]).stdout.strip()})
             elif a.action == "apply": _show(audio.apply_mic_policy())
-            elif a.action == "watch": audio.watch_mic(config.load(os.path.expanduser("~/.config/rpredatorsense/config.toml")))
+            elif a.action == "watch": audio.watch_mic(config.load(os.path.expanduser("~/.config/truesense/config.toml")))
             else: print(a.action, "->", audio.pv_set(a.action, a.mode or "off"))
         elif a.cmd == "speaker":
             from . import audio; print(audio.set_speaker(a.value == "on", target=a.target))
@@ -124,7 +124,7 @@ def main(argv=None):
             elif a.action == "uv-set": _show({"plane": a.plane, "offset_mv": cpu.uv_set(a.plane, a.value[0], a.confirm)})
             else: _show(cpu.uv_reset())
         elif a.cmd == "keys":
-            from . import fnkeys, config; fnkeys.main(config.load(os.path.expanduser("~/.config/rpredatorsense/config.toml")))
+            from . import fnkeys, config; fnkeys.main(config.load(os.path.expanduser("~/.config/truesense/config.toml")))
         elif a.cmd == "daemon":
             from . import daemon; daemon.main()
         elif a.cmd == "selftest": sys.exit(0 if selftest.run(a.skip_fans) else 1)

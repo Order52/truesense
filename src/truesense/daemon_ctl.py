@@ -1,4 +1,4 @@
-"""Pause/resume the rpredatorsense daemon's fan control by flipping the shared fan-mode file (daemon in 'manual' mode never writes the fans)."""
+"""Pause/resume the truesense daemon's fan control by flipping the shared fan-mode file (daemon in 'manual' mode never writes the fans)."""
 import contextlib, os, subprocess
 from . import config
 
@@ -9,7 +9,7 @@ def _file():
     return home + "/.cache/predator-fan-mode"
 
 def daemon_active():
-    return subprocess.run(["systemctl", "is-active", "--quiet", "rpredatorsense.service"]).returncode == 0
+    return subprocess.run(["systemctl", "is-active", "--quiet", "truesense.service"]).returncode == 0
 
 @contextlib.contextmanager
 def hands_off():

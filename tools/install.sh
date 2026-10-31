@@ -1,27 +1,82 @@
 #!/usr/bin/env bash
-# rpredatorsense installer.  sudo tools/install.sh            install or upgrade (kernel helper, daemon, user services, udev rule)
-#                            sudo tools/install.sh --with-audio  also install noise-suppression-for-voice (RNNoise plugin)
-set -eu
-[ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
-ROOT=$(realpath "$(dirname "$0")/.."); U=${SUDO_USER:-}; [ -n "$U" ] || { echo "run with sudo from your normal user (SUDO_USER is empty)"; exit 1; }
-if [ "${1:-}" = "--with-audio" ]; then command -v pacman >/dev/null && pacman -S --needed --noconfirm noise-suppression-for-voice || echo "(--with-audio only automates Arch; install the RNNoise LADSPA plugin, noise-suppression-for-voice, with your package manager)"; fi
+# TrueSense installer. One command:   sudo tools/install.sh          (safe to re-run: it upgrades in place)
+#   --module-only   only migrate + install the kernel module (used while testing)
+#   --with-audio    also install the RNNoise plugin for Purified Voice (Arch: noise-suppression-for-voice)
+#   --no-services   install files but do not enable/start services
+#   --force         install on a model other than the Acer Predator PH16-71 (unsupported, can misbehave)
+#   --prefix=DIR    install prefix (default /usr/local)
+set -Eeuo pipefail
+PREFIX=/usr/local; MODULE_ONLY=0; AUDIO=0; SERVICES=1; FORCE=0
+for a in "$@"; do case "$a" in
+  --module-only) MODULE_ONLY=1;; --with-audio) AUDIO=1;; --no-services) SERVICES=0;; --force) FORCE=1;; --prefix=*) PREFIX=${a#*=};;
+  -h|--help) sed -n '2,8p' "$0"; exit 0;; *) echo "unknown option: $a" >&2; exit 2;; esac; done
+[ "$(id -u)" -eq 0 ] || { echo "run with sudo:  sudo $0 $*"; exit 1; }
+ROOT=$(realpath "$(dirname "$0")/.."); U=${SUDO_USER:-}; [ -n "$U" ] && [ "$U" != root ] || { echo "run with sudo from your normal user (SUDO_USER is empty)"; exit 1; }
+UID_=$(id -u "$U"); HOME_U=$(getent passwd "$U" | cut -d: -f6)
+mkdir -p /var/log; exec > >(tee -a /var/log/truesense-install.log) 2>&1
+trap 'echo "!! install failed at line $LINENO (log: /var/log/truesense-install.log). Nothing is half-enabled: fix the problem and re-run." >&2' ERR
+say() { printf '  %s\n' "$*"; }; step() { printf '\n== %s\n' "$*"; }
+ur() { runuser -u "$U" -- env XDG_RUNTIME_DIR=/run/user/$UID_ DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$UID_/bus "$@"; }
+echo "TrueSense installer $(date '+%F %T')  prefix=$PREFIX  user=$U"
+
+step "pre-flight checks"
+model=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo unknown)
+if [ "$model" != "Predator PH16-71" ]; then
+  [ "$FORCE" = 1 ] || { echo "  this machine is '$model', not an Acer Predator PH16-71. TrueSense talks to firmware and is only tested on the PH16-71. Re-run with --force to override."; exit 1; }
+  say "WARNING: '$model' is unsupported; continuing because of --force"; printf 'options truesense_wmi force=1\n' > /etc/modprobe.d/truesense-force.conf
+else say "model: $model, BIOS $(cat /sys/class/dmi/id/bios_version 2>/dev/null)"; rm -f /etc/modprobe.d/truesense-force.conf; fi
+command -v dkms >/dev/null || { echo "  dkms is missing (Arch: sudo pacman -S dkms linux-headers)"; exit 1; }
+[ -e "/lib/modules/$(uname -r)/build" ] || { echo "  kernel headers for the running kernel ($(uname -r)) are missing (Arch: install your kernel's -headers package)"; exit 1; }
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' || { echo "  Python 3.11+ is required"; exit 1; }
+command -v systemctl >/dev/null || { echo "  systemd is required"; exit 1; }
+say "dkms, kernel headers, python $(python3 -c 'import sys; print("%d.%d"%sys.version_info[:2])'), systemd: ok"
+if command -v mokutil >/dev/null && mokutil --sb-state 2>/dev/null | grep -qi "enabled"; then
+  if [ -e /var/lib/dkms/mok.pub ] && mokutil --test-key /var/lib/dkms/mok.pub 2>&1 | grep -qi "already enrolled"; then say "Secure Boot: on, DKMS signing key enrolled: ok"
+  else say "WARNING: Secure Boot is on and the DKMS signing key is not enrolled: enrol it (sudo mokutil --import /var/lib/dkms/mok.pub), reboot, then re-run"; fi
+else say "Secure Boot: off (or unknown): no key enrolment needed"; fi
+
+step "removing legacy helpers (backed up first)"
+"$ROOT/tools/migrate-legacy.sh"
+
+step "kernel module"
+install -d /etc/modprobe.d /etc/modules-load.d /etc/udev/rules.d
+install -m644 "$ROOT/packaging/truesense.modprobe.conf" /etc/modprobe.d/truesense.conf
+install -m644 "$ROOT/packaging/truesense.modules-load.conf" /etc/modules-load.d/truesense.conf
+install -m644 "$ROOT/packaging/70-truesense.rules" /etc/udev/rules.d/70-truesense.rules
+udevadm control --reload
 "$ROOT/tools/install_kernel_module.sh"
-install -d /usr/local/lib/rpredatorsense /etc/rpredatorsense
-rm -rf /usr/local/lib/rpredatorsense/rpredatorsense; cp -r "$ROOT/src/rpredatorsense" /usr/local/lib/rpredatorsense/
-find /usr/local/lib/rpredatorsense -name __pycache__ -prune -exec rm -rf {} +
-install -m755 "$ROOT/packaging/health.sh" /usr/local/lib/rpredatorsense/health.sh
-printf '#!/bin/sh\nexec env PYTHONPATH=/usr/local/lib/rpredatorsense python3 -m rpredatorsense "$@"\n' > /usr/local/bin/rpredatorsense; chmod 755 /usr/local/bin/rpredatorsense
-[ -e /etc/rpredatorsense/config.toml ] || printf '# overrides for built-in defaults, see src/rpredatorsense/config.py\nuser = "%s"\n' "$U" > /etc/rpredatorsense/config.toml
-install -m644 "$ROOT"/packaging/rpredatorsense.service "$ROOT"/packaging/rpredatorsense-health.service "$ROOT"/packaging/rpredatorsense-health.timer /etc/systemd/system/
-install -m644 "$ROOT/packaging/70-rpredatorsense.rules" /etc/udev/rules.d/; udevadm control --reload; udevadm trigger --subsystem-match=misc; udevadm trigger --subsystem-match=input --action=change
-install -m644 "$ROOT/packaging/rpredatorsense-keys.service" "$ROOT/packaging/rpredatorsense-audio.service" /etc/systemd/user/
-systemctl daemon-reload
-UID_=$(id -u "$U"); systemctl --global enable rpredatorsense-keys.service rpredatorsense-audio.service
-runuser -u "$U" -- env XDG_RUNTIME_DIR=/run/user/$UID_ systemctl --user daemon-reload || true
-runuser -u "$U" -- env XDG_RUNTIME_DIR=/run/user/$UID_ systemctl --user restart rpredatorsense-keys.service rpredatorsense-audio.service || echo "(keys service starts at next login)"
-# another fan/profile daemon would fight over the fans: tell the user, never disable it silently
-for u in predator.service tuned.service; do systemctl is-active --quiet "$u" 2>/dev/null && echo "NOTE: $u is active and may conflict with rpredatorsense (fans/profile); disable it yourself if you want rpredatorsense to control them."; done
-systemctl enable rpredatorsense.service rpredatorsense-health.timer
-systemctl restart rpredatorsense.service          # `enable --now` does NOT restart a running service, so upgrades would keep running the old code
-systemctl start rpredatorsense-health.timer
-sleep 3; systemctl --no-pager --lines=5 status rpredatorsense.service | head -12; cat /tmp/predator-state 2>/dev/null
+udevadm trigger --subsystem-match=misc --subsystem-match=hidraw 2>/dev/null || true; sleep 1
+[ "$MODULE_ONLY" = 1 ] && { echo; echo "module-only install done."; exit 0; }
+
+step "TrueSense files"
+if [ "$AUDIO" = 1 ]; then command -v pacman >/dev/null && pacman -S --needed --noconfirm noise-suppression-for-voice || say "(--with-audio only automates Arch; install the RNNoise LADSPA plugin with your package manager)"; fi
+install -d "$PREFIX/lib/truesense" "$PREFIX/bin" "$PREFIX/share/truesense/profiles" /etc/truesense
+rm -rf "$PREFIX/lib/truesense/truesense"; cp -r "$ROOT/src/truesense" "$PREFIX/lib/truesense/"; find "$PREFIX/lib/truesense" -name __pycache__ -prune -exec rm -rf {} +
+install -m755 "$ROOT/packaging/health.sh" "$PREFIX/lib/truesense/health.sh"
+printf '#!/bin/sh\nexec env PYTHONPATH=%s/lib/truesense python3 -m truesense "$@"\n' "$PREFIX" > "$PREFIX/bin/truesense"; chmod 755 "$PREFIX/bin/truesense"
+[ -d "$ROOT/packaging/profiles" ] && install -m644 "$ROOT"/packaging/profiles/*.toml "$PREFIX/share/truesense/profiles/"
+if [ ! -e /etc/truesense/config.toml ]; then
+  printf '# TrueSense system configuration (see docs/USAGE.md). Built-in defaults apply to everything not set here.\nuser = "%s"\n' "$U" > /etc/truesense/config.toml
+fi
+for sh in bash zsh fish; do
+  case $sh in bash) d=/usr/share/bash-completion/completions/truesense;; zsh) d=/usr/share/zsh/site-functions/_truesense;; fish) d=/usr/share/fish/vendor_completions.d/truesense.fish;; esac
+  install -d "$(dirname "$d")"; "$PREFIX/bin/truesense" completion $sh > "$d" 2>/dev/null || rm -f "$d"
+done
+say "installed $PREFIX/bin/truesense and $PREFIX/lib/truesense"
+
+step "services"
+for u in truesense.service truesense-health.service truesense-health.timer; do sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@MODPROBE@|$(command -v modprobe)|g" "$ROOT/packaging/$u" > /etc/systemd/system/$u; done
+for u in truesense-keys.service truesense-audio.service; do sed -e "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/$u" > /etc/systemd/user/$u; done
+systemctl daemon-reload; ur systemctl --user daemon-reload || true
+if [ "$SERVICES" = 1 ]; then
+  systemctl enable truesense.service truesense-health.timer >/dev/null 2>&1
+  systemctl restart truesense.service            # `enable --now` would NOT restart a running service, so upgrades would keep the old code
+  systemctl start truesense-health.timer
+  systemctl --global enable truesense-keys.service truesense-audio.service >/dev/null 2>&1
+  ur systemctl --user restart truesense-keys.service truesense-audio.service || say "(user services start at your next login)"
+  sleep 2
+else say "services installed but not enabled (--no-services)"; fi
+
+step "health check"
+"$PREFIX/bin/truesense" doctor || say "the checker found problems: see above (re-run it any time: truesense doctor)"
+echo; echo "TrueSense is installed. Try:  truesense status   |   truesense --help"
