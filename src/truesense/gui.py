@@ -352,13 +352,19 @@ class Window(QMainWindow if Qt else object):
         self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True, icons=["optimus", "gpu", "auto"]); v.addWidget(self.gpu)
         self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False))
         v = self.card(lay, "Fans", "fan", True); self.stat_fan = v.right
-        self.fan = Segmented(FAN_MODES, tiles=True, icons=["smart", "auto", "max", "manual"]); self.fan.picked.connect(lambda i: None if self.loading else self.fan_apply(i)); v.addWidget(self.fan)
-        self.fan_pct = self.slider(v, "Manual speed", 20, 100, 5, lambda x: None, lambda x: self.fan_apply(3), suffix=" %")
+        self.fan = Segmented(FAN_MODES, tiles=True, icons=["smart", "auto", "max", "manual"]); self.fan.picked.connect(self.fan_picked); v.addWidget(self.fan)
+        self.fan_box = QWidget(); fb = QVBoxLayout(self.fan_box); fb.setContentsMargins(0, 0, 0, 0); fb.setSpacing(8)      # only shown while Manual is chosen
+        self.fan_pct = self.slider(fb, "Manual speed", 20, 100, 5, lambda x: self.live("fanpct", lambda: control.fan("manual", x)), lambda x: None, suffix=" %")
+        self.loading = True; self.fan_pct.setValue(40); self.loading = False; v.addWidget(self.fan_box); self.fan_box.setVisible(False)
         g = QGridLayout(); g.setSpacing(8)
         for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Per-key colours", "palette", "keys"), ("Battery and Screen", "battery", "battery"),
                                                ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
             b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); g.addWidget(b_, n // 2, n % 2)
         lay.addSpacing(4); lay.addLayout(g); lay.addStretch()
+
+    def fan_picked(self, i):
+        if self.loading: return
+        self.fan_box.setVisible(i == 3); self.fan_apply(i)
 
     def fan_apply(self, i):
         mode = ("smart", "auto", "max", "manual")[i]; p = self.fan_pct.value()
@@ -572,7 +578,7 @@ class Window(QMainWindow if Qt else object):
             if "state" in d:
                 s = d["state"]["settings"]; self.auto.setChecked(bool(s["auto_profile"]))
                 if d.get("fan", {}).get("mode") == "manual": self._set(self.fan_pct, max(20, d["fan"]["duty_register_pct"]["cpu"]))
-                self.fan.set_index(0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1))
+                fi = 0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1); self.fan.set_index(fi); self.fan_box.setVisible(fi == 3)
             if "ac" in d: self.src = "AC" if d["ac"] else "Battery"
             if d.get("mode") in self.modes: self.power.set_index(self.modes.index(d["mode"]))
             if "rear" in d:
