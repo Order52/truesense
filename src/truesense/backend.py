@@ -72,8 +72,23 @@ def set_overdrive(on): cmd(f"set_overdrive {int(bool(on))}"); return settle(get_
 def get_boot_sound(): return bool(ival(cmd("get_boot"), "boot"))
 def set_boot_sound(on): cmd(f"set_boot {int(bool(on))}"); return settle(get_boot_sound, bool(on), "boot sound")
 
-def get_kb_timeout(): v = ival(cmd("get_kbtimeout"), "kbtimeout"); return None if v < 0 else bool(v)
-def set_kb_timeout(on): cmd(f"set_kbtimeout {int(bool(on))}"); return settle(get_kb_timeout, bool(on), "backlight timeout")
+def _wmi_kb_timeout(): v = ival(cmd("get_kbtimeout"), "kbtimeout"); return None if v < 0 else bool(v)
+
+def get_kb_timeout():
+    """Backlight off after 30 s of no typing. The keyboard controller's own flag is the one that acts (the firmware flag is kept in step)."""
+    from . import keyboard
+    try:
+        v = keyboard.hid_timeout_get()
+        if v is not None: return v
+    except HwError: pass
+    return _wmi_kb_timeout()
+
+def set_kb_timeout(on):
+    from . import keyboard
+    cmd(f"set_kbtimeout {int(bool(on))}")                                   # firmware flag (what Acer's WMI exposes)
+    try: keyboard.hid_timeout_set(on)                                       # keyboard controller flag (what actually switches the light off)
+    except HwError: pass
+    return settle(get_kb_timeout, bool(on), "backlight timeout")
 
 def get_usb_charge(): return ival(cmd("get_usb"), "usb")
 def set_usb_charge(level):

@@ -26,7 +26,7 @@ def _hidraw():
         if d[:3] == b"\x06\x02\xff": return "/dev/" + os.path.basename(h)   # usage page 0xFF02
     raise HwError("keyboard lighting interface (usage page 0xFF02) not found")
 
-SIM = {"brightness": 25, "packets": [], "frames": 0}      # TRUESENSE_SIM=1: a fake keyboard (the tests run the keyboard commands against it)
+SIM = {"brightness": 25, "packets": [], "frames": 0, "timeout": True}      # TRUESENSE_SIM=1: a fake keyboard (the tests run the keyboard commands against it)
 
 def _sim(): return bool(os.environ.get("TRUESENSE_SIM"))
 
@@ -196,3 +196,19 @@ def paint_cells(changes, brightness=None):
     cells = current_cells()
     for c, col in changes.items(): cells[int(c)] = hexc(col)
     per_key(cells, brightness)
+
+
+# ---- the keyboard controller's OWN "backlight off after 30 s" flag ------------------------------------------------------------------------
+# Separate from the firmware (WMI) flag: Acer's capture shows SET `30 01 <0|1> 00 00 00 00 chk` and GET (`b0 00 .. 4f`, then read: byte 2 = flag).
+# Its factory state is ON, which is why the lights went dark after 30 s while the firmware flag read "off".
+def hid_timeout_get():
+    if _sim(): return bool(SIM["timeout"])
+    fd = os.open(_hidraw(), os.O_RDWR)
+    try:
+        buf = bytearray(b"\x00" + bytes([0xB0, 0, 0, 0, 0, 0, 0, 0x4F])); fcntl.ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x06, buf)
+        r = _get_feature(fd); return bool(r[2]) if r[0] == 0xB0 else None
+    finally: os.close(fd)
+
+def hid_timeout_set(on):
+    _send([_pkt(0x30, 0x01, 1 if on else 0, 0, 0, 0, 0)])
+    if _sim(): SIM["timeout"] = bool(on)
