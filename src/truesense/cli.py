@@ -262,7 +262,7 @@ def h_fan(a):
     elif v == "auto": control.fan("auto"); emit("fans: firmware auto (they stop when cool)")
     elif v == "off": control.fan("off", confirm=a.confirm); emit("fans: OFF   (back on Auto automatically at CPU 70 C / GPU 65 C; `truesense fan auto` now)")
     elif v == "max": control.fan("max"); emit("fans: MAX  (`truesense fan smart on` hands them back)")
-    elif v == "set": control.fan("manual", a.cpu, a.gpu, confirm=a.confirm); emit(f"fans: manual {a.cpu} % / {a.gpu if a.gpu is not None else a.cpu} %" + ("   (a stopped fan: all fans return to Auto at CPU 70 C / GPU 65 C; `truesense fan auto` now)" if 0 in (a.cpu, a.gpu if a.gpu is not None else a.cpu) else ""))
+    elif v == "set": control.fan("manual", a.cpu, a.gpu, confirm=a.confirm); emit(f"fans: manual {a.cpu} % / {a.gpu if a.gpu is not None else a.cpu} %" + ("   (a stopped fan: all fans return to Auto at CPU 70 C / GPU 65 C; `truesense fan auto` now. The firmware may keep the fan at its minimum speed: check `truesense fan status`)" if 0 in (a.cpu, a.gpu if a.gpu is not None else a.cpu) else ""))
     elif v == "curve":
         from . import curves
         act = a.action

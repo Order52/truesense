@@ -860,7 +860,13 @@ class Window(QMainWindow if Qt else object):
                     if x.value() == 0: x.setValue(20)
             finally: self.loading = False
             self.fan_manual_live(); return
-        self.do(lambda: control.fan("manual", c, g, confirm=True), f"Stopped {which} (all fans come back on Auto automatically if it gets warm)")
+        def stop():
+            control.fan("manual", c, g, confirm=True); time.sleep(8)                                    # then look at what the fan really does
+            s = hw.sensors(); rpm = {"CPU": s.get("cpu_fan_rpm"), "GPU": s.get("gpu_fan_rpm")}; asked = [n for n, v in (("CPU", c), ("GPU", g)) if v == 0]
+            still = [f"{n} fan still turns at {rpm[n]} rpm" for n in asked if rpm[n] and rpm[n] > 500]
+            if still: return "The firmware accepted the stop but " + "; ".join(still) + ": it keeps a minimum speed in manual mode, so a fan cannot really be stopped on this laptop. Fans stay under TrueSense's watch."
+            return f"Stopped {which} (confirmed by the fan speed). All fans come back on Auto automatically if it gets warm."
+        self.do(stop, lambda r: r)
 
     fan_off_ask = fan_stop_ask
 
