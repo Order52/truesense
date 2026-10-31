@@ -769,11 +769,11 @@ class Window(QMainWindow if Qt else object):
 
     def p_profiles(self):
         lay = self.page("Profiles")
-        lay.addWidget(self.hint("A profile is a one-click bundle: it sets the power mode, fans, rear light, battery limit, screen overdrive, boot sound and audio in one go. It applies once (the power mode is then held like when you pick a tile)."))
+        lay.addWidget(self.hint("A profile is a one-click bundle: it sets the power mode, fans, rear light, battery limit, screen overdrive, boot sound and audio in one go. It applies once (the power mode is then held like when you pick a tile). A profile only changes what it lists below: anything it does not list stays as it is, so switching from one profile to another can leave things from the earlier one (for example battery-saver's 80 % limit) switched on."))
         v = self.card(lay, "Choose")
         self.prof_cb = QComboBox(); self.prof_cb.setMinimumWidth(150); self.prof_cb.activated.connect(lambda i: self.prof_changed())
         self.line(v, "Profile", self.prof_cb, self.btn("Apply", self.prof_apply, True), self.btn("Next", self.prof_next)); self.prof_now = self.hint(""); v.addWidget(self.prof_now)
-        v = self.card(lay, "What it changes"); self.prof_info = QLabel(""); self.prof_info.setWordWrap(True); self.prof_info.setObjectName("stats"); v.addWidget(self.prof_info)
+        v = self.card(lay, "What it changes (and only this)"); self.prof_info = QLabel(""); self.prof_info.setWordWrap(True); self.prof_info.setObjectName("stats"); v.addWidget(self.prof_info)
         self.line(v, "Details", self.btn("Show the file", self.prof_show), self.btn("Delete", self.prof_delete))
         v = self.card(lay, "Make your own")
         v.addWidget(self.hint("Set everything the way you like first, then save: TrueSense records the current power mode, fans, rear light, battery, screen, boot sound and audio. (Keyboard colours are saved under Lighting, Profiles.)"))
