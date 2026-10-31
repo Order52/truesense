@@ -2,7 +2,7 @@
 
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
-import os, sys, threading
+import os, sys, threading, time
 from . import actions, audio, backend as hw, config, control, ipc, keyboard, keymap, looks, profiles, userstate
 from .device import HwError
 
@@ -239,12 +239,12 @@ class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False; self.rear_last = 100
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings): build()
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
-        self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(2000); self.full_refresh(); self.tick()
+        self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(1000); self.full_refresh(); self.tick()
 
     # ---- plumbing --------------------------------------------------------------------------------------------------------------------
     def say(self, t):
@@ -275,6 +275,7 @@ class Window(QMainWindow if Qt else object):
 
     def live(self, key, fn):
         """For colours and sliders while dragging: one write at a time, and the NEWEST request is always the one that ends up applied."""
+        self.last_action = time.monotonic()
         if self.busy.get(key): self.pending[key] = fn; return
         self.busy[key] = True
         def work():
@@ -549,28 +550,37 @@ class Window(QMainWindow if Qt else object):
 
     # ---- refresh -----------------------------------------------------------------------------------------------------------------------
     def tick(self):
+        """Once a second: temperatures and fans. Every 2 s, when you are not touching anything, re-read the hardware so changes made elsewhere
+        (Noctalia, the PREDATOR key, Fn keys, the command line) show up here."""
         if not self.isVisible() or self.isMinimized(): return
         try:
             s = hw.sensors(); self.stat_cpu.setText(f"CPU: {s['cpu_temp']} °C · {s['cpu_fan_rpm']} RPM"); self.stat_gpu.setText(f"GPU: {s['gpu_temp']} °C · {s['gpu_fan_rpm']} RPM")
             self.stat_fan.setText(f"{max(s['cpu_fan_rpm'], s['gpu_fan_rpm'])} RPM"); self.stat_bat.setText(self.src)
         except HwError: pass
+        self.ticks += 1
+        idle = time.monotonic() - self.last_action > 2.0 and not any(self.busy.values()) and not self.pending
+        dragging = any(s.isSliderDown() for s in (self.kb_level, self.kb_speed, self.rear_bright, self.rear_speed, self.fan_pct, self.boost))
+        popup = any(c.view().isVisible() for c in (self.kb_fx,))
+        if self.ticks % 2 == 0 and idle and not dragging and not popup and not self.refreshing: self.full_refresh("audio_fast" if self.pages.currentIndex() == PAGES["audio"] else "home")
 
     def full_refresh(self, scope=None):
         """Read the hardware off the UI thread. The audio page (pactl, amixer, DTS) is only read while it is shown, so the main page stays quick."""
         scope = scope or ("audio" if self.pages.currentIndex() == PAGES["audio"] else "home")
+        self.refreshing = True
         def work():
             d = {}
             def get(k, fn):
                 try: d[k] = fn()
                 except Exception: pass
-            if scope == "audio":
+            if scope in ("audio", "audio_fast"):
                 get("out", audio.output_status); get("jack", audio.jack_status); get("mic", audio.mic_state); get("boost", audio.headset_boost); get("voice", audio.voice_modes)
-                get("jackset", lambda: config.load()["audio"]["jack"]); get("dts", lambda: "DTS:            on" in audio.dts_status())
+                get("jackset", lambda: config.load()["audio"]["jack"])
+                if scope == "audio": get("dts", lambda: "DTS:            on" in audio.dts_status())      # slow (starts a helper): only when the page opens or after a change
             else:
                 get("state", lambda: ipc.call("state")); get("mode", hw.get_mode); get("fan", hw.fan_state); get("rear", hw.rear_get); get("kb", keyboard.get_brightness)
                 get("kbtimeout", hw.get_kb_timeout); get("limit", hw.get_battery_limit); get("calib", hw.get_calibration); get("usb", hw.get_usb_charge); get("od", hw.get_overdrive)
                 get("boot", hw.get_boot_sound); get("gpu", hw.get_gpu_mode); get("look", keyboard.last); get("cells", keyboard.current_cells); get("ac", hw.on_ac)
-            self.say_refresh(d)
+            self.say_refresh(d); self.refreshing = False
         threading.Thread(target=work, daemon=True).start()
 
     @staticmethod
