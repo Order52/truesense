@@ -12,7 +12,7 @@ Labels: **VERIFIED** = set, read back (or measured, or seen by the owner) and re
 | Fans: Auto, Max, manual % (one or separate CPU/GPU) | VERIFIED | one write holds; duty 20 to 100 % |
 | Smart fan (earlier ladder version) | VERIFIED | under a 24-thread load the fans reached 100/90 % within 10 s and the CPU held 88 to 90 °C |
 | Smart fan (current curve version, built-in and custom curves) | SIMULATED | same safety rules; the curve engine itself has not been run under real load |
-| Stopping one fan or both (0 % per fan) with watchdog | UNTESTED | the kernel module accepts "both 0" only since 0.3.0; how the firmware reacts to a 0 % command is unknown |
+| Stopping one fan or both (0 % per fan) with watchdog | UNTESTED | the kernel module accepts 0 per fan since 0.3.5; how the firmware reacts to a 0 % command is unknown, so the stop is read back and undone if it did not take |
 | Game rules (`power game`) | SIMULATED | process matching tested against a fake /proc; the effect on the real laptop is not yet watched |
 | Native auto (Balanced on power, Eco on battery) | SIMULATED | modelled on how PredatorSense behaves; not compared side by side with Windows |
 | Smart auto and its profiles | SIMULATED | escalation, Turbo timing, thermal back-off, battery rules, resume-by-itself: all in tests |
