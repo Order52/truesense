@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
 # TrueSense health check (run by truesense-health.timer): restart the daemon if it died or stalled, and rebuild the DKMS module once per 10 min
 # if a kernel update left it missing.
 STAMP=/run/truesense-dkms-tried

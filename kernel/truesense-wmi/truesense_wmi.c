@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: (MIT OR GPL-2.0-only)
 /*
  * truesense_wmi - TrueSense kernel helper for the Acer Predator Helios 16 (PH16-71)
  *
@@ -51,7 +51,7 @@
 #include <linux/kstrtox.h>
 #endif
 
-#define TS_VERSION	"0.3.0"
+#define TS_VERSION	"0.3.3"
 
 #define GUID_GAME	"7A4DDFE7-5B5D-40B4-8595-4408E0CC7F56"
 #define GUID_APGE	"61EF69EA-865C-4BC3-A502-A0DEBA0CB531"
@@ -753,4 +753,4 @@ module_wmi_driver(ts_driver);
 MODULE_AUTHOR("TrueSense contributors");
 MODULE_DESCRIPTION("TrueSense: whitelisted Acer gaming WMI interface for the Predator Helios 16 (PH16-71)");
 MODULE_VERSION(TS_VERSION);
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("Dual MIT/GPL");

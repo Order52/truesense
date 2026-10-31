@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Actions: the one vocabulary shared by the PREDATOR key, saved profiles and `truesense keys test`.
 
 An action is `name` or `name:argument`. Each returns a short message (shown on screen by the caller). Unknown names are rejected when configuring, never at key-press time.

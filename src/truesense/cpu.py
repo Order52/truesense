@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """CPU/GPU power: RAPL PL1/PL2 (powercap sysfs), NVIDIA power limit, and a GUARDED undervolt interface (MSR 0x150).
 
 Safety: limits are range-checked; the undervolt is read-only unless --confirm is given, starts at -10 mV steps, refuses beyond -120 mV,

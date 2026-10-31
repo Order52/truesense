@@ -24,6 +24,6 @@ The interface to the laptop was worked out by reading public drivers and documen
 
 ## Licensing note
 
-TrueSense is **GPL-2.0-only**. The optional window uses PyQt6 (GPL-3.0), and the optional audio integrations use GPL-3.0 and MIT programs at run time; they are installed separately and are not part of this repository. If you redistribute a combined package, check that the licences fit together. If you maintain one of the projects above and something here is not right, please open an issue.
+TrueSense is **MIT licensed** (the kernel module is dual MIT / GPL-2.0-only). The projects above are credited for ideas, facts or optional run-time use; none of their code is part of this repository. The optional window uses PyQt6 (GPL-3.0) and the optional audio integrations use GPL-3.0 and MIT programs at run time; they are installed separately. See [LEGAL.md](LEGAL.md). If you maintain one of the projects above and something here is not right, please open an issue and we will fix it.
 
 "PredatorSense" and "Predator" are trademarks of Acer Inc., used here only to describe compatibility. TrueSense is not affiliated with or endorsed by Acer.

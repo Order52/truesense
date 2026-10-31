@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Configuration: built-in defaults, overridden by /etc/truesense/config.toml (system) and ~/.config/truesense/config.toml (the user's own).
 
 Everything is optional; a missing file or key falls back to the default. `write_user()` updates the user's file (used by `truesense keys set ...` etc.).

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Fn / PREDATOR key service (runs as the logged-in user).
 
 The keyboard's vendor HID interface (usage page 0x88, report id 4) sends: 04 80 FF Fn+F10, 04 8A FF Fn+Esc, 04 81 FF PREDATOR press, 04 00 00 release.

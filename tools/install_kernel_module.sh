@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Build and install the truesense_wmi kernel module with DKMS for EVERY installed kernel (so it also works after you boot another kernel), then load it.
 set -Eeuo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }

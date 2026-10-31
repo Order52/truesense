@@ -14,3 +14,5 @@ How it is built:
 - Settings written by the service are validated; profiles are plain JSON read with strict validation.
 
 Supported version: the latest release.
+
+Licence, trademark or takedown concerns can be reported the same way (see docs/LEGAL.md).

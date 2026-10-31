@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Fast paths shared by the CLI, key service, profiles and window: fans and power mode go through the daemon in ONE request, so there is no
 settle delay (the daemon changes its own fan control and writes the hardware under one lock). Without a daemon they write directly."""
 import time

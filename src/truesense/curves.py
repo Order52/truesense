@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Fan curves for the smart fan: temperature (°C) -> fan duty (%), separately for the CPU fan and the GPU fan.
 
 A curve is {"cpu": [[temp, pct], ...], "gpu": [...], "hysteresis": °C, "down_rate": %/s, "predict": °C, "couple": %, "battery_shift": °C}.

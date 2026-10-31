@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """`truesense doctor`: check the whole stack and say how to fix what is wrong. Read-only. Exit code 1 if anything FAILs (WARN does not fail).
 
 Every check returns (status, detail, fix) with status in OK / WARN / FAIL / INFO.

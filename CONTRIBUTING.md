@@ -3,6 +3,7 @@
 Thanks for helping. TrueSense drives real hardware, so the rules are about safety and honesty.
 
 ## Ground rules
+- **Licence**: contributions are under the project's MIT licence (the kernel module is dual MIT / GPL-2.0-only). Only submit code you wrote or have the right to publish; never copy code from GPL projects or from vendor software. See [docs/LEGAL.md](docs/LEGAL.md).
 - **Never claim something works without a read-back or a real test.** Mark new features VERIFIED, SIMULATED or UNTESTED in [docs/STATUS.md](docs/STATUS.md).
 - **Safety first**: every write is read, written and read back; anything that can hurt (voltages, fans, power limits) needs a confirmation, safe limits and a way back. No firmware flashing, no embedded-controller access outside documented WMI calls, never write the codec `reconfig` file.
 - **No proprietary files**: nothing from Acer, DTS or Realtek, and no raw ACPI dumps (they contain the OEM Windows product key).

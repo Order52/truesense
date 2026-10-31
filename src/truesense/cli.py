@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """truesense: command line for the Acer Predator Helios 16 (PH16-71).   truesense <area> <verb> ...   (every setting has on / off / toggle / status; --json for scripts)
 
 Areas: status sensors power fan battery display boot gpu rear keyboard look update startup audio keys profile cpu touchpad service config doctor selftest completion gui

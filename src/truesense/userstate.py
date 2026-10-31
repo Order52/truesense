@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Small per-user memory (~/.local/state/truesense/user.json): what a light was set to before `off`, last keyboard profile, ... Never required: every reader has a default."""
 import json, os
 

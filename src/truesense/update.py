@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Updates: find a newer TrueSense release on GitHub and install it.
 
 Checking only reads public release information (one HTTPS request, no identifiers, at most once a day when automatic checks are on). Installing downloads the tagged

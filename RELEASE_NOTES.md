@@ -1,5 +1,12 @@
 # Release notes
 
+## 0.3.3 (2026-10-31): MIT licence and legal clean-up
+
+* **Relicensed to MIT** (the kernel module is dual MIT / GPL-2.0-only so the kernel accepts it). SPDX identifiers in every source file; the LICENSE is installed with the program.
+* **docs/LEGAL.md**: what the licence covers, where the code and facts come from, what is *not* in the repository, trademark use ("Acer", "Predator" and "PredatorSense" belong to Acer Inc.; TrueSense is not affiliated with Acer), the licences of software you install alongside it, privacy, contact.
+* **Removed the detailed notes about the vendor's Windows software** (`docs/research`) and a quote from firmware tables; the hardware facts that remain are rewritten as independent interface notes in **docs/PROTOCOL.md**. The README no longer presents the project as "PredatorSense for Linux".
+* The kernel module and DKMS are version 0.3.3 (the licence string changed): re-run the installer.
+
 ## 0.3.2 (2026-10-31): icon, credits, update-check fix
 
 * **Logo and app icon** (`src/truesense/data/truesense.svg`, PNGs in `packaging/icons`), used by the window, the launcher and the README; installed into the icon theme.

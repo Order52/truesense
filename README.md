@@ -3,14 +3,14 @@
 <h1 align="center">TrueSense</h1>
 
 <p align="center">
-  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-GPL--2.0--only-blue"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-0.3.2-58a6ff">
+  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-MIT-blue"></a>
+  <img alt="Version" src="https://img.shields.io/badge/version-0.3.3-58a6ff">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Linux%206.6%2B-lightgrey">
   <img alt="Hardware" src="https://img.shields.io/badge/hardware-Acer%20Predator%20PH16--71-19e3ff">
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776ab">
 </p>
 
-**PredatorSense for Linux, for the Acer Predator Helios 16 (PH16-71).**
+**Hardware control for the Acer Predator Helios 16 (PH16-71) on Linux.**
 Power modes, fans, GPU mode, battery, the rear light bar, per-key keyboard RGB, the PREDATOR key, audio extras, and CPU/GPU undervolting: one kernel module, one root service, one command line that does everything, and a small optional window.
 
 <p align="center">
@@ -19,7 +19,7 @@ Power modes, fans, GPU mode, battery, the rear light bar, per-key keyboard RGB, 
   <img src="docs/images/fan-curves.png" width="31%" alt="Fan curve editor">
 </p>
 
-> **Hardware warning.** TrueSense was built and tested on one machine: **Acer Predator Helios 16 PH16-71, BIOS V1.18** (i7-13700HX, RTX 4060 Laptop, ALC245 audio, keyboard `04F2:0117`). It talks to the firmware (ACPI-WMI) and the keyboard controller. The kernel module refuses to load on other models unless forced, and forcing it on other hardware is at your own risk. Not affiliated with or endorsed by Acer. Read [docs/SAFETY.md](docs/SAFETY.md) before you touch voltages or turn fans off.
+> **Hardware warning.** TrueSense was built and tested on one machine: **Acer Predator Helios 16 PH16-71, BIOS V1.18** (i7-13700HX, RTX 4060 Laptop, ALC245 audio, keyboard `04F2:0117`). It talks to the firmware (ACPI-WMI) and the keyboard controller. The kernel module refuses to load on other models unless forced, and forcing it on other hardware is at your own risk. Not affiliated with or endorsed by Acer (see [docs/LEGAL.md](docs/LEGAL.md)). Read [docs/SAFETY.md](docs/SAFETY.md) before you touch voltages or turn fans off.
 
 ## Contents
 [Install](#install) · [A first look](#a-first-look) · [Features](#features) · [Safe by default](#safe-by-default) · [Command line](#command-line) · [How it works](#how-it-works) · [Status](#status) · [Documentation](#documentation) · [Credits and licence](#credits-and-licence)
@@ -111,11 +111,11 @@ Verified on the real laptop, partly verified, and not yet verified features are 
 
 ## Documentation
 
-[USAGE](docs/USAGE.md) · [SAFETY](docs/SAFETY.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) · [STATUS](docs/STATUS.md) · [CREDITS](docs/CREDITS.md) · [CONTRIBUTING](CONTRIBUTING.md) · [CODE OF CONDUCT](CODE_OF_CONDUCT.md) · [SECURITY](SECURITY.md) · [Release notes](RELEASE_NOTES.md) · hardware research in [docs/research](docs/research) and [docs/hardware-data](docs/hardware-data)
+[USAGE](docs/USAGE.md) · [SAFETY](docs/SAFETY.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) · [STATUS](docs/STATUS.md) · [LEGAL](docs/LEGAL.md) · [CREDITS](docs/CREDITS.md) · [CONTRIBUTING](CONTRIBUTING.md) · [CODE OF CONDUCT](CODE_OF_CONDUCT.md) · [SECURITY](SECURITY.md) · [Release notes](RELEASE_NOTES.md) · hardware interface notes in [PROTOCOL](docs/PROTOCOL.md) and measurements in [docs/hardware-data](docs/hardware-data)
 
 ## Credits and licence
 
-TrueSense is **GPL-2.0-only** ([LICENSE](LICENSE)) and exists because of other people's work. Full credits, with what each project gave us and its licence, are in [docs/CREDITS.md](docs/CREDITS.md):
+TrueSense is **MIT licensed** ([LICENSE](LICENSE); the kernel module is dual MIT / GPL-2.0-only) and exists because of other people's work. Full credits, with what each project gave us and its licence, are in [docs/CREDITS.md](docs/CREDITS.md):
 
 - [**Linuwu-Sense**](https://github.com/0x7375646F/Linuwu-Sense): the map of the Acer WMI interface for Linux, checked on the real laptop.
 - [**AcerUltraX**](https://github.com/fawaz7/AcerUltraX): Acer DTS sound on Linux.
@@ -123,4 +123,4 @@ TrueSense is **GPL-2.0-only** ([LICENSE](LICENSE)) and exists because of other p
 - [**G-Helper**](https://github.com/seerge/g-helper) and [**PreySense**](https://github.com/hammadzaigham/PreySense): the design ideas behind the window and the safety model.
 - The maintainer's earlier tools [ph16-71-rgb](https://github.com/Order52/ph16-71-rgb), [Predator-Key](https://github.com/Order52/Predator-Key) and [linuwu-sense-cli](https://github.com/Order52/linuwu-sense-cli), which this project replaces.
 
-No Acer, DTS or Realtek files are included. "PredatorSense" and "Predator" are trademarks of Acer Inc., used only to describe compatibility; TrueSense is not affiliated with or endorsed by Acer. "PredatorSense" and "Predator" are trademarks of Acer Inc.; they are used only to describe compatibility.
+No Acer, DTS or Realtek files are included. "Acer", "Predator" and "PredatorSense" are trademarks of Acer Inc., used only to describe compatibility; TrueSense is not affiliated with or endorsed by Acer. What is and is not in this repository, and the licences of what you install alongside it, are in [docs/LEGAL.md](docs/LEGAL.md). "PredatorSense" and "Predator" are trademarks of Acer Inc.; they are used only to describe compatibility.

@@ -1,4 +1,0 @@
-ssdt11.dsl:78:            Name (_UID, "APGe")  // _UID: Unique ID
-ssdt11.dsl:3587:            Method (WMAA, 3, Serialized)
-ssdt11.dsl:3948:            Method (WMBH, 3, Serialized)
-ssdt13.dsl:4033:            Method (WMAA, 3, Serialized)

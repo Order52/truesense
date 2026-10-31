@@ -13,7 +13,7 @@ Labels: **VERIFIED** = set, read back (or measured, or seen by the owner) and re
 | Smart fan (earlier ladder version) | VERIFIED | under a 24-thread load the fans reached 100/90 % within 10 s and the CPU held 88 to 90 °C |
 | Smart fan (current curve version, built-in and custom curves) | SIMULATED | same safety rules; the curve engine itself has not been run under real load |
 | Fans off (0 %) with watchdog | UNTESTED | the kernel module accepts "both 0" only since 0.3.0; how the firmware reacts to a 0 % command is unknown |
-| Native auto (Balanced on power, Eco on battery) | SIMULATED | modelled on PredatorSense from the captures; not compared side by side with Windows |
+| Native auto (Balanced on power, Eco on battery) | SIMULATED | modelled on how PredatorSense behaves; not compared side by side with Windows |
 | Smart auto and its profiles | SIMULATED | escalation, Turbo timing, thermal back-off, battery rules, resume-by-itself: all in tests |
 | CPU power limits (kept by the service) | PARTIAL | write, read-back and restore verified earlier (root); the "service keeps them" logic is SIMULATED |
 | 80 % battery limit, USB charging while off, calibration flag, LCD overdrive, boot sound, keyboard timeout | VERIFIED | set, read back, restored. The keyboard's own 30 s timer is a separate controller flag, now handled |

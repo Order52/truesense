@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Hardware features of the Acer Predator Helios 16 (PH16-71), one function per feature.
 
 Everything goes through the kernel helper (device.py). Every setter reads the old value, writes, and reads back (retrying for up to 1 s, because the firmware

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Persistent daemon settings (survive reboots): /var/lib/truesense/state.json, written atomically. Defaults come from the config."""
 import json, os, threading
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """`truesense selftest`: set -> read back -> restore every firmware feature, then run the doctor. Prints PASS / FAIL / SKIP per item; exit 1 on any FAIL.
 
 While it runs the daemon's smart fan and automatic profile are paused through the control socket (and put back afterwards), so nothing fights the test.

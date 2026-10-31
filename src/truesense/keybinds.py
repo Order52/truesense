@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """PREDATOR key binding profiles: a named set of what each gesture does (tap, double, triple, long press, Fn+Esc) and the press timing.
 
 Built-in profiles are read-only (copy one to make your own); yours live in ~/.config/truesense/keys/NAME.json. Using a profile writes its actions into your

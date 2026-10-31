@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 import os, sys, tempfile
 os.environ["HOME"] = tempfile.mkdtemp(prefix="ts-test-home-")      # tests must never touch the real user state, config or lighting memory
 os.environ["TRUESENSE_SOCKET"] = "/nonexistent/truesense.sock"       # ... or talk to the real daemon (they once flipped smart fan and the auto profile off)

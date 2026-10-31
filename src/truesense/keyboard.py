@@ -1,7 +1,8 @@
-"""Keyboard lighting (Chicony 04F2:0117, interface 3 / usage page 0xFF02) over hidraw feature reports (handoff section 19).
+# SPDX-License-Identifier: MIT
+"""Keyboard lighting (Chicony 04F2:0117, interface 3 / usage page 0xFF02) over hidraw feature reports (see docs/PROTOCOL.md).
 
 Packets are 8 bytes, checksum = 0xFF - (sum of bytes 0..6) & 0xFF, sent with HIDIOCSFEATURE (report id 0 prefix).
-Effects: STATUS of write path = packets verified against a Windows capture; the visible result on Linux needs eyes (see docs/STATUS.md).
+The packet formats are in docs/PROTOCOL.md; what was checked on the real keyboard is in docs/STATUS.md.
 """
 import fcntl, glob, os, time
 from . import util, userstate
@@ -77,7 +78,7 @@ def get_brightness():
     finally: os.close(fd)
 
 def per_key(colors, brightness=None, remember=True):
-    """Direct/per-key upload (handoff 19b, byte-identical to the Windows capture): 128 cells, 4 bytes each (00 R G B), 8 x 64-byte output reports.
+    """Direct/per-key upload (docs/PROTOCOL.md): 128 cells, 4 bytes each (00 R G B), 8 x 64-byte output reports.
     colors: list of up to 128 (r,g,b); missing cells are black. cell = col*6 + row (see re/reference/keymap_ph16-71_verified.json)."""
     if brightness is None:                                   # keep what the user set with Fn+F11/F12; never upload into darkness
         brightness = get_brightness() or 25
@@ -104,16 +105,16 @@ def per_key(colors, brightness=None, remember=True):
     if remember: userstate.set("keyboard", {"mode": "perkey", "brightness": brightness, "cells": _hexcells(cells)})
 
 def restore_default(brightness=12):
-    """The state PredatorSense left on Windows: cells 0..125 = #00aec7, brightness 12 (identical frames to re/battery_ui.pcapng)."""
+    """The factory look of the keyboard: cells 0..125 = #00aec7, brightness 12."""
     per_key([(0x00, 0xAE, 0xC7)] * 126, brightness)
 
 def set_operating_mode(color="00aec7", speed=1, brightness=0x32):
-    """OPERATINGMODE (0x22): the keyboard colour reflects the power mode (handoff 19a: no prelude; colour packet 14 00 01 R G B 00 chk'; effect 08 03 22 05 32 02 01 chk)."""
+    """OPERATINGMODE (0x22): the keyboard colour reflects the power mode (docs/PROTOCOL.md: no prelude; colour packet 14 00 01 R G B 00 chk'; effect 08 03 22 05 32 02 01 chk)."""
     r, g, b = hexc(color)
     _send([_pkt(0x14, 0, 0x01, r, g, b, 0), _pkt(0x08, 0x03, 0x22, 0x05, brightness, 0x02, 0x01)])
     userstate.set("keyboard", {"mode": "operating", "color": color.lstrip("#").lower(), "brightness": brightness})
 
-# Acer's per-mode colours are not in the captured data/app: these defaults are OURS, overridable in config [keyboard.operating_colors].
+# The vendor's per-mode colours are not known: these defaults are OURS, overridable in config [keyboard.operating_colors].
 OPERATING_COLORS = {"eco": "00cc66", "quiet": "3366ff", "balanced": "00aec7", "performance": "ff9900", "turbo": "ff0000"}
 
 def follow_mode(mode, colors=None):
@@ -202,7 +203,7 @@ def paint_cells(changes, brightness=None):
 
 
 # ---- the keyboard controller's OWN "backlight off after 30 s" flag ------------------------------------------------------------------------
-# Separate from the firmware (WMI) flag: Acer's capture shows SET `30 01 <0|1> 00 00 00 00 chk` and GET (`b0 00 .. 4f`, then read: byte 2 = flag).
+# Separate from the firmware (WMI) flag: SET is `30 01 <0|1> 00 00 00 00 chk`, GET is `b0 00 .. 4f` then read byte 2 (docs/PROTOCOL.md).
 # Its factory state is ON, which is why the lights went dark after 30 s while the firmware flag read "off".
 def hid_timeout_get():
     if _sim(): return bool(SIM["timeout"])

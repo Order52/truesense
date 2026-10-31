@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Audio: output switching, microphone, headset jack, Purified Voice (RNNoise on PipeWire) and the DTS sound (AcerUltraX wrapper).
 
 Acer's Purified Voice runs a proprietary Realtek model that cannot run on Linux. This builds an open equivalent: one PipeWire filter chain per input

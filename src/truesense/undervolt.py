@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """CPU undervolt profiles (Intel MSR 0x150 offsets: core plane and cache plane, in millivolts, 0 to -120).
 
 Built-in profiles are read-only (copy one to make your own). NOTHING here applies a voltage by itself: applying always needs an explicit confirmation,

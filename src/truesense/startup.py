@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """What the lights and profile do at login (`truesense startup`, run by the truesense-startup user service).
 
 [startup] keyboard / rear:  last = put back what was set last (saved automatically on every change)

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 import os, tempfile, time, tomllib, threading, unittest
 from truesense import actions, backend as hw, config, device, ipc, profiles, state, daemon
 from truesense.fnkeys import Gestures

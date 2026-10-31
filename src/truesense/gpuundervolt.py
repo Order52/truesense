@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """NVIDIA GPU undervolt through NVML (the same interface `nvidia-smi` uses): a clock-curve offset plus an optional cap on the maximum clock.
 
 Linux drivers do not expose GPU voltage directly. Shifting the voltage/frequency curve UP by an offset (so each clock needs less voltage) and capping the maximum

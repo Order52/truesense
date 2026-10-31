@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Tiny file helpers that always close the file (a long-running daemon must not leak descriptors)."""
 
 

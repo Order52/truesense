@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Named profiles: a saved bundle of settings applied in one go (CLI, PREDATOR key, GUI).
 
 Files are plain TOML in ~/.config/truesense/profiles/ (yours) and <prefix>/share/truesense/profiles/ (shipped; yours win). Sections, all optional:

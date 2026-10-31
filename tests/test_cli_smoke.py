@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Runs every CLI command against the simulator. A command may succeed (0) or refuse cleanly (1, e.g. 'daemon not running'); it must never raise."""
 import contextlib, io, os, tempfile, unittest
 from truesense import cli, config, device, keyprofiles, profiles, userstate

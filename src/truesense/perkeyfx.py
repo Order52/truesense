@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Per-key animations (software). The keyboard's hardware effects cover the whole keyboard; a different animation on chosen keys has to be drawn frame by frame.
 
 The settings live in the user state ("perkey_fx": mode, speed, keys, base colours); `loop()` runs inside the key service (it already has the keyboard) and draws about

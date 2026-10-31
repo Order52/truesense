@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """truesense daemon (root): smart fan curve, thermal governor, CPU power limits, automatic power profile, and the control socket.
 
 Safety: fans go back to firmware Auto and clocks are uncapped on ANY exit (SIGTERM/SIGINT/exception/stop); if the loop breaks while hot the fans go to 100 %;

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Access to the TrueSense kernel helper (/dev/truesense).
 
 One text command per call: open, write, read the reply, close. Every open file has its own reply buffer in the kernel, so the daemon, CLI and GUI

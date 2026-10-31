@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Regenerates docs/images/*.png: the real window, driven against the built-in hardware simulator and an in-process service, so the pictures are reproducible and show
 no personal data.   python3 tools/screenshots.py   (needs python-pyqt6; runs headless)"""
 import os, sys, tempfile, time

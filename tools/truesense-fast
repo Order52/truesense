@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT
 # Instant fan / power / auto changes for status bars: one request to the daemon over its socket (about 5 ms, no Python start-up).
 # Falls back to the full CLI when socat or the socket is missing or the daemon is older.
 #   truesense-fast fan smart|auto|max|<20-100>      truesense-fast power <mode> [hold-minutes]      truesense-fast auto on|off

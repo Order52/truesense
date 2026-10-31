@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Key names -> lighting cells for the PH16-71 keyboard (cell = col*6 + row), from the owner-verified map.
 Corrections vs the community map (verified by key presses): cell 2 = Esc, cell 5 = CapsLock, cell 70 = main-row minus."""
 import json, os, re

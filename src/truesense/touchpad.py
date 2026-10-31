@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Touchpad on/off through the kernel's per-device `inhibited` switch (works on any compositor). Writing needs root: the daemon does it for users."""
 import re
 from . import util

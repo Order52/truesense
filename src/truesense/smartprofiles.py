@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Smart-auto profiles: how Smart auto chooses the power mode (see daemon.smart_target).
 
 A profile is a dict of the [smart] settings. Built-in profiles are read-only (copy one to make your own); yours live in

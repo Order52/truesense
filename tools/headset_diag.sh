@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Read-only ALC245 headset diagnostics. Run with a 4-pole headset plugged in:
 #   sudo tools/headset_diag.sh
 # Step 1 prints pin sense / pin config / COEFs; step 2 waits 12 s (UNPLUG and REPLUG the headset); step 3 prints again.

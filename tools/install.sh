@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # TrueSense installer. One command:   sudo tools/install.sh          (safe to re-run: it upgrades in place)
 #   --module-only   only migrate + install the kernel module (used while testing)
 #   --with-audio    also install the RNNoise plugin for Purified Voice (Arch: noise-suppression-for-voice)
@@ -69,6 +70,7 @@ say "installed $PREFIX/bin/truesense and $PREFIX/lib/truesense"
 step "services"
 for u in truesense.service truesense-health.service truesense-health.timer; do sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@MODPROBE@|$(command -v modprobe)|g" "$ROOT/packaging/$u" > /etc/systemd/system/$u; done
 install -m755 "$ROOT/tools/truesense-fast" "$PREFIX/bin/truesense-fast"
+install -Dm644 "$ROOT/LICENSE" "$PREFIX/share/licenses/truesense/LICENSE"
 install -Dm644 "$ROOT/src/truesense/data/truesense.svg" "$PREFIX/share/icons/hicolor/scalable/apps/truesense.svg"; install -Dm644 "$ROOT/packaging/icons/truesense-256.png" "$PREFIX/share/icons/hicolor/256x256/apps/truesense.png"
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t -f "$PREFIX/share/icons/hicolor" 2>/dev/null || true
 install -d /usr/share/applications; sed "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/truesense.desktop" > /usr/share/applications/truesense.desktop

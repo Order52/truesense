@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Lighting looks: a named snapshot of the keyboard look (effect, colour, speed, brightness, or per-key colours) and the rear light bar.
 
 Saved per user in ~/.config/truesense/looks/NAME.json. One look can also be chosen for BOOT: the daemon (root) keeps a self-contained copy in

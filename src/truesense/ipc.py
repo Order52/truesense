@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Local control socket of the daemon: one JSON object per line, one reply per request.
 
 The daemon (root) owns the privileged and persistent settings; the CLI, GUI and key service (running as the user) talk to it here instead of sharing files.

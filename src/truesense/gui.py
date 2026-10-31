@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Optional window for TrueSense (Qt 6 via PyQt6). A thin layer over the same functions the CLI uses; nothing else depends on it.
 
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.

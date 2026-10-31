@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Shell completion scripts generated from the argparse tree (so they never go stale)."""
 import argparse
 

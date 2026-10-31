@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Short on-screen messages ("Audio output: Headphones"). One implementation for the CLI, key service and daemon.
 
 Style (config [osd] style, env TRUESENSE_OSD overrides): native = the compositor's own notification, then the desktop notification daemon;

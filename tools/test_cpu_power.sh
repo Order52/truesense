@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Checks CPU power limits and (read-only) the undervolt interface through the TrueSense service. Safe: it sets 70/80 W, then goes back to automatic.
 # Run as your normal user (the service does the privileged part):  tools/test_cpu_power.sh
 set -u
