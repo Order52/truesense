@@ -1,8 +1,10 @@
 # Release notes
 
-## Unreleased
+## 0.3.7 (2026-10-31): updating from the window works without a polkit agent
 
-- **Update from the window works on desktops with no polkit agent** (Hyprland, sway and other minimal setups): `pkexec` needs an agent to show a password prompt, and without one the Update button failed with only "installer exited with code 127". The updater now checks for an agent first; with none it opens a terminal window (`$TERMINAL`, kitty, foot, alacritty, ghostty, wezterm, konsole, ...) that runs `sudo truesense update apply`, and says plainly what to run if no terminal exists. Whether the update really installed is decided by the installed version, not by the terminal closing.
+- **Fixed:** the Update button in the window did nothing useful on desktops without a polkit authentication agent (Hyprland, sway and other minimal setups). It used `pkexec`, which cannot ask for a password without an agent, and only reported "the installer exited with code 127". The updater now checks for an agent first. With none, it opens a terminal window (`$TERMINAL`, then kitty, foot, alacritty, ghostty, wezterm, konsole, gnome-terminal, xfce4-terminal or xterm) that runs `sudo truesense update apply`, and tells you what to run if no terminal can be found.
+- Whether an update really installed is now decided by the installed version, not by the terminal window closing.
+- Tests cover agent detection (polkitd alone does not count), terminal selection, and the fallback path.
 
 ## 0.3.6 (2026-10-31): polish, a settings-file race fixed, clearer Profiles page
 
