@@ -579,6 +579,7 @@ class TestPowerManagers(unittest.TestCase):
             _os.makedirs(f"{sysd}/cpu{n}/cpufreq")
             open(f"{sysd}/cpu{n}/cpufreq/scaling_governor", "w").write("performance"); open(f"{sysd}/cpu{n}/cpufreq/energy_performance_preference", "w").write("performance")
         open(sysd + "/intel_pstate/no_turbo", "w").write("1")
+        for n in range(3): open(f"{sysd}/cpu{n}/cpufreq/cpuinfo_max_freq", "w").write("5000000"); open(f"{sysd}/cpu{n}/cpufreq/scaling_max_freq", "w").write("2100000")      # the ceiling turbo-off left behind
         units = {"auto-cpufreq": {"active": True, "enabled": True}, "tlp": {"active": False, "enabled": False}, "ananicy-cpp": {"active": True, "enabled": True}}; calls = []
         def run(*cmd, timeout=30):
             calls.append(cmd); verb, unit = cmd[1], cmd[-1].replace(".service", ""); u = units.get(unit, {"active": False, "enabled": False})
@@ -599,6 +600,8 @@ class TestPowerManagers(unittest.TestCase):
         self.assertEqual(pm.cpu_state(sysd), {"no_turbo": "0", "governor": "powersave", "epp": "balance_performance"})
         self.assertFalse([c for c in calls if c[-1].replace(".service", "") not in pm.UNITS and c[-1].replace(".service", "") != "ananicy-cpp"])
         self.assertEqual(pm.load(rec)["cpu"], {"no_turbo": "1", "governor": "performance", "epp": "performance"})
+        self.assertEqual(pm.ceiling_low(sysd), [], "the frequency ceilings left low by turbo-off are raised to each core's maximum")
+        self.assertEqual(open(sysd + "/cpu1/cpufreq/scaling_max_freq").read(), "5000000")
         pm.takeover(run, sysd, rec); self.assertEqual(pm.load(rec)["cpu"]["governor"], "performance", "a second takeover keeps the ORIGINAL state to go back to")
         r = pm.restore(run, sysd, rec); self.assertEqual(r["restored"], ["auto-cpufreq"]); self.assertTrue(units["auto-cpufreq"]["active"] and units["auto-cpufreq"]["enabled"])
         self.assertEqual(pm.cpu_state(sysd), {"no_turbo": "1", "governor": "performance", "epp": "performance"}); self.assertEqual(pm.load(rec), {})
@@ -624,3 +627,10 @@ class TestPowerManagers(unittest.TestCase):
             r = h["power_managers"](action="restore"); self.assertFalse(r["on"]); self.assertTrue(units["auto-cpufreq"]["active"]); self.assertFalse(b.st.get("pm_takeover"))
             with self.assertRaises(device.HwError): h["power_managers"](action="rm -rf")
         finally: pm.status, pm.takeover, pm.restore, pm.load = o
+
+    def test_a_low_ceiling_is_repaired_even_when_no_manager_is_running(self):
+        from truesense import powermgr as pm
+        sysd, rec, run, units, calls = self.fake(); units["auto-cpufreq"].update(active=False, enabled=False); open(sysd + "/intel_pstate/no_turbo", "w").write("0")
+        for n in range(3): open(f"{sysd}/cpu{n}/cpufreq/scaling_governor", "w").write("schedutil")
+        self.assertEqual(len(pm.ceiling_low(sysd)), 3); r = pm.takeover(run, sysd, rec)
+        self.assertEqual(r["found"], []); self.assertTrue(r["ceiling_fixed"]); self.assertEqual(pm.cpu_state(sysd)["governor"], "schedutil", "your governor is not touched when nothing was in charge and turbo is on")

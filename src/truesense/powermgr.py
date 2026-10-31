@@ -60,6 +60,24 @@ def _set_cpu(st, sys_=SYS):
     return bad
 
 
+def ceiling_low(sys_=SYS):
+    """Cores whose frequency ceiling (scaling_max_freq) is below what the core can do. Turning turbo off makes the kernel lower the ceiling, and turning it on again does not raise it."""
+    low = []
+    for f in glob.glob(f"{sys_}/cpu[0-9]*/cpufreq/cpuinfo_max_freq"):
+        d = os.path.dirname(f); hw, cur = _read(f), _read(d + "/scaling_max_freq")
+        if hw and cur and hw.isdigit() and cur.isdigit() and int(cur) < int(hw): low.append(d)
+    return low
+
+
+def fix_ceiling(sys_=SYS):
+    """Raise every low ceiling to the core's own maximum (what the service also does when it stops), read back. Returns the cores that did not take it."""
+    bad = []
+    for d in ceiling_low(sys_):
+        _write(d + "/scaling_max_freq", _read(d + "/cpuinfo_max_freq"))
+        if _read(d + "/scaling_max_freq") != _read(d + "/cpuinfo_max_freq"): bad.append(os.path.basename(os.path.dirname(d)))
+    return bad
+
+
 def load(path=None):
     try:
         with open(path or RECORD) as f: d = json.load(f)
@@ -87,8 +105,9 @@ def takeover(run=_run, sys_=SYS, path=None):
         rc, msg = run("systemctl", "disable", "--now", f["unit"] + ".service")
         if rc != 0 and run("systemctl", "is-active", f["unit"] + ".service")[1] == "active": failed.append(f"{f['unit']}: {msg[:80]}")
         else: stopped.append(f["unit"])
-    cpu_bad = _set_cpu(DEFAULTS, sys_) if found else []
-    return {"found": [f["unit"] for f in found], "stopped": stopped, "failed": failed, "cpu_not_set": cpu_bad, "cpu": cpu_state(sys_)}
+    cpu_bad = _set_cpu(DEFAULTS, sys_) if (found or cpu_state(sys_)["no_turbo"] == "1") else []    # defaults only when a manager was in charge or turbo was left off
+    cpu_bad += ["ceiling " + c for c in fix_ceiling(sys_)]                                          # a ceiling left low by turbo being off is raised whatever the reason
+    return {"found": [f["unit"] for f in found], "stopped": stopped, "failed": failed, "cpu_not_set": cpu_bad, "cpu": cpu_state(sys_), "ceiling_fixed": not ceiling_low(sys_)}
 
 
 def restore(run=_run, sys_=SYS, path=None):

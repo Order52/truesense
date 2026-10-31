@@ -113,6 +113,9 @@ def c_turbo():
         with open("/sys/devices/system/cpu/intel_pstate/no_turbo") as f: t = f.read().strip()
     except OSError: return INFO, "no intel_pstate turbo switch on this CPU", ""
     if t == "1": return WARN, "CPU turbo boost is OFF: the CPU is held at its base clock", "a power manager may have left it off: truesense power managers stop   (or: echo 0 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo)"
+    from . import powermgr
+    low = powermgr.ceiling_low()
+    if low: return WARN, f"CPU turbo is on but {len(low)} core(s) have a frequency ceiling below their maximum (left over from turbo being off, or a thermal cap)", "truesense power managers stop   (raises the ceilings; the service re-applies a thermal cap if it needs one)"
     return OK, "CPU turbo boost is on", ""
 
 
