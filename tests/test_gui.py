@@ -132,3 +132,14 @@ class TestWindowLogic(unittest.TestCase):
         w.look_cb.setCurrentIndex(w.look_cb.findText("my-lights")); w.look_delete(); self.assertNotIn("my-lights", looks.names()); self.assertEqual(w.look_cb.currentText(), "native")
         with self.assertRaises(__import__('truesense.device', fromlist=['HwError']).HwError): looks.save("native", {"keyboard": None, "rear": None})
         w.close()
+
+    def test_mouse_wheel_scrolls_the_page_but_never_changes_a_setting(self):
+        from PyQt6.QtCore import QPoint, QPointF, Qt
+        from PyQt6.QtGui import QWheelEvent
+        w = gui.Window(); w.setFixedHeight(400); w.show(); w.go("battery"); self.app.processEvents()
+        def wheel(widget, dy): return QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, dy), Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+        w.go("home"); self.app.processEvents(); before = (w.kb_level.value(), w.fan_pct.value(), w.fan_cpu.value()); idx = w.kb_fx.currentIndex()
+        for widget in (w.kb_level, w.fan_pct, w.fan_cpu, w.kb_fx): self.app.sendEvent(widget, wheel(widget, 240)); self.app.sendEvent(widget, wheel(widget, -240))
+        self.assertEqual((w.kb_level.value(), w.fan_pct.value(), w.fan_cpu.value()), before, "the wheel must not move a slider"); self.assertEqual(w.kb_fx.currentIndex(), idx, "nor a drop-down")
+        w.pl1.setValue(65); self.app.sendEvent(w.pl1, wheel(w.pl1, 240)); self.assertEqual(w.pl1.value(), 65, "nor a number box")
+        w.close()

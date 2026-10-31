@@ -7,13 +7,13 @@ from . import actions, audio, backend as hw, config, control, cpu, curves, gpuun
 from .device import HwError
 
 try:
-    from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QRectF
+    from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QRectF, QEvent
     from PyQt6.QtNetwork import QLocalServer, QLocalSocket
     from PyQt6.QtSvg import QSvgRenderer
     from PyQt6.QtCore import QByteArray, QSize
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QShortcut, QKeySequence
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
+                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
 except ImportError as _e:
     Qt = None; _IMPORT_ERROR = _e
 
@@ -180,6 +180,19 @@ class Segmented(QWidget if Qt else object):
         if 0 <= i < len(self.btns): self.btns[i].setChecked(True)
         else:
             self.group.setExclusive(False); [b.setChecked(False) for b in self.btns]; self.group.setExclusive(True)
+
+
+class WheelGuard(QObject if Qt else object):
+    """Scrolling the page with the mouse wheel must never change a setting by accident. Sliders, drop-downs and number boxes ignore the wheel and the page scrolls instead.
+    (Drag a slider, click a drop-down, or type, to change a value.)"""
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Type.Wheel and isinstance(obj, (QSlider, QComboBox, QAbstractSpinBox)):
+            w = obj.parentWidget()
+            while w is not None and not isinstance(w, QScrollArea): w = w.parentWidget()
+            if w is not None:
+                bar = w.verticalScrollBar(); bar.setValue(bar.value() - ev.angleDelta().y() // 2)            # the page scrolls instead
+            ev.accept(); return True
+        return False
 
 
 class Bus(QObject if Qt else object):
@@ -478,6 +491,7 @@ class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
+        self.wheel_guard = WheelGuard(self); QApplication.instance().installEventFilter(self.wheel_guard)
         self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.refreshed.connect(self._apply); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
@@ -490,7 +504,7 @@ class Window(QMainWindow if Qt else object):
     # ---- plumbing --------------------------------------------------------------------------------------------------------------------
     def closeEvent(self, e):
         """Stop the timer and cut the worker threads off from the widgets: a late result must never land in a window that is going away."""
-        self.closing = True; self.timer.stop()
+        self.closing = True; self.timer.stop(); QApplication.instance().removeEventFilter(self.wheel_guard)
         for sig in (self.bus.message, self.bus.refreshed, self.bus.boot_text, self.bus.uv, self.bus.batt, self.bus.report):
             try: sig.disconnect()
             except TypeError: pass
