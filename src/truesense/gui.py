@@ -4,7 +4,7 @@
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
 import os, shlex, subprocess, sys, threading, time
-from . import actions, audio, backend as hw, config, control, cpu, curves, designs, gamerules, gpuundervolt, powermgr, ipc, keybinds, keyboard, keymap, looks, perkeyfx, profiles, smartprofiles, undervolt, update, userstate
+from . import actions, audio, backend as hw, config, control, cpu, curves, designs, gamerules, gpuundervolt, powermgr, ipc, keybinds, keyboard, keymap, keyprofiles, looks, perkeyfx, profiles, smartprofiles, startup, touchpad, undervolt, update, userstate
 from .device import HwError
 
 try:
@@ -728,6 +728,7 @@ class Window(QMainWindow if Qt else object):
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
         TIPS = {"eco": "Lowest power and heat; for battery and light work", "quiet": "Low fan noise; reduced speed", "balanced": "PredatorSense's default: everyday use", "performance": "More power for demanding work and games", "turbo": "Maximum power; loud fans and high heat"}
         for b_, m_ in zip(self.power.btns, order): b_.setToolTip(TIPS.get(m_, ""))
+        self.line(v, "Cycle mode", self.btn("Previous", lambda: self.do(lambda: actions.run("power-prev"), lambda r: r)), self.btn("Next", lambda: self.do(lambda: actions.run("power-next"), lambda r: r)))
         self.auto = Segmented(["Manual", "Native", "Smart"]); self.auto.picked.connect(self.auto_picked); self.line(v, "Mode control", self.auto)
         self.auto_hint = self.hint(AUTO_HINT["off"]); v.addWidget(self.auto_hint)
         self.smart_box = QWidget(); sb = QVBoxLayout(self.smart_box); sb.setContentsMargins(0, 0, 0, 0); sb.setSpacing(8)
@@ -760,7 +761,43 @@ class Window(QMainWindow if Qt else object):
         for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Fan curves", "fan", "curves"), ("PREDATOR key", "settings", "predator"), ("Undervolt", "performance", "undervolt"),
                                                ("Battery and Screen", "battery", "battery"), ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
             b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); btns.append(b_)
+        v = self.card(lay, "Profiles")
+        v.addWidget(self.hint("A profile is a saved bundle of settings: power mode, fans, lighting, battery, audio. Shipped profiles are read-only."))
+        self.prof_cb = QComboBox(); self.prof_cb.setMinimumWidth(150)
+        self.line(v, "Profile", self.prof_cb, self.btn("Apply", self.prof_apply, True), self.btn("Next", self.prof_next))
+        self.prof_name = QLineEdit(); self.prof_name.setPlaceholderText("name, e.g. my-gaming"); self.prof_name.setMinimumWidth(120); self.line(v, "Save the current state as", self.prof_name, self.btn("Save", self.prof_save))
+        self.line(v, "Manage", self.btn("Show contents", self.prof_show), self.btn("Delete", self.prof_delete)); self.prof_msg = self.hint(""); v.addWidget(self.prof_msg); self.prof_reload()
         lay.addSpacing(4); lay.addWidget(FlowGrid(btns)); lay.addStretch()
+
+    def prof_reload(self, select=None):
+        cur = select or (self.prof_cb.currentText() if self.prof_cb.count() else "")
+        self.prof_cb.clear()
+        for n in profiles.names(): self.prof_cb.addItem(f"{n}  ({profiles.source(n)})", n)
+        if cur: self.prof_cb.setCurrentIndex(max(0, self.prof_cb.findData(cur)))
+
+    def prof_apply(self):
+        n = self.prof_cb.currentData()
+        if n: self.do(lambda: profiles.apply(n), lambda r: f"Profile '{n}' applied" + (f": {r}" if isinstance(r, str) and r else ""))
+
+    def prof_next(self): self.do(lambda: profiles.apply(profiles.next_name()), "Next profile applied")
+
+    def prof_save(self):
+        n = self.prof_name.text().strip()
+        def go(): profiles.save(n, profiles.capture("saved from the window")); return n
+        self.do(go, lambda r: f"Saved profile '{r}' (the current power, fans, lighting, battery and audio settings)", refresh=False); QTimer.singleShot(600, lambda: self.prof_reload(n))
+
+    def prof_show(self):
+        n = self.prof_cb.currentData()
+        if not n: return
+        try: self.say_report(f"Profile {n}\n\n" + config.dumps(profiles.load(n)))
+        except Exception as e: self.say(f"Error: {e}")
+
+    def prof_delete(self):
+        n = self.prof_cb.currentData()
+        if not n: return
+        if profiles.source(n) != "yours": self.say("Shipped profiles cannot be deleted; save a copy under your own name instead"); return
+        if QMessageBox.question(self, "Delete profile", f"Delete the profile '{n}'?") != QMessageBox.StandardButton.Yes: return
+        self.do(lambda: profiles.delete(n), f"Deleted profile '{n}'", refresh=False); QTimer.singleShot(400, self.prof_reload)
 
     def auto_picked(self, i):
         if self.loading: return
@@ -854,6 +891,7 @@ class Window(QMainWindow if Qt else object):
         self.kb_color.changed.connect(lambda h_: self.live("kbc", lambda: keyboard.set_color(h_)))
         self.sep(v); self.line(v, "Lighting mode", self.kb_fx); self.line(v, "Colour", self.kb_color)
         self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x))); self.sep(v)
+        self.kb_oper = self.switch(v, "Colour follows the power mode", lambda x: self.do(lambda: ipc.call("set", key="operating_follow", value=bool(x)), "Keyboard colour follows the power mode: " + ("on" if x else "off"), refresh=False), sub="Eco green, Quiet blue, Balanced cyan, Performance orange, Turbo red. Off leaves the colours you picked.")
         self.line(v, "Default", self.btn("Reset to default", lambda: self.do(lambda: keyboard.restore_default(None), "Keyboard back to the stock look"))); v.addStretch(); stack.addWidget(kb); stack.addWidget(self.keys_tab())
         rr = QWidget(); v = QVBoxLayout(rr); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
         self.rear_on = self.switch(v, "Light", lambda x: self.do(lambda: actions.run("rear:on" if x else "rear:off"), lambda r: r, refresh=False)); self.sep(v)
@@ -873,10 +911,31 @@ class Window(QMainWindow if Qt else object):
         self.line(c, "Profile", self.look_cb, self.btn("Apply", self.look_apply, True)); self.look_copy = self.btn("Copy to edit", self.look_copy_do); self.look_del = self.btn("Delete", self.look_delete)
         self.line(c, "Edit", self.look_copy, self.look_del); self.look_name = QLineEdit(); self.look_name.setPlaceholderText("name"); self.look_name.setMinimumWidth(120); self.look_save_btn = self.btn("Save", self.look_save)
         self.line(c, "Save as", self.look_name, self.look_save_btn); self.look_msg = self.hint(""); c.addWidget(self.look_msg); self.line(c, "Default", self.btn("Reset to default", self.look_reset))
+        c = self.card(v, "Per-key sets")
+        c.addWidget(self.hint("Only the 128 key colours (no effect, no rear bar), used by `truesense keyboard profile` and by the login setting in Settings."))
+        self.ks_cb = QComboBox(); self.ks_cb.setMinimumWidth(150); self.line(c, "Key set", self.ks_cb, self.btn("Apply", self.ks_apply, True), self.btn("Delete", self.ks_delete))
+        self.ks_nm = QLineEdit(); self.ks_nm.setPlaceholderText("name"); self.ks_nm.setMinimumWidth(120); self.line(c, "Save the keys now as", self.ks_nm, self.btn("Save", self.ks_save)); self.ks_reload()
         c = self.card(v, "At boot")
         c.addWidget(self.hint("Applied by the TrueSense service when the laptop starts (before you log in) and again after every resume from suspend."))
         self.boot_cb = QComboBox(); self.boot_cb.setMinimumWidth(150); self.line(c, "Profile", self.boot_cb, self.btn("Use", self.boot_set, True)); self.line(c, "Boot lighting", self.btn("Don't change at boot", lambda: self.do(lambda: ipc.call("boot_look", action="clear"), "Lighting is left alone at boot", refresh=False) or QTimer.singleShot(500, self.reload_looks)))
         self.boot_lbl = self.hint("…"); c.addWidget(self.boot_lbl); self.reload_looks(); v.addStretch(); return w
+
+    def ks_reload(self, select=None):
+        cur = select or (self.ks_cb.currentText() if self.ks_cb.count() else ""); self.ks_cb.clear(); self.ks_cb.addItems(keyprofiles.names())
+        if cur: self.ks_cb.setCurrentIndex(max(0, self.ks_cb.findText(cur)))
+
+    def ks_apply(self):
+        n = self.ks_cb.currentText()
+        if n: self.do(lambda: keyprofiles.load(n, None), f"Key set '{n}' applied", refresh=False)
+
+    def ks_save(self):
+        n = self.ks_nm.text().strip(); cells = [tuple(bytes.fromhex(c)) for c in self.board.cells]
+        def go(): keyprofiles.save(n, cells); return n
+        self.do(go, lambda r: f"Saved key set '{r}'", refresh=False); QTimer.singleShot(400, lambda: self.ks_reload(n))
+
+    def ks_delete(self):
+        n = self.ks_cb.currentText()
+        if n and QMessageBox.question(self, "Delete key set", f"Delete the key set '{n}'?") == QMessageBox.StandardButton.Yes: self.do(lambda: keyprofiles.delete(n), f"Deleted key set '{n}'", refresh=False); QTimer.singleShot(400, self.ks_reload)
 
     def reload_looks(self, select=None):
         ns = looks.names(); sel = select or (self.look_cb.currentText() if self.look_cb.count() else "native"); self.look_cb.clear(); self.look_cb.addItems(ns); self.look_cb.setCurrentIndex(max(0, self.look_cb.findText(sel)))
@@ -1140,12 +1199,14 @@ class Window(QMainWindow if Qt else object):
     def p_audio(self):
         lay = self.page("Audio"); v = self.card(lay, "Output")
         self.out = self.seg(v, "Play sound on", ["Speakers", "Headphones"], lambda i: self.do(lambda: audio.set_output(("speakers", "headphones")[i]), f"Output: {('speakers', 'headphones')[i]}"))
-        self.sep(v); self.dts = self.switch(v, "Acer DTS sound", lambda x: self.do(lambda: audio.dts_power(x), "DTS " + ("on" if x else "off")), "This laptop plays on the speakers or the headphone jack, not both at once.")
+        self.spk = self.switch(v, "Noise filter on the speakers", lambda x: self.do(lambda: audio.speaker_filter(bool(x)), "Speaker noise filter " + ("on" if x else "off")), "Off by default: it also gates music. For calls on the speakers."); self.sep(v)
+        self.dts = self.switch(v, "Acer DTS sound", lambda x: self.do(lambda: audio.dts_power(x), "DTS " + ("on" if x else "off")), "This laptop plays on the speakers or the headphone jack, not both at once.")
         v = self.card(lay, "3.5 mm jack")
         self.jack = self.seg(v, "I plugged in", [l for _, l in JACK], self.jack_pick); self.jack_hint = self.hint(""); v.addWidget(self.jack_hint)
         self.jack_state = QLabel("…"); self.jack_state.setObjectName("hint"); v.addWidget(self.jack_state)
         self.boost = self.slider(v, "Headset mic boost", 0, 3, 1, lambda x: None, lambda x: self.do(lambda: audio.headset_boost(x), lambda r: f"Boost: {r}"))
         v = self.card(lay, "Microphone")
+        self.micvol = self.slider(v, "Microphone volume", 0, 150, 5, lambda x: None, lambda x: self.do(lambda: audio.mic_volume(x), lambda r: f"Microphone volume: {r} %", refresh=False), suffix=" %")
         self.mute = self.switch(v, "Mute every microphone", lambda x: self.do(lambda: audio.mic_set_mute(x), "Microphones muted" if x else "Microphones live")); self.sep(v)
         self.v_head = self.seg(v, "Headset (AI noise reduction)", [x.capitalize() for x in VOICE], lambda i: self.do(lambda: (audio.voice_set("headset", VOICE[i]), audio.apply_mic_policy(False))[0], f"Headset mic: {VOICE[i]}"))
         self.v_arr = self.seg(v, "Built-in (AI noise reduction)", [x.capitalize() for x in VOICE], lambda i: self.do(lambda: (audio.voice_set("array", VOICE[i]), audio.apply_mic_policy(False))[0], f"Built-in mics: {VOICE[i]}")); self.sep(v)
@@ -1159,7 +1220,15 @@ class Window(QMainWindow if Qt else object):
     def p_settings(self):
         lay = self.page("Settings"); v = self.card(lay, "Start up")
         self.autostart = self.switch(v, "Open this window at login", self.set_autostart, "Writes ~/.config/autostart/truesense.desktop. Hyprland needs `exec-once = truesense gui` (or uwsm) to run autostart entries.")
-        self.autostart.setChecked(os.path.exists(AUTOSTART)); v.addWidget(self.hint("Lighting at boot and login is set in Lighting, Profiles. The PREDATOR key has its own page."))
+        self.autostart.setChecked(os.path.exists(AUTOSTART)); v.addWidget(self.hint("Lighting at login is set under At login below, and at boot in Lighting, Profiles. The PREDATOR key has its own page."))
+        v = self.card(lay, "At login")
+        v.addWidget(self.hint("What the lights and a profile do when you log in (the truesense-startup service). Boot lighting, before login, is in Lighting, Profiles."))
+        self.su_kb = QComboBox(); self.su_rear = QComboBox(); self.su_prof = QComboBox()
+        for cb in (self.su_kb, self.su_rear, self.su_prof): cb.setMinimumWidth(150)
+        self.su_kb.activated.connect(lambda i: self.su_pick("keyboard", self.su_kb)); self.su_rear.activated.connect(lambda i: self.su_pick("rear", self.su_rear)); self.su_prof.activated.connect(lambda i: self.su_pick("profile", self.su_prof))
+        self.line(v, "Keyboard lighting", self.su_kb); self.line(v, "Rear light bar", self.su_rear); self.line(v, "Profile (applied first)", self.su_prof); self.line(v, "Try it now", self.btn("Apply the login setup", self.su_apply)); self.su_reload()
+        v = self.card(lay, "Touchpad")
+        self.tp_sw = self.switch(v, "Touchpad on", lambda x: self.do(lambda: ipc.call("touchpad", action="on" if x else "off"), "Touchpad " + ("on" if x else "off"), refresh=False), "The same as Fn+F10.")
         v = self.card(lay, "Updates")
         from . import __version__
         self.upd_lbl = self.hint("Not checked yet."); self.upd_btn = self.btn("Update…", self.update_now, True); self.upd_btn.setVisible(False); self.notes_btn = self.btn("What's new", self.open_notes); self.notes_btn.setVisible(False)
@@ -1171,6 +1240,7 @@ class Window(QMainWindow if Qt else object):
         self.line(v, "Credits and licence", self.btn("Credits", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense/blob/main/docs/CREDITS.md"))), self.btn("Source", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense"))))
         self.size_sw = self.switch(v, "Fixed-size window", lambda x: self.apply_size_mode(x), sub="On (default): the compact 480 pixel window that floats on Hyprland and sway. Off: resize the window freely (it tiles on tiling desktops)."); self.size_sw.setChecked(bool(userstate.get("gui_fixed", True)))
         self.pm_sw = self.switch(v, "TrueSense manages power", lambda x: self.pm_set(x), sub="Stops and disables other power managers that fight it (auto-cpufreq, TLP, tuned, power-profiles-daemon) and puts the CPU back to sane defaults, turbo on. Off puts them back exactly as they were."); self.pm_lbl = self.hint(""); v.addWidget(self.pm_lbl)
+        self.line(v, "Configuration", self.btn("Show…", self.show_config), self.btn("Check", self.check_config)); self.line(v, "Service", self.btn("Status…", self.show_service))
         self.line(v, "System check", self.btn("Run check…", self.run_doctor)); self.line(v, "Support", self.btn("Copy report", self.copy_report))
         self.line(v, "Hardware self-test", self.btn("Run self-test…", self.run_selftest), sub="Sets each firmware feature, reads it back and restores it (fans are skipped). Takes about a minute."); self.line(v, "Service log", self.btn("Show log…", self.show_log))
         v = self.card(lay, "Reset")
@@ -1242,11 +1312,17 @@ class Window(QMainWindow if Qt else object):
         def go():
             try: r = ipc.call("power_managers", action="status")
             except Exception as e: r = {"error": str(e)}
+            try: r["tp"] = touchpad.enabled()
+            except Exception: pass
             try: self.bus.pm.emit(r)
             except RuntimeError: pass
         threading.Thread(target=go, daemon=True).start()
 
     def pm_show(self, r):
+        if r.get("tp") is not None:
+            self.loading = True
+            try: self.tp_sw.setChecked(bool(r["tp"]))
+            finally: self.loading = False
         if "error" in r: self.pm_lbl.setText("Power managers: could not ask the service (" + r["error"] + ")"); return
         self.loading = True
         try: self.pm_sw.setChecked(bool(r.get("on")))
@@ -1265,6 +1341,42 @@ class Window(QMainWindow if Qt else object):
             try: self.bus.pm.emit(r2)
             except RuntimeError: pass
         threading.Thread(target=go, daemon=True).start()
+
+    SU_STOCK = {"keyboard": [("last", "Last used"), ("default", "Stock look"), ("none", "Leave as the firmware has it"), ("off", "Dark")],
+                "rear": [("last", "Last used"), ("default", "Stock look"), ("none", "Leave as the firmware has it"), ("off", "Dark")]}
+
+    def su_reload(self):
+        try: cfg = config.load()["startup"]
+        except Exception: return
+        self.loading = True
+        try:
+            for target, cb in (("keyboard", self.su_kb), ("rear", self.su_rear)):
+                cb.clear(); [cb.addItem(label, val) for val, label in self.SU_STOCK[target]]; [cb.addItem(f"Look: {n}", f"look:{n}") for n in looks.names()]
+                if target == "keyboard": [cb.addItem(f"Key set: {n}", f"profile:{n}") for n in keyprofiles.names()]
+                cb.setCurrentIndex(max(0, cb.findData(cfg.get(target, "last"))))
+            self.su_prof.clear(); self.su_prof.addItem("None", "none"); [self.su_prof.addItem(n, n) for n in profiles.names()]; self.su_prof.setCurrentIndex(max(0, self.su_prof.findData(cfg.get("profile") or "none")))
+        finally: self.loading = False
+
+    def su_pick(self, target, cb):
+        if self.loading: return
+        val = cb.currentData(); self.do(lambda: startup.set_option(target, val), f"At login, {target}: {cb.currentText()}", refresh=False)
+
+    def su_apply(self): self.do(lambda: startup.apply(), lambda r: "Login setup applied:\n" + "\n".join(r) if isinstance(r, list) else "Login setup applied", refresh=False)
+
+    def show_config(self):
+        try: self.say_report(f"Configuration files: {config.SYSTEM_PATH}, {config.USER_PATH}\n\n" + config.dumps(config.load()))
+        except Exception as e: self.say(f"Error: {e}")
+
+    def check_config(self):
+        try: p = config.validate(config.load()); self.say("Configuration is valid" if not p else "Configuration problem: " + "; ".join(p))
+        except Exception as e: self.say(f"Error: {e}")
+
+    def show_service(self):
+        def work():
+            try: r = subprocess.run(["systemctl", "--no-pager", "status", "truesense.service"], capture_output=True, text=True, timeout=10); txt = (r.stdout or r.stderr)[-3000:]
+            except (OSError, subprocess.SubprocessError) as e: txt = f"Could not read the service status: {e}"
+            self.say_report(txt)
+        threading.Thread(target=work, daemon=True).start()
 
     def run_selftest(self):
         if QMessageBox.question(self, "Hardware self-test", "This briefly changes power mode, lighting, battery and display settings and restores them. The fans are not touched.\n\nRun it now?") != QMessageBox.StandardButton.Yes: return
@@ -1787,7 +1899,7 @@ class Window(QMainWindow if Qt else object):
                 except Exception: pass
             if scope in ("audio", "audio_fast"):
                 get("out", audio.output_status); get("jack", audio.jack_status); get("mic", audio.mic_state); get("boost", audio.headset_boost); get("voice", audio.voice_modes)
-                get("jackset", lambda: config.load()["audio"]["jack"])
+                get("jackset", lambda: config.load()["audio"]["jack"]); get("spkf", audio.speaker_filter_on)
                 if scope == "audio": get("dts", lambda: "DTS:            on" in audio.dts_status())      # slow (starts a helper): only when the page opens or after a change
             else:
                 get("state", lambda: ipc.call("state")); get("mode", hw.get_mode); get("fan", hw.fan_state); get("rear", hw.rear_get); get("kb", keyboard.get_brightness)
@@ -1806,6 +1918,7 @@ class Window(QMainWindow if Qt else object):
         try:
             if "state" in d:
                 s = d["state"]["settings"]; am = s.get("auto_mode") or ("smart" if s["auto_profile"] else "off"); self.auto.set_index(AUTO_KEYS.index(am) if am in AUTO_KEYS else 0); self.auto_hint.setText(AUTO_HINT.get(am, "")); self.smart_box.setVisible(am == "smart")
+                self.kb_oper.setChecked(bool(s.get("operating_follow")))
                 lv = d["state"]["live"]; sp_ = lv.get("smart_profile")
                 if sp_ and self.smart_cb.currentText() != sp_ and not self.smart_cb.view().isVisible(): self.smart_cb.setCurrentIndex(max(0, self.smart_cb.findText(sp_)))
                 self.smart_status.setText(f"Now: {lv.get('mode_reason')}" if lv.get("mode_reason") and am != "off" else "")
@@ -1830,7 +1943,7 @@ class Window(QMainWindow if Qt else object):
             if d.get("kbtimeout") is not None: self.kb_timeout.setChecked(bool(d["kbtimeout"]))
             if "cells" in d and not self.board.sel and not self.busy.get("paint") and not self.pending.get("paint"): self.board.set_cells(["%02x%02x%02x" % tuple(c) for c in d["cells"]])
             if "kb" in d: self._set(self.pk_level, d["kb"])
-            for k, w in (("limit", self.limit), ("calib", self.calib), ("od", self.od), ("boot", self.boot), ("dts", self.dts)):
+            for k, w in (("limit", self.limit), ("calib", self.calib), ("od", self.od), ("boot", self.boot), ("dts", self.dts), ("spkf", self.spk)):
                 if d.get(k) is not None: w.setChecked(bool(d[k]))
             if "usb" in d: self.usb.set_index(hw.USB_LEVELS.index(d["usb"]) if d["usb"] in hw.USB_LEVELS else -1)
             if "gpu" in d: self.gpu.set_index(list(hw.GPU_MODES).index(d["gpu"]) if d["gpu"] in hw.GPU_MODES else -1)
@@ -1838,7 +1951,7 @@ class Window(QMainWindow if Qt else object):
             if "jackset" in d:
                 keys = [k for k, _ in JACK]; self.jack.set_index(keys.index(d["jackset"]) if d["jackset"] in keys else 0); self.jack_hint.setText(JACK_HINT.get(d["jackset"], ""))
             if "jack" in d: j = d["jack"]; self.jack_state.setText("Detected now: " + ("headset with microphone" if j["headset_mic"] else "headphones" if j["headphones"] else "nothing plugged in"))
-            if "mic" in d: self.mute.setChecked(bool(d["mic"]["muted"]))
+            if "mic" in d: self.mute.setChecked(bool(d["mic"]["muted"])); self._set(self.micvol, int(d["mic"].get("volume") or 0))
             if d.get("boost") is not None: self._set(self.boost, d["boost"])
             if "voice" in d:
                 v = d["voice"]; self.v_head.set_index(VOICE.index(v["headset"]) if v.get("headset") in VOICE else 0); self.v_arr.set_index(VOICE.index(v["array"]) if v.get("array") in VOICE else 0)

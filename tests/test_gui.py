@@ -185,6 +185,25 @@ class TestWindowLogic(unittest.TestCase):
         from PyQt6.QtGui import QShortcut, QKeySequence
         esc = [sc for sc in w.findChildren(QShortcut) if sc.key() == QKeySequence("Escape")]; self.assertEqual(len(esc), 1); esc[0].activated.emit(); self.assertFalse(w.isVisible(), "Esc closes the app"); w.close()
 
+    def test_cli_features_that_were_missing_now_have_controls(self):
+        from truesense import profiles, keyprofiles, config, startup
+        w = gui.Window(); w.show()
+        # profile bundles
+        names = [w.prof_cb.itemData(i) for i in range(w.prof_cb.count())]; self.assertTrue(names, "shipped profiles are listed"); self.assertIn("gaming", names)
+        w.prof_name.setText("gui-bundle"); w.prof_save(); self.assertTrue(self._wait(lambda: "gui-bundle" in profiles.names()), "saving a profile from the window works")
+        w.prof_reload("gui-bundle"); self.assertEqual(w.prof_cb.currentData(), "gui-bundle"); self.assertEqual(profiles.source("gui-bundle"), "yours")
+        w.prof_cb.setCurrentIndex(w.prof_cb.findData("gaming")); shown = []; w.say_report = shown.append; w.prof_show(); self.assertTrue(shown and "gaming" in shown[0])
+        # per-key sets
+        w.ks_nm.setText("gui-set"); w.ks_save(); self.assertTrue(self._wait(lambda: "gui-set" in keyprofiles.names())); w.ks_reload("gui-set"); w.ks_cb.setCurrentIndex(w.ks_cb.findText("gui-set")); w.ks_apply()
+        # at login
+        w.su_reload(); w.su_kb.setCurrentIndex(w.su_kb.findData("default")); w.su_pick("keyboard", w.su_kb); self.assertTrue(self._wait(lambda: config.load()["startup"]["keyboard"] == "default"))
+        w.su_prof.setCurrentIndex(w.su_prof.findData("gui-bundle")); w.su_pick("profile", w.su_prof); self.assertTrue(self._wait(lambda: config.load()["startup"]["profile"] == "gui-bundle"))
+        w.su_prof.setCurrentIndex(w.su_prof.findData("none")); w.su_pick("profile", w.su_prof); self.assertTrue(self._wait(lambda: config.load()["startup"]["profile"] == ""))
+        with self.assertRaises(Exception): startup.set_option("keyboard", "look:does-not-exist")
+        # the small ones exist
+        for name in ("kb_oper", "spk", "micvol", "tp_sw", "pm_sw"): self.assertTrue(hasattr(w, name), name)
+        self.assertEqual((w.micvol.minimum(), w.micvol.maximum()), (0, 150)); w.show_config(); w.check_config(); w.close()
+
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
         w = gui.Window(); w.go("keys"); names = [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]; self.assertIn("gaming", names)

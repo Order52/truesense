@@ -10,6 +10,18 @@ from . import backend as hw, config, keyboard, keyprofiles, looks, profiles, use
 from .device import HwError
 
 
+def set_option(target, value):
+    """Set what happens at login: target keyboard | rear | profile. Validated the same way for the command line and the window."""
+    if target not in ("keyboard", "rear", "profile"): raise HwError("target: keyboard | rear | profile")
+    val = "" if (target == "profile" and value == "none") else value
+    if target == "profile" and val and val not in profiles.names(): raise HwError(f"no profile {val!r}: {', '.join(profiles.names())}")
+    if target == "keyboard" and val.startswith("profile:") and not keyprofiles.exists(val[8:]): raise HwError(f"no lighting profile {val[8:]!r}: {', '.join(keyprofiles.names())}")
+    if val.startswith("look:") and val[5:] not in looks.names(): raise HwError(f"no look {val[5:]!r}: {', '.join(looks.names())}")
+    cfg = config.load(); cfg["startup"][target] = val; bad = [p for p in config.validate(cfg) if "[startup]" in p]
+    if bad: raise HwError(bad[0])
+    config.write_user({"startup": {target: val}}); return val
+
+
 def apply(cfg=None):
     cfg = cfg or config.load(); s = cfg["startup"]; done = []
     def step(label, fn):

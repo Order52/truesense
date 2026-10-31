@@ -395,14 +395,7 @@ def h_startup(a):
             ipc.call("boot_look", action="set", look=look); emit(look, f"at boot and after suspend: {looks.describe(look)}")
     elif v == "show": emit(config.load()["startup"])
     elif v == "apply": r = startup.apply(); emit(r, "\n".join(r))
-    elif v == "set":
-        val = "" if (a.target == "profile" and a.value == "none") else a.value
-        if a.target == "profile" and val and val not in profiles.names(): raise HwError(f"no profile {val!r}: {', '.join(profiles.names())}")
-        if a.target == "keyboard" and val.startswith("profile:") and not keyprofiles.exists(val[8:]): raise HwError(f"no lighting profile {val[8:]!r}: {', '.join(keyprofiles.names())}")
-        if val.startswith("look:") and val[5:] not in looks.names(): raise HwError(f"no look {val[5:]!r}: {', '.join(looks.names())}")
-        cfg = config.load(); cfg["startup"][a.target] = val; bad = [p for p in config.validate(cfg) if "[startup]" in p]
-        if bad: raise HwError(bad[0])
-        config.write_user({"startup": {a.target: val}}); emit(val, f"at login, {a.target}: {val or 'none'}")
+    elif v == "set": val = startup.set_option(a.target, a.value); emit(val, f"at login, {a.target}: {val or 'none'}")
 
 
 def h_keyboard(a):
