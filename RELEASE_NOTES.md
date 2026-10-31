@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.3.14 (2026-10-31): a faster doctor
 
 - `truesense doctor` no longer runs the `dkms` command, which took 1 to 1.3 s here (two of its checks used it): it reads DKMS's own directories instead and falls back to the command only on systems that keep them elsewhere. Same answers, `doctor` about 1.1 s to 0.09 s on the installed copy.
 
