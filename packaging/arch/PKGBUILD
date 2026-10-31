@@ -31,7 +31,7 @@ WRAP
     for f in truesense.service truesense-health.service truesense-health.timer; do
         sed -e 's|@PREFIX@|/usr|g' -e 's|@MODPROBE@|/usr/bin/modprobe|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/$f"
     done
-    for f in truesense-keys.service truesense-audio.service; do
+    for f in truesense-keys.service truesense-audio.service truesense-startup.service; do
         sed 's|@PREFIX@|/usr|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/$f"
     done
     install -Dm644 "$_src/packaging/70-truesense.rules" "$pkgdir/usr/lib/udev/rules.d/70-truesense.rules"

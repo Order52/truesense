@@ -27,9 +27,13 @@ Areas that are switches accept `on | off | toggle | status`.
 | `display overdrive`, `boot sound` | LCD overdrive, boot animation/sound |
 | `gpu status`, `gpu set optimus\|nvidia\|auto` | MUX mode (reboot to apply) |
 | `rear on\|off\|toggle`, `rear set EFFECT --color RRGGBB --speed 1..5 --brightness 0..100` | static breathing neon wave twinkling |
+| `rear set static --zones L,M,R` | the light bar has three parts; static can colour each (one colour = all three) |
+| `startup show`, `startup set keyboard\|rear\|profile VALUE`, `startup apply` | what comes back at login: `last` (default, saved automatically), `default`, `off`, `none`; keyboard also `profile:NAME`; profile = a full profile applied first |
 | `keyboard on\|off\|toggle`, `restore`, `brightness N` (0-50), `timeout on\|off` | backlight |
 | `keyboard effect NAME --color --speed --brightness` | static breathing wave snake ripple neon raindrop lightning spot star fireball snow heartbeat (neon needs brightness 50) |
-| `keyboard fill C`, `gradient C1 C2`, `rainbow`, `keys "wasd=ff0000" --base 101010`, `list-keys` | per-key RGB |
+| `keyboard color RRGGBB` | change the colour of the running effect without leaving it |
+| `keyboard paint w=ff0000 arrows=00ff00 esc=ffffff` | colour chosen keys or groups and keep every other key as it is |
+| `keyboard fill C`, `gradient C1 C2`, `rainbow`, `keys "wasd=ff0000" --base 101010`, `list-keys`, `layout` | per-key RGB |
 | `keyboard operating on\|off` | keyboard colour follows the power mode (re-sent on each change) |
 | `keyboard profile list\|save\|load\|delete` | saved lighting, e.g. `profile save work gradient ff3300 6600ff` |
 | `audio output speakers\|headphones\|toggle\|cycle\|status` | output switch (the two share one PCM) |
@@ -48,6 +52,7 @@ Areas that are switches accept `on | off | toggle | status`.
 ## Services
 * `truesense.service` (root, `Type=notify`, watchdog, always restarted): smart fan curve, thermal governor, power limits, automatic profile, IPC socket `/run/truesense/truesense.sock` (root and the configured user only). On stop, crash or exit the fans return to firmware Auto and clock caps are lifted.
 * `truesense-keys.service` and `truesense-audio.service` (user): PREDATOR/Fn keys; switches the right microphone filter on plug events.
+* `truesense-startup.service` (user, oneshot): restores the saved lighting (and optionally a profile) at login; see `truesense startup`.
 * `truesense-health.timer`: restarts a stalled daemon and rebuilds the module after a kernel update.
 
 ## Configuration

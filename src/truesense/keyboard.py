@@ -4,7 +4,7 @@ Packets are 8 bytes, checksum = 0xFF - (sum of bytes 0..6) & 0xFF, sent with HID
 Effects: STATUS of write path = packets verified against a Windows capture; the visible result on Linux needs eyes (see docs/STATUS.md).
 """
 import fcntl, glob, os, time
-from . import util
+from . import util, userstate
 from .backend import HwError
 
 EFFECTS = {"off": 0, "static": 1, "breathing": 2, "wave": 3, "snake": 5, "ripple": 6, "neon": 8, "raindrop": 10, "lightning": 18,
@@ -52,8 +52,15 @@ def set_effect(name, color="ffffff", speed=5, brightness=30, direction=0):
     r, g, b = (0, 0, 0) if name in NO_COLOR else bytes.fromhex(color)
     pre = bytes([0xB1, 0, 0, 0, 0, 0, 0, 0x4E])
     if name == "off":
-        _send([pre, _pkt(0x08, 0x02, 0, 0, 0, 0, 0), _pkt(0x14, 0, 0, 0, 0, 0, 0)]); return
+        _send([pre, _pkt(0x08, 0x02, 0, 0, 0, 0, 0), _pkt(0x14, 0, 0, 0, 0, 0, 0)]); userstate.set("keyboard", {"mode": "off"}); return
     _send([pre, _pkt(0x14, 0, 0, r, g, b, 0), _pkt(0x08, 0x02, EFFECTS[name], (10 - speed) & 0xFF, brightness, 0x01, direction + 1)])
+    userstate.set("keyboard", {"mode": "effect", "name": name, "color": color.lstrip("#").lower(), "speed": speed, "brightness": brightness, "direction": direction})
+
+def _hexcells(cells): return ["%02x%02x%02x" % tuple(c) for c in cells[:128]]
+
+def last():
+    """What this tool last put on the keyboard (the hardware cannot be asked which effect is running): {} if unknown."""
+    s = userstate.get("keyboard"); return s if isinstance(s, dict) else {}
 
 def _get_feature(fd, n=8):
     buf = bytearray(b"\x00" + bytes(n))
@@ -77,7 +84,7 @@ def per_key(colors, brightness=None):
     if not 0 <= brightness <= MAX_BRIGHT: raise HwError(f"brightness 0..{MAX_BRIGHT}")
     cells = list(colors) + [(0, 0, 0)] * (128 - len(colors))
     data = b"".join(bytes([0, r, g, b]) for r, g, b in cells[:128])
-    if _sim(): SIM["frames"] += 8; SIM["brightness"] = brightness; return
+    if _sim(): SIM["frames"] += 8; SIM["brightness"] = brightness; userstate.set("keyboard", {"mode": "perkey", "brightness": brightness, "cells": _hexcells(cells)}); return
     node = _hidraw()
     try: fd = os.open(node, os.O_RDWR)
     except PermissionError: raise HwError(f"no permission on {node}: group plugdev + udev rule")
@@ -91,15 +98,17 @@ def per_key(colors, brightness=None):
         time.sleep(0.05)
         feat(_pkt(0x08, 0x02, 0x33, 0x05, brightness, 0x08, 0x01))
     finally: os.close(fd)
+    userstate.set("keyboard", {"mode": "perkey", "brightness": brightness, "cells": _hexcells(cells)})
 
 def restore_default(brightness=12):
     """The state PredatorSense left on Windows: cells 0..125 = #00aec7, brightness 12 (identical frames to re/battery_ui.pcapng)."""
     per_key([(0x00, 0xAE, 0xC7)] * 126, brightness)
 
-def set_operating_mode(color="00aec7", speed=1):
+def set_operating_mode(color="00aec7", speed=1, brightness=0x32):
     """OPERATINGMODE (0x22): the keyboard colour reflects the power mode (handoff 19a: no prelude; colour packet 14 00 01 R G B 00 chk'; effect 08 03 22 05 32 02 01 chk)."""
     r, g, b = hexc(color)
-    _send([_pkt(0x14, 0, 0x01, r, g, b, 0), _pkt(0x08, 0x03, 0x22, 0x05, 0x32, 0x02, 0x01)])
+    _send([_pkt(0x14, 0, 0x01, r, g, b, 0), _pkt(0x08, 0x03, 0x22, 0x05, brightness, 0x02, 0x01)])
+    userstate.set("keyboard", {"mode": "operating", "color": color.lstrip("#").lower(), "brightness": brightness})
 
 # Acer's per-mode colours are not in the captured data/app: these defaults are OURS, overridable in config [keyboard.operating_colors].
 OPERATING_COLORS = {"eco": "00cc66", "quiet": "3366ff", "balanced": "00aec7", "performance": "ff9900", "turbo": "ff0000"}
@@ -116,6 +125,59 @@ def hexc(c):
     return tuple(bytes.fromhex(c))
 
 def set_brightness(level):
-    """Brightness of the current Direct/per-key state (final packet of the captured upload sequence)."""
+    """Change brightness WITHOUT leaving the current look. The per-key brightness packet (mode 0x33) would drop a running effect back to static,
+    so the effect is re-sent with the new level. If this tool did not set the current look (unknown), the per-key packet is used."""
     if not 0 <= level <= MAX_BRIGHT: raise HwError(f"brightness 0..{MAX_BRIGHT}")
+    s = last()
+    if s.get("mode") == "effect" and s.get("name") in EFFECTS and s["name"] != "off":
+        return set_effect(s["name"], s.get("color", "ffffff"), s.get("speed", 5), level, s.get("direction", 0))
+    if s.get("mode") == "operating": return set_operating_mode(s.get("color", "00aec7"), brightness=level)
     _send([_pkt(0x08, 0x02, 0x33, 0x05, level, 0x08, 0x01)])
+    if s.get("mode") == "perkey": userstate.set("keyboard", {**s, "brightness": level})
+
+def off():
+    """Backlight off, keeping the look: brightness 0 in whatever mode is running (the effect `off` packet did not blank this keyboard)."""
+    s = last()
+    if s.get("mode") != "off" and (get_brightness() or 0) > 0: userstate.set("kb_restore", {**s, "brightness": get_brightness()})
+    set_brightness(0)
+
+def on():
+    """Backlight back on, in the look it had before `off`."""
+    s = userstate.get("kb_restore"); lvl = (s or {}).get("brightness") or 25
+    if isinstance(s, dict) and s.get("mode"): userstate.set("keyboard", s)
+    set_brightness(lvl)
+
+def replay(s=None):
+    """Put a remembered look back on the keyboard. Returns what was done, or None if nothing was remembered."""
+    s = s if s is not None else last(); m = s.get("mode")
+    if m == "effect" and s.get("name") in EFFECTS: set_effect(s["name"], s.get("color", "ffffff"), s.get("speed", 5), s.get("brightness", 25), s.get("direction", 0)); return f"effect {s['name']}"
+    if m == "operating": set_operating_mode(s.get("color", "00aec7"), brightness=s.get("brightness", 0x32)); return "operating mode"
+    if m == "perkey" and s.get("cells"): per_key([tuple(bytes.fromhex(c)) for c in s["cells"]], s.get("brightness") or 25); return "per-key colours"
+    return None
+
+def set_color(color):
+    """Change the colour of the current look without changing the effect. Effects without a colour (wave, neon) cannot take one."""
+    hexc(color); color = color.lstrip("#").lower(); s = last(); b = get_brightness() or 25
+    if s.get("mode") == "effect" and s.get("name") in EFFECTS:
+        if s["name"] in NO_COLOR: raise HwError(f"the {s['name']} effect has no colour; pick another effect (or use `keyboard fill`)")
+        return set_effect(s["name"], color, s.get("speed", 5), b, s.get("direction", 0))
+    if s.get("mode") == "operating": return set_operating_mode(color, brightness=b)
+    from . import keymap
+    per_key(keymap.to_list(keymap.canvas(keymap.hexcolor(color))), b)
+
+
+def current_cells():
+    """The per-key colours this tool last uploaded (list of 128 (r,g,b)); the stock cyan if none are remembered."""
+    s = last()
+    if s.get("mode") == "perkey" and s.get("cells"): return [tuple(bytes.fromhex(c)) for c in s["cells"]]
+    return [(0x00, 0xAE, 0xC7)] * 126 + [(0, 0, 0)] * 2
+
+def paint(items, brightness=None):
+    """Colour named keys or groups ({"w": "ff0000", "arrows": "00ff00"}) and leave every other key as it is."""
+    from . import keymap
+    cells = current_cells()
+    for key, col in items.items():
+        rgb = keymap.hexcolor(col)
+        for c in keymap.cells_for(key): cells[c] = rgb
+    per_key(cells, brightness)
+    return len(items)

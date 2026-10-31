@@ -7,8 +7,8 @@ U=${SUDO_USER:-}; UID_=$([ -n "$U" ] && id -u "$U"); ur() { [ -n "$U" ] && runus
 echo "== removing TrueSense"
 [ -e /dev/truesense ] && echo set_fan_auto > /dev/truesense 2>/dev/null
 systemctl disable --now truesense.service truesense-health.timer truesense-health.service >/dev/null 2>&1
-systemctl --global disable truesense-keys.service truesense-audio.service >/dev/null 2>&1
-ur systemctl --user disable --now truesense-keys.service truesense-audio.service >/dev/null 2>&1
+systemctl --global disable truesense-keys.service truesense-audio.service truesense-startup.service >/dev/null 2>&1
+ur systemctl --user disable --now truesense-keys.service truesense-audio.service truesense-startup.service >/dev/null 2>&1
 rm -f /etc/systemd/system/truesense*.service /etc/systemd/system/truesense-health.timer /etc/systemd/user/truesense-*.service
 rm -f "$PREFIX/bin/truesense"; rm -rf "$PREFIX/lib/truesense" "$PREFIX/share/truesense"
 rm -f /usr/share/bash-completion/completions/truesense /usr/share/zsh/site-functions/_truesense /usr/share/fish/vendor_completions.d/truesense.fish

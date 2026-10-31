@@ -23,6 +23,7 @@ DEFAULTS = {
                 "auto": {"ac_busy": "turbo", "ac_normal": "balanced", "battery_busy": "balanced", "battery_idle": "eco"}},
     "keys": {"tap": "power-next", "double": "output-toggle", "triple": "none", "long": "fan-max-toggle", "fn_esc": "none",
              "long_ms": 800, "multi_ms": 450, "power_cycle": ["eco", "quiet", "balanced", "performance", "turbo"]},
+    "startup": {"profile": "", "keyboard": "last", "rear": "last"},   # applied at login: last | default | none | profile:NAME (keyboard) | off (rear)
     "keyboard": {"operating_follow": False, "operating_colors": {}},
     "audio": {"notify": True, "headset_mode": "conference", "array_mode": "conference"},
     "osd": {"style": "native"},                      # native | noctalia | none  (env TRUESENSE_OSD overrides)
@@ -59,6 +60,9 @@ def validate(cfg):
     if f["cpu_up"] != sorted(f["cpu_up"]) or f["gpu_up"] != sorted(f["gpu_up"]): out.append("[fan] cpu_up / gpu_up must be ascending")
     c = cfg["cpu"]
     if not 25 <= c["pl_normal_w"] <= 120 or not 25 <= c["pl_gaming_w"] <= 120: out.append("[cpu] power limits must be 25..120 W")
+    s = cfg["startup"]
+    if not isinstance(s["keyboard"], str) or not (s["keyboard"] in ("last", "default", "none", "off") or s["keyboard"].startswith("profile:")): out.append("[startup] keyboard must be last, default, none, off or profile:NAME")
+    if s["rear"] not in ("last", "default", "none", "off"): out.append("[startup] rear must be last, default, none or off")
     if cfg["osd"]["style"] not in ("native", "noctalia", "none"): out.append("[osd] style must be native, noctalia or none")
     return out
 

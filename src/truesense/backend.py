@@ -4,7 +4,7 @@ Everything goes through the kernel helper (device.py). Every setter reads the ol
 can answer -1 / the old value right after a write); set_* return the verified new value or raise HwError.
 """
 import glob, os, re, subprocess, time
-from . import util
+from . import util, userstate
 from .device import HwError, cmd, ival
 
 MODES = {"quiet": 0, "balanced": 1, "performance": 4, "turbo": 5, "eco": 6}
@@ -102,16 +102,34 @@ def rear_get():
     return {"raw": r.hex(), "mode": next((n for n, v in REAR_MODES.items() if v == b[0]), b[0]), "speed": b[1], "brightness": b[2], "direction": b[4],
             "color": "%02x%02x%02x" % tuple(b[5:8])}
 
-def rear_set(mode, color="ffffff", speed=3, brightness=100, direction=1):
+REAR_ZONES = (1, 2, 4)                       # light-bar zone bits, left to right as seen from behind the laptop (left confirmed by the owner; middle/right assumed)
+
+def _hex6(c):
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", c or ""): raise HwError("color must be RRGGBB hex")
+    return c.lower()
+
+def rear_set(mode, color="ffffff", speed=3, brightness=100, direction=1, zones=None):
+    """zones: optional list of one or three RRGGBB colours (left, middle, right); only the static effect can colour the three parts differently."""
     if mode not in REAR_MODES: raise HwError(f"rear mode: {', '.join(REAR_MODES)}")
-    if not re.fullmatch(r"[0-9a-fA-F]{6}", color): raise HwError("color must be RRGGBB hex")
+    color = _hex6(color)
+    if zones is not None:
+        zones = [_hex6(z) for z in zones]
+        if len(zones) == 1: zones = zones * 3
+        if len(zones) != 3: raise HwError("zones: give one colour, or three (left middle right)")
+        if mode != "static": raise HwError("different colours per part only work with the static effect")
+        color = zones[0]
     if not (1 <= speed <= 5 and 0 <= brightness <= 100 and direction in (0, 1)): raise HwError("speed 1..5, brightness 0..100, direction 0|1")
     pkt = bytes([REAR_MODES[mode], speed, brightness, 0, direction]) + bytes.fromhex(color) + bytes([3, 2]) + bytes(6)
     cmd(f"set_rear {pkt.hex()}")
-    if mode == "static": cmd(f"set_color {color.lower()}")      # the static colour is a separate call; mode 0 ignores the colour bytes above
-    got = settle(lambda: (lambda g: (g["mode"], g["brightness"]))(rear_get()), (mode, brightness), "rear light")
-    return rear_get()
-
+    if mode == "static":                                      # the static colour is a separate call per zone; mode 0 ignores the colour bytes above
+        zs = zones or [color] * 3
+        for z, c in zip(REAR_ZONES, zs): cmd(f"set_color {c} {z}")
+        userstate.set("rear_zones", zs)
+    settle(lambda: (lambda g: (g["mode"], g["brightness"]))(rear_get()), (mode, brightness), "rear light")
+    r = rear_get()
+    if mode == "static": r["zones"] = zs
+    userstate.set("rear_state", {"mode": mode, "color": color, "speed": speed, "brightness": brightness, "direction": direction, "zones": zones if mode == "static" else None})
+    return r
 
 # ---- plain Linux sensors (CPU package temp, GPU) ---------------------------------------------------------------------------------------
 def cpu_temp():

@@ -113,16 +113,35 @@ class Window(Adw.ApplicationWindow if Gtk else object):
         self.rear_fx = self.combo(g, "Effect", list(hw.REAR_MODES), lambda i: None)
         self.rear_color = self.color_row(g, "Colour", "00aec7")
         self.rear_speed = self.spin(g, "Speed", 1, 5, 1, lambda v: None); self.rear_bright = self.spin(g, "Brightness", 0, 100, 10, lambda v: None)
-        self.button_row(g, "Apply to the rear light", "", "Apply", lambda: self.do(lambda: hw.rear_set(list(hw.REAR_MODES)[self.rear_fx.get_selected()], to_hex(self.rear_color.get_rgba()), int(self.rear_speed.get_value()), int(self.rear_bright.get_value())), lambda r: "Rear light updated"))
+        self.button_row(g, "Apply to the rear light", "Static uses the three part colours below", "Apply", lambda: self.do(lambda: self.rear_apply(), lambda r: "Rear light updated"))
+        self.zone_colors = [self.color_row(g, f"Static: {n} part", "00aec7") for n in ("left", "middle", "right")]
         g = self.group(pg, "Keyboard", "Fn+F11 / Fn+F12 also change the brightness (done by the keyboard itself).")
         self.kb_on = self.switch(g, "On", "", lambda v: self.do(lambda: actions.run("keyboard:on" if v else "keyboard:off"), lambda r: r))
         self.kb_bright = self.spin(g, "Brightness (0 to 50)", 0, 50, 5, lambda v: self.do(lambda: keyboard.set_brightness(v), "Brightness set"))
         self.kb_fx = self.combo(g, "Built-in effect", KB_EFFECTS, lambda i: None); self.kb_color = self.color_row(g, "Colour", "00aec7")
         self.button_row(g, "Apply the effect", "neon needs high brightness", "Apply", lambda: self.do(lambda: keyboard.set_effect(KB_EFFECTS[self.kb_fx.get_selected()], to_hex(self.kb_color.get_rgba()), 5, max(int(self.kb_bright.get_value()), 50 if self.kb_fx.get_selected() == 5 else 1)), "Keyboard effect applied"))
+        self.button_row(g, "Change colour only", "Keeps the current effect, changes its colour", "Apply", lambda: self.do(lambda: keyboard.set_color(to_hex(self.kb_color.get_rgba())), "Colour changed"))
+        names = ["all", "wasd", "arrows", "fkeys", "numrow", "letters", "numpad", "esc", "space", "enter", "predator", "lshift"]
+        self.paint_group = self.combo(g, "Per-key: keys", names, lambda i: None, "Pick keys, then paint them with the colour above; other keys stay as they are")
+        self.paint_names = names
+        self.button_row(g, "Paint the chosen keys", "", "Paint", lambda: self.do(lambda: keyboard.paint({self.paint_names[self.paint_group.get_selected()]: to_hex(self.kb_color.get_rgba())}), "Keys painted", slow=True))
         self.button_row(g, "Per-key colours", "Fill every key with the colour above, or a rainbow", "Fill", lambda: self.do(lambda: keyboard.per_key(keymap.to_list(keymap.canvas(keymap.hexcolor(to_hex(self.kb_color.get_rgba())))), None), "Keyboard filled", slow=True))
         self.button_row(g, "", "", "Rainbow", lambda: self.do(lambda: keyboard.per_key(keymap.to_list(keymap.rainbow()), None), "Rainbow", slow=True))
         self.button_row(g, "Back to the stock cyan", "", "Restore", lambda: self.do(lambda: keyboard.restore_default(None), "Restored", slow=True))
         self.kb_timeout = self.switch(g, "Backlight off after 30 s", "", lambda v: self.do(lambda: hw.set_kb_timeout(v), "Saved"))
+        self.build_startup(pg)
+
+    def rear_apply(self):
+        mode = list(hw.REAR_MODES)[self.rear_fx.get_selected()]; speed = int(self.rear_speed.get_value()); br = int(self.rear_bright.get_value())
+        if mode == "static": return hw.rear_set("static", direction=1, speed=speed, brightness=br, zones=[to_hex(b.get_rgba()) for b in self.zone_colors])
+        return hw.rear_set(mode, to_hex(self.rear_color.get_rgba()), speed, br)
+
+    def build_startup(self, pg):
+        g = self.group(pg, "At login", "Lighting is saved automatically on every change; this chooses what comes back when you log in.")
+        opts = ["last", "default", "off", "none"]; s = self.cfg["startup"]
+        for key, title in (("keyboard", "Keyboard"), ("rear", "Rear light")):
+            r = self.combo(g, title, ["Last used", "Stock look", "Off", "Leave as the firmware has it"], lambda i, k=key: self.do(lambda: config.write_user({"startup": {k: opts[i]}}), f"{k} at login: {opts[i]}"))
+            r.set_selected(opts.index(s[key]) if s[key] in opts else 0)
 
     # ---- Battery and display -----------------------------------------------------------------------------------------------------------
     def build_battery(self):

@@ -27,16 +27,17 @@ class Gestures:
 
     def __init__(self, fire, long_ms=800, multi_ms=450, timer=threading.Timer):
         self.fire, self.long_s, self.multi_s, self.Timer = fire, long_ms / 1000, multi_ms / 1000, timer
-        self.taps = 0; self.long_done = False; self.t_long = None; self.t_multi = None; self.lock = threading.Lock()
+        self.taps = 0; self.long_done = False; self.down = False; self.t_long = None; self.t_multi = None; self.lock = threading.Lock()
 
     def press(self):
         with self.lock:
-            self._cancel(self.t_multi); self.long_done = False
+            self._cancel(self.t_multi); self.long_done = False; self.down = True
             self.t_long = self.Timer(self.long_s, self._long); self.t_long.daemon = True; self.t_long.start()
 
     def release(self):
         with self.lock:
-            self._cancel(self.t_long)
+            if not self.down: return                  # a release that does not belong to a PREDATOR press (Fn+F10, Fn+F11, Fn+F12, ... all end with `04 00 00`)
+            self.down = False; self._cancel(self.t_long)
             if self.long_done: self.taps = 0; return
             self.taps += 1
             if self.taps >= 3: self._flush()
@@ -88,6 +89,7 @@ def run(cfg=None):
             r = f.read(8)
             if len(r) < 3 or r[0] != 0x04: continue
             ev = CODES.get(bytes(r[1:3]))
+            if ev is None: print("ignored vendor report", bytes(r).hex(), flush=True)      # e.g. Fn+F11 / Fn+F12: the keyboard changes brightness itself
             if ev == "predator_down": g.press()
             elif ev == "release": g.release()
             elif ev == "fn_f10": threading.Thread(target=lambda: fire("touchpad-toggle", "fn_f10"), daemon=True).start()

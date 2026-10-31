@@ -103,8 +103,10 @@ def run(spec, cfg=None):
     if name == "touchpad": return "Touchpad: " + ("on" if _touch(arg) else "off")
     if name == "keyboard":
         cur = userstate.get("keyboard_on", True); new = (not cur) if arg == "toggle" else arg == "on"
-        if new: keyprofiles.load(userstate.get("keyboard_profile", "default"), None) if keyprofiles.exists(userstate.get("keyboard_profile", "default")) else keyboard.restore_default(None)
-        else: keyboard.set_effect("off")
+        if new:
+            if userstate.get("kb_restore"): keyboard.on()
+            else: keyprofiles.load(userstate.get("keyboard_profile", "default"), None) if keyprofiles.exists(userstate.get("keyboard_profile", "default")) else keyboard.restore_default(None)
+        else: keyboard.off()
         userstate.set("keyboard_on", new); return "Keyboard light: " + ("on" if new else "off")
     if name == "keyboard-effect-next":
         i = (userstate.get("kb_effect", -1) + 1) % len(KB_EFFECTS); userstate.set("kb_effect", i); b = keyboard.get_brightness() or 30
@@ -114,8 +116,10 @@ def run(spec, cfg=None):
         cur = hw.rear_get(); on = cur["brightness"] > 0; new = (not on) if arg == "toggle" else arg == "on"
         if on and not new: userstate.set("rear_last", {k: cur[k] for k in ("mode", "color", "speed", "brightness", "direction")})
         last = userstate.get("rear_last") or {"mode": "static", "color": "00aec7", "speed": 3, "brightness": 100, "direction": 1}
-        if new: hw.rear_set(last["mode"] if last["mode"] in hw.REAR_MODES else "static", last["color"], last["speed"], last["brightness"] or 100, last["direction"])
-        else: hw.rear_set(cur["mode"] if cur["mode"] in hw.REAR_MODES else "static", cur["color"], cur["speed"], 0, cur["direction"])
+        zs = userstate.get("rear_zones")                      # keep the three part colours of the static effect through on/off
+        def zfor(mode): return zs if (mode == "static" and isinstance(zs, list) and len(zs) == 3) else None
+        if new: m = last["mode"] if last["mode"] in hw.REAR_MODES else "static"; hw.rear_set(m, last["color"], last["speed"], last["brightness"] or 100, last["direction"], zfor(m))
+        else: m = cur["mode"] if cur["mode"] in hw.REAR_MODES else "static"; hw.rear_set(m, cur["color"], cur["speed"], 0, cur["direction"], zfor(m))
         return "Rear light: " + ("on" if new else "off")
     if name == "rear-effect-next":
         i = (userstate.get("rear_effect", -1) + 1) % len(REAR_EFFECTS); userstate.set("rear_effect", i); cur = hw.rear_get()

@@ -66,13 +66,13 @@ say "installed $PREFIX/bin/truesense and $PREFIX/lib/truesense"
 
 step "services"
 for u in truesense.service truesense-health.service truesense-health.timer; do sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@MODPROBE@|$(command -v modprobe)|g" "$ROOT/packaging/$u" > /etc/systemd/system/$u; done
-for u in truesense-keys.service truesense-audio.service; do sed -e "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/$u" > /etc/systemd/user/$u; done
+for u in truesense-keys.service truesense-audio.service truesense-startup.service; do sed -e "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/$u" > /etc/systemd/user/$u; done
 systemctl daemon-reload; ur systemctl --user daemon-reload || true
 if [ "$SERVICES" = 1 ]; then
   systemctl enable truesense.service truesense-health.timer >/dev/null 2>&1
   systemctl restart truesense.service            # `enable --now` would NOT restart a running service, so upgrades would keep the old code
   systemctl start truesense-health.timer
-  systemctl --global enable truesense-keys.service truesense-audio.service >/dev/null 2>&1
+  systemctl --global enable truesense-keys.service truesense-audio.service truesense-startup.service >/dev/null 2>&1
   ur systemctl --user restart truesense-keys.service truesense-audio.service || say "(user services start at your next login)"
   sleep 2
   if [ -r /var/lib/truesense/migrated_voice ]; then      # the user already had Purified Voice filters: recreate them under the new names, same modes

@@ -59,7 +59,7 @@ class _Sim:
 
     def reset(self):
         self.mode = 6; self.fan = "auto"; self.fan_duty = [30, 30]; self.gpu = 2; self.boot = 0; self.overdrive = 1; self.usb = 30; self.kbtimeout = 1
-        self.battery = {1: 0, 2: 0}; self.rear = bytes.fromhex("00000300000100aec703000000000000"); self.temps = (50, 52, 48); self.rpm = (0, 0)
+        self.battery = {1: 0, 2: 0}; self.rear = bytes.fromhex("00000300000100aec703000000000000"); self.zones = {}; self.temps = (50, 52, 48); self.rpm = (0, 0)
 
     def run(self, command):
         with self.lock:
@@ -110,8 +110,9 @@ class _Sim:
         if len(b) != 16 or not (b[0] <= 3 or b[0] == 7) or not 1 <= b[1] <= 5 or b[2] > 100 or b[3] or b[4] > 1 or b[8] != 3 or b[9] != 2 or any(b[10:]): return "err invalid argument\n"
         self.rear = b"\x00" + b[:15]; return "ok\n"
     def c_set_color(self, a):
-        if len(a) != 6: return "err invalid argument\n"
-        bytes.fromhex(a); return "ok\n"
+        p = a.split(" ")
+        if len(p[0]) != 6 or len(p) > 2 or (len(p) == 2 and p[1] not in ("1", "2", "4")): return "err invalid argument\n"
+        bytes.fromhex(p[0]); self.zones[int(p[1]) if len(p) == 2 else 1] = p[0]; return "ok\n"
     def c_get_usb(self, a): return f"ok usb={self.usb} raw=0\n"
     def c_set_usb(self, a):
         if int(a) not in (0, 10, 20, 30): return "err invalid argument\n"

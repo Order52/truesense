@@ -1,6 +1,6 @@
 """truesense: command line for the Acer Predator Helios 16 (PH16-71).   truesense <area> <verb> ...   (every setting has on / off / toggle / status; --json for scripts)
 
-Areas: status sensors power fan battery display boot gpu rear keyboard audio keys profile cpu touchpad service config doctor selftest completion gui
+Areas: status sensors power fan battery display boot gpu rear keyboard startup audio keys profile cpu touchpad service config doctor selftest completion gui
 """
 import argparse, json, os, subprocess, sys
 from . import __version__
@@ -81,10 +81,18 @@ def build():
     rs.add_parser("status"); rs.add_parser("on"); rs.add_parser("off"); rs.add_parser("toggle")
     q = rs.add_parser("set"); q.add_argument("effect", choices=list(hw.REAR_MODES)); q.add_argument("--color", default="ffffff"); q.add_argument("--speed", type=int, default=3)
     q.add_argument("--brightness", type=int, default=100); q.add_argument("--direction", type=int, default=1, choices=[0, 1])
+    q.add_argument("--zones", help="static only: one colour, or three (left,middle,right), e.g. ff0000,00ff00,0000ff")
+    # startup
+    p = sub.add_parser("startup", help="what the lights and profile do at login"); ss = p.add_subparsers(dest="verb")
+    ss.add_parser("show"); ss.add_parser("apply", help="do it now (the user service does this at login)")
+    q = ss.add_parser("set"); q.add_argument("target", choices=["keyboard", "rear", "profile"]); q.add_argument("value", help="keyboard: last|default|none|off|profile:NAME   rear: last|default|none|off   profile: a profile name or none")
     # keyboard
     p = sub.add_parser("keyboard", help="keyboard lighting"); ks = p.add_subparsers(dest="verb")
     ks.add_parser("status"); ks.add_parser("on"); ks.add_parser("off"); ks.add_parser("toggle"); ks.add_parser("restore", help="back to the stock cyan per-key state"); ks.add_parser("list-keys")
     q = ks.add_parser("effect"); q.add_argument("name"); q.add_argument("--color", default="00aec7"); q.add_argument("--speed", type=int, default=5); q.add_argument("--brightness", type=int, default=None); q.add_argument("--direction", type=int, default=0)
+    q = ks.add_parser("color", help="change the colour of the current effect (stays in the same mode)"); q.add_argument("color")
+    q = ks.add_parser("paint", help='colour some keys and keep the rest, e.g. paint w=ff0000 arrows=00ff00 esc=ffffff'); q.add_argument("items", nargs="+"); q.add_argument("--brightness", type=int, default=None)
+    ks.add_parser("layout", help="key names and positions (for other tools)")
     q = ks.add_parser("fill"); q.add_argument("color"); q.add_argument("--brightness", type=int, default=None)
     q = ks.add_parser("gradient"); q.add_argument("from_color"); q.add_argument("to_color"); q.add_argument("--brightness", type=int, default=None)
     q = ks.add_parser("rainbow"); q.add_argument("--brightness", type=int, default=None)
@@ -212,15 +220,29 @@ def h_rear(a):
     from . import actions, backend as hw
     v = a.verb or "status"
     if v == "status": emit(hw.rear_get())
-    elif v == "set": emit(hw.rear_set(a.effect, a.color, a.speed, a.brightness, a.direction))
+    elif v == "set": emit(hw.rear_set(a.effect, a.color, a.speed, a.brightness, a.direction, a.zones.split(",") if a.zones else None))
     else: emit(actions.run("rear:" + v))
+
+
+def h_startup(a):
+    from . import config, startup, profiles, keyprofiles
+    v = a.verb or "show"
+    if v == "show": emit(config.load()["startup"])
+    elif v == "apply": r = startup.apply(); emit(r, "\n".join(r))
+    elif v == "set":
+        val = "" if (a.target == "profile" and a.value == "none") else a.value
+        if a.target == "profile" and val and val not in profiles.names(): raise HwError(f"no profile {val!r}: {', '.join(profiles.names())}")
+        if a.target == "keyboard" and val.startswith("profile:") and not keyprofiles.exists(val[8:]): raise HwError(f"no lighting profile {val[8:]!r}: {', '.join(keyprofiles.names())}")
+        cfg = config.load(); cfg["startup"][a.target] = val; bad = [p for p in config.validate(cfg) if "[startup]" in p]
+        if bad: raise HwError(bad[0])
+        config.write_user({"startup": {a.target: val}}); emit(val, f"at login, {a.target}: {val or 'none'}")
 
 
 def h_keyboard(a):
     from . import actions, backend as hw, config, keyboard as kb, keymap as km, keyprofiles, userstate, ipc
     v = a.verb or "status"
     def done(msg="sent"): emit(msg)
-    if v == "status": emit({"brightness": kb.get_brightness(), "max": kb.MAX_BRIGHT, "backlight_timeout": hw.get_kb_timeout(), "lighting_profiles": keyprofiles.names()})
+    if v == "status": emit({"look": kb.last(), "brightness": kb.get_brightness(), "max": kb.MAX_BRIGHT, "backlight_timeout": hw.get_kb_timeout(), "lighting_profiles": keyprofiles.names()})
     elif v in ("on", "off", "toggle"): emit(actions.run("keyboard:" + v))
     elif v == "restore": kb.restore_default(None); done()
     elif v == "list-keys": emit({"keys": sorted(km.NAMES), "groups": sorted(km.GROUPS)})
@@ -230,6 +252,15 @@ def h_keyboard(a):
             b = a.brightness if a.brightness is not None else (kb.get_brightness() or 30)
             kb.set_effect(a.name, a.color, a.speed, 50 if (a.name == "neon" and a.brightness is None) else b, a.direction)
         done()
+    elif v == "color": kb.set_color(a.color); done()
+    elif v == "paint":
+        items = {}
+        for item in a.items:
+            k_, _, col = item.partition("=")
+            if not col: raise HwError(f"'{item}': use key=RRGGBB")
+            items[k_] = col
+        kb.paint(items, a.brightness); done(f"painted {len(items)} key(s)")
+    elif v == "layout": emit({"keys": {n: [{"cell": c, "col": c // 6, "row": c % 6} for c in cs] for n, cs in km.NAMES.items()}, "groups": sorted(km.GROUPS)})
     elif v == "fill": kb.per_key(km.to_list(km.canvas(km.hexcolor(a.color))), a.brightness); done()
     elif v == "gradient": kb.per_key(km.to_list(km.gradient(km.hexcolor(a.from_color), km.hexcolor(a.to_color))), a.brightness); done()
     elif v == "rainbow": kb.per_key(km.to_list(km.rainbow()), a.brightness); done()

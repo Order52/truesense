@@ -23,7 +23,7 @@
  *   get_boot | set_boot <0|1>                          (boot animation and sound)
  *   get_overdrive | set_overdrive <0|1>                (LCD overdrive)
  *   get_misc <1..16>                                   (read-only firmware settings)
- *   get_rear | get_slot | set_rear <32 hex> | set_color <RRGGBB>
+ *   get_rear | get_slot | set_rear <32 hex> | set_color <RRGGBB> [zone 1|2|4]
  *   get_usb | set_usb <0|10|20|30>                     (power-off USB charging stop level, 0 = off)
  *   get_kbtimeout | set_kbtimeout <0|1>                (keyboard backlight off after 30 s)
  *   get_battery <1|2> | set_battery <1|2> <0|1>        (1 = 80 % limit, 2 = calibration)
@@ -458,12 +458,20 @@ static int c_set_rear(struct ts_file *f, char *a)
 static int c_set_color(struct ts_file *f, char *a)
 {
 	u8 c[3];
+	unsigned int zone = 1;
 	int ret;
 
-	if (!a || strlen(a) != 6 || hex2bin(c, a, 3))
+	/* "RRGGBB" or "RRGGBB Z": Z = 1, 2 or 4 picks one of the three light-bar zones (default 1) */
+	if (!a || strlen(a) < 6 || hex2bin(c, a, 3))
 		return -EINVAL;
-	/* (zone bit 1 << 40) | (rear light bar index 8 << 32) | B << 24 | G << 16 | R << 8 */
-	ret = ts_call64(TS_GAME, M_SET_RGB, (1ULL << 40) | (8ULL << 32) | ((u64)c[2] << 24) | ((u64)c[1] << 16) | ((u64)c[0] << 8), NULL);
+	if (a[6]) {
+		if (a[6] != ' ' || kstrtouint(a + 7, 10, &zone))
+			return -EINVAL;
+		if (zone != 1 && zone != 2 && zone != 4)
+			return -EINVAL;
+	}
+	/* (zone bit << 40) | (rear light bar index 8 << 32) | B << 24 | G << 16 | R << 8 */
+	ret = ts_call64(TS_GAME, M_SET_RGB, ((u64)zone << 40) | (8ULL << 32) | ((u64)c[2] << 24) | ((u64)c[1] << 16) | ((u64)c[0] << 8), NULL);
 	if (ret)
 		return ts_err(f, ret, "set_color failed");
 	ts_reply(f, "ok\n");

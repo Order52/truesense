@@ -67,6 +67,11 @@ class TestGestures(unittest.TestCase):
         self.assertEqual(self.run_pattern(tap + [("w", .25)] + tap), ["tap", "tap"])
         self.assertEqual(self.run_pattern([("down", .4), ("up", 0), ("w", .03)] + tap), ["long", "tap"])
 
+    def test_release_without_press_is_ignored(self):
+        # Fn+F10 / Fn+F11 / Fn+F12 / Fn+Esc end with the same `04 00 00` release as the PREDATOR key; it must not count as a tap
+        self.assertEqual(self.run_pattern([("up", 0), ("w", .02), ("up", 0)]), [])
+        self.assertEqual(self.run_pattern([("up", 0), ("w", .02), ("down", .03), ("up", 0)]), ["tap"])
+
 
 class TestActions(Base):
     def test_validate(self):
