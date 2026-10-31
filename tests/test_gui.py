@@ -133,6 +133,22 @@ class TestWindowLogic(unittest.TestCase):
         fx = perkeyfx.get(); self.assertEqual((fx["mode"], fx["speed"], len(fx["keys"]), len(fx["base"])), ("wave", 4, 4, 128))
         w.fx_cb.setCurrentIndex(0); w.fx_push(); self.assertTrue(self._wait(lambda: perkeyfx.get().get("mode") == "off")); w.close()
 
+    def test_designs_and_pictures_paint_the_picture(self):
+        from truesense import designs
+        w = gui.Window(); w.go("keys"); names = [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]; self.assertIn("gaming", names)
+        w.ds_cb.setCurrentIndex(w.ds_cb.findData("gaming")); w.design_apply(); self.assertEqual(w.board.cells[0], "%02x%02x%02x" % designs.cells_of(designs.get("gaming"))[0])
+        w.ds_name.setText("gui-test"); w.design_save(); self.assertIn("gui-test", [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]); w.close()
+
+    def test_game_rules_page_shows_and_edits_the_rules(self):
+        w = gui.Window(); w.game_show({"rules": {"hl2_linux": "performance", "x.exe": "turbo"}, "running": "turbo"})
+        self.assertEqual(w.gr_list.count(), 2); self.assertEqual(w.gr_list.currentData(), "hl2_linux"); self.assertIn("turbo", w.gr_msg.text())
+        w.game_show({"rules": {}, "running": None}); self.assertEqual(w.gr_list.count(), 0); self.assertIn("No game rules", w.gr_msg.text())
+        calls = []; orig = gui.ipc.call; gui.ipc.call = lambda *a, **k: calls.append(k) or {"rules": {}, "running": None}
+        try:
+            w.gr_name.setText("Game.exe"); w.gr_mode.setCurrentIndex(4); w.game_add(); self.assertTrue(self._wait(lambda: calls)); self.assertEqual((calls[0]["action"], calls[0]["name"], calls[0]["mode"]), ("add", "Game.exe", "turbo"))
+        finally: gui.ipc.call = orig
+        w.close()
+
     def test_lighting_profiles_work_like_the_other_profile_pages(self):
         from truesense import looks
         w = gui.Window(); w.look_cb.setCurrentIndex(w.look_cb.findText("native")); w.look_selected()

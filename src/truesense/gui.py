@@ -4,7 +4,7 @@
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
 import os, shlex, subprocess, sys, threading, time
-from . import actions, audio, backend as hw, config, control, cpu, curves, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, perkeyfx, profiles, smartprofiles, undervolt, update, userstate
+from . import actions, audio, backend as hw, config, control, cpu, curves, designs, gamerules, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, perkeyfx, profiles, smartprofiles, undervolt, update, userstate
 from .device import HwError
 
 try:
@@ -207,6 +207,7 @@ class Bus(QObject if Qt else object):
     report = pyqtSignal(str) if Qt else None
     upd = pyqtSignal(dict) if Qt else None
     refreshed = pyqtSignal(dict) if Qt else None
+    game = pyqtSignal(dict) if Qt else None
 
 
 class ColorButton(QPushButton if Qt else object):
@@ -497,7 +498,7 @@ class Window(QMainWindow if Qt else object):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
         self.wheel_guard = WheelGuard(self); QApplication.instance().installEventFilter(self.wheel_guard)
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.bus.game.connect(lambda r: self.game_show(r)); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
@@ -834,6 +835,11 @@ class Window(QMainWindow if Qt else object):
         v.addWidget(self.hint("The keyboard cannot animate single keys by itself, so TrueSense draws it: about 5 frames a second, while the key service runs. Slow effects look best. It animates the selected keys, or every key if none are selected."))
         self.fx_cb = QComboBox(); self.fx_cb.addItem("Off (static colours)", "off"); [self.fx_cb.addItem(label, k) for k, label in perkeyfx.MODES.items()]; self.fx_cb.setMinimumWidth(170)
         self.fx_cb.activated.connect(lambda i: self.fx_push()); self.line(v, "Mode", self.fx_cb); self.fx_speed = self.slider(v, "Speed", 1, 10, 1, lambda x: self.fx_push())
+        v = self.card(lay, "Designs and pictures")
+        v.addWidget(self.hint("A design is a still picture of colours (yours live in ~/.config/truesense/designs). A picture file is scaled across the keys."))
+        self.ds_cb = QComboBox(); self.ds_cb.setMinimumWidth(170); self.reload_designs()
+        self.line(v, "Design", self.ds_cb, self.btn("Apply", self.design_apply, True)); self.ds_name = QLineEdit(); self.ds_name.setPlaceholderText("name, e.g. my-design"); self.ds_name.setMinimumWidth(130)
+        self.line(v, "Save the keys as a design", self.ds_name, self.btn("Save", self.design_save)); self.line(v, "Picture", self.btn("Choose a picture…", self.image_apply))
         v = self.card(lay, "Whole keyboard")
         self.pk_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("pkb", lambda: keyboard.set_brightness(x)))
         self.line(v, "Fill and presets", self.btn("Fill all", self.fill_all), self.btn("Rainbow", self.rainbow_all))
@@ -914,6 +920,32 @@ class Window(QMainWindow if Qt else object):
 
     def reset_keys(self):
         self.commit(["00aec7"] * 126 + ["000000"] * 2); self.do(lambda: keyboard.restore_default(None), "Keyboard back to the stock look", refresh=False)
+
+    def reload_designs(self, select=None):
+        try: ds = designs.load_all()
+        except Exception: ds = {}
+        self.ds_cb.clear()
+        for n, d in sorted(ds.items()): self.ds_cb.addItem(f"{n}  ({d['source']})", n)
+        if select: self.ds_cb.setCurrentIndex(max(0, self.ds_cb.findData(select)))
+
+    @staticmethod
+    def _hexes(cells): return ["%02x%02x%02x" % tuple(c) for c in cells]
+
+    def design_apply(self):
+        n = self.ds_cb.currentData()
+        try: self.commit(self._hexes(designs.cells_of(designs.get(n)))); self.say(f"Design '{n}' applied")
+        except Exception as e: self.say(f"Error: {e}")
+
+    def design_save(self):
+        n = self.ds_name.text().strip()
+        try: p = designs.save(n, [tuple(bytes.fromhex(c)) for c in self.board.cells]); self.reload_designs(n); self.say(f"Saved design '{n}' ({p})")
+        except Exception as e: self.say(f"Error: {e}")
+
+    def image_apply(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Choose a picture", os.path.expanduser("~"), "Pictures (*.png *.jpg *.jpeg *.webp *.bmp *.gif)")
+        if not path: return
+        try: self.commit(self._hexes(designs.image_cells(path))); self.say("Picture painted on the keys")
+        except Exception as e: self.say(f"Error: {e}")
 
     def save_perkey_look(self):
         name = self.pk_name.text().strip()
@@ -996,6 +1028,7 @@ class Window(QMainWindow if Qt else object):
         lg = QLabel(); lg.setPixmap(logo_pixmap(40)); lg.setFixedSize(42, 42); self.line(v, f"TrueSense {__version__}", lg)
         self.line(v, "Credits and licence", self.btn("Credits", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense/blob/main/docs/CREDITS.md"))), self.btn("Source", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense"))))
         self.line(v, "System check", self.btn("Run check…", self.run_doctor)); self.line(v, "Support", self.btn("Copy report", self.copy_report))
+        self.line(v, "Hardware self-test", self.btn("Run self-test…", self.run_selftest), sub="Sets each firmware feature, reads it back and restores it (fans are skipped). Takes about a minute."); self.line(v, "Service log", self.btn("Show log…", self.show_log))
         v = self.card(lay, "Reset")
         self.line(v, "Everything back to defaults", self.btn("Reset all…", self.reset_all)); v.addWidget(self.hint("Back to how a fresh install behaves, like PredatorSense on Windows: Native auto mode control, firmware fans, power limits left to the firmware, lighting stock, undervolt off, PREDATOR key `default`. Your saved profiles are kept."))
         lay.addStretch()
@@ -1058,6 +1091,27 @@ class Window(QMainWindow if Qt else object):
             from . import doctor
             try: buf = io.StringIO(); doctor.run(False, buf); txt = buf.getvalue()
             except Exception as e: txt = f"The check failed: {e}"
+            self.say_report(txt)
+        threading.Thread(target=work, daemon=True).start()
+
+    def run_selftest(self):
+        if QMessageBox.question(self, "Hardware self-test", "This briefly changes power mode, lighting, battery and display settings and restores them. The fans are not touched.\n\nRun it now?") != QMessageBox.StandardButton.Yes: return
+        self.say("Self-test running…")
+        def work():
+            import io, contextlib
+            from . import selftest
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf): ok = selftest.run(True)
+                txt = buf.getvalue() + ("\nALL PASSED" if ok else "\nSOME CHECKS FAILED")
+            except Exception as e: txt = buf.getvalue() + f"\nThe self-test failed: {e}"
+            self.say_report(txt)
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_log(self):
+        def work():
+            try: r = subprocess.run(["journalctl", "-u", "truesense.service", "-b", "--no-pager", "-n", "60"], capture_output=True, text=True, timeout=10); txt = (r.stdout or r.stderr or "No log lines.")[-3000:]
+            except (OSError, subprocess.SubprocessError) as e: txt = f"Could not read the log: {e}"
             self.say_report(txt)
         threading.Thread(target=work, daemon=True).start()
 
@@ -1454,7 +1508,36 @@ class Window(QMainWindow if Qt else object):
         v = self.card(lay, "Profiles"); self.sm_list = QComboBox(); self.sm_list.setMinimumWidth(150); self.sm_list.activated.connect(lambda i: self.load_smart_in_editor(self.sm_list.currentText()))
         self.sm_copy = self.btn("Copy to edit", self.smart_copy); self.line(v, "Profile", self.sm_list, self.btn("Use", self.smart_use, True))
         self.sm_name = QLineEdit(); self.sm_name.setPlaceholderText("name"); self.sm_name.setMinimumWidth(120); self.sm_save = self.btn("Save", self.smart_save); self.sm_del = self.btn("Delete", self.smart_delete)
-        self.line(v, "Edit", self.sm_copy, self.sm_del); self.line(v, "Save as", self.sm_name, self.sm_save); self.line(v, "Default", self.btn("Reset to default", self.smart_reset)); self.sm_msg = self.hint(""); v.addWidget(self.sm_msg); self.reload_smart(); lay.addStretch()
+        self.line(v, "Edit", self.sm_copy, self.sm_del); self.line(v, "Save as", self.sm_name, self.sm_save); self.line(v, "Default", self.btn("Reset to default", self.smart_reset)); self.sm_msg = self.hint(""); v.addWidget(self.sm_msg); self.reload_smart()
+        v = self.card(lay, "Game rules")
+        v.addWidget(self.hint("While one of these programs runs, the power mode is at least the one you pick (Native and Smart auto). When it closes, auto takes over again. Turbo still backs off if the laptop gets too hot."))
+        self.gr_name = QLineEdit(); self.gr_name.setPlaceholderText("program, e.g. eldenring.exe or hl2_linux"); self.gr_name.setMinimumWidth(220)
+        self.gr_mode = QComboBox(); self.gr_mode.addItems([m.capitalize() for m in gamerules.MODES]); self.gr_mode.setCurrentIndex(gamerules.MODES.index("performance"))
+        self.line(v, "Program", self.gr_name, self.gr_mode, self.btn("Add", self.game_add, True)); self.gr_list = QComboBox(); self.gr_list.setMinimumWidth(220)
+        self.line(v, "Rules", self.gr_list, self.btn("Remove", self.game_remove)); self.gr_msg = self.hint(""); v.addWidget(self.gr_msg); self.game_reload(); lay.addStretch()
+
+    def game_call(self, **kw):
+        def go():
+            try: r = ipc.call("game_rules", **kw); self.bus_game(r)
+            except Exception as e: self.say(f"Error: {e}")
+        threading.Thread(target=go, daemon=True).start()
+
+    def bus_game(self, r):
+        try: self.bus.game.emit(r)
+        except RuntimeError: pass
+
+    def game_show(self, r):
+        self.gr_list.clear()
+        for k, m in sorted(r["rules"].items()): self.gr_list.addItem(f"{k}  →  {m}", k)
+        self.gr_msg.setText((f"A game rule is active now: {r['running']}." if r.get("running") else "No game rule is active now.") if r["rules"] else "No game rules yet.")
+
+    def game_reload(self): self.game_call(action="list")
+    def game_add(self):
+        n = self.gr_name.text().strip()
+        if n: self.game_call(action="add", name=n, mode=gamerules.MODES[self.gr_mode.currentIndex()]); self.gr_name.clear()
+    def game_remove(self):
+        k = self.gr_list.currentData()
+        if k: self.game_call(action="remove", name=k)
 
     def reload_smart(self, select=None):
         ns = smartprofiles.names(); self.sm_list.clear(); self.sm_list.addItems(ns); self.smart_cb.clear(); self.smart_cb.addItems(ns)
