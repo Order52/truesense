@@ -1,5 +1,9 @@
 # Release notes
 
+## Unreleased
+
+Polish: the Home profile picker fits one line, the mode tiles share one label size, the fan hint matches the chosen fan mode, Settings is grouped (Window, At login, Touchpad, Power management, Updates, Diagnostics, About, Reset), the Updates row no longer stretches its button, "-0 mV" reads "0 mV", and the "…" placeholders say what they are waiting for.
+
 ## 0.3.5 (2026-10-31): new key animations, game rules, profiles page, power-manager takeover, responsive window
 
 Ideas gathered from four related projects (Venator, jma-studio, acer-predator-helios-rgb, PreySense); everything was written from scratch.

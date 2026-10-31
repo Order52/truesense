@@ -12,7 +12,7 @@ try:
     from PyQt6.QtNetwork import QLocalServer, QLocalSocket
     from PyQt6.QtSvg import QSvgRenderer
     from PyQt6.QtCore import QByteArray, QSize
-    from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QImage, QShortcut, QKeySequence
+    from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QImage, QFontMetrics, QShortcut, QKeySequence
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
                                  QPushButton, QScrollArea, QSlider, QBoxLayout, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
     from PyQt6.QtGui import QDesktopServices
@@ -88,7 +88,7 @@ class TileButton(QPushButton if Qt else object):
         else: bg, fg, border = QColor("#272b32" if hot else "#202328"), "#aab3c0", QColor("#1f2733")
         p.setBrush(bg); p.setPen(QPen(border, 1.4)); p.drawRoundedRect(r, 12, 12)
         px = icon_pixmap(self.icon_name, fg, 22); p.drawPixmap(int(r.center().x() - 11), int(r.top() + 10), px)
-        f = QFont(self.font()); f.setBold(on); px_ = 12
+        f = QFont(self.font()); f.setBold(on); px_ = getattr(self, "px", 12)
         while px_ > 8:                                                   # a long label shrinks to fit a narrow tile
             f.setPixelSize(px_); p.setFont(f)
             if p.fontMetrics().horizontalAdvance(self.label) <= r.width() - 6: break
@@ -179,8 +179,9 @@ class Row(QWidget if Qt else object):
     """A settings row: the name on the left, the controls on the right. When the window is too narrow for both, the controls move under the name (and text boxes and drop-downs stretch), so nothing is ever cut off."""
     NAME_MIN = 120
 
-    def __init__(self, label, widgets, gap=10):
+    def __init__(self, label, widgets, gap=10, name_min=None):
         super().__init__(); self.label = label; self.widgets = list(widgets); self.gap = gap; self.stacked = None
+        if name_min is not None: self.NAME_MIN = name_min
         self.box = QBoxLayout(QBoxLayout.Direction.LeftToRight, self); self.box.setContentsMargins(0, 2, 0, 2); self.box.setSpacing(6)
         self.inner = QHBoxLayout(); self.inner.setSpacing(gap); self.inner.setContentsMargins(0, 0, 0, 0)
         self.box.addWidget(label, 1); self.box.addLayout(self.inner); self.pref = {}; self.policy = {}
@@ -191,10 +192,21 @@ class Row(QWidget if Qt else object):
 
     def minimumSizeHint(self): return QSize(60, super().minimumSizeHint().height())
 
-    def need(self): return self.NAME_MIN + self.box.spacing() + sum(max(w.sizeHint().width(), self.pref.get(w, 0)) for w in self.widgets) + self.gap * max(0, len(self.widgets) - 1)
+    def shown(self): return [w for w in self.widgets if not w.isHidden()]
+
+    def need(self):
+        ws = self.shown(); return self.NAME_MIN + self.box.spacing() + sum(max(w.sizeHint().width(), self.pref.get(w, 0)) for w in ws) + self.gap * max(0, len(ws) - 1)
+
+    def event(self, e):
+        r = super().event(e)
+        if e.type() == QEvent.Type.LayoutRequest and self.width() > 0: self._restack()                      # a control was shown or hidden
+        return r
 
     def resizeEvent(self, e):
-        super().resizeEvent(e); stack = bool(self.widgets) and self.need() > self.width()
+        super().resizeEvent(e); self._restack()
+
+    def _restack(self):
+        stack = bool(self.shown()) and self.need() > self.width()
         if stack == self.stacked: return
         self.stacked = stack; self.box.setDirection(QBoxLayout.Direction.TopToBottom if stack else QBoxLayout.Direction.LeftToRight)
         for w, m in self.pref.items():
@@ -236,6 +248,17 @@ class Segmented(QWidget if Qt else object):
             else: b = QPushButton(t); b.setObjectName("seg"); b.setCheckable(True); b.setCursor(Qt.CursorShape.PointingHandCursor)
             self.group.addButton(b, i); h.addWidget(b); self.btns.append(b)
         self.group.idClicked.connect(self.picked.emit)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if self.btns and isinstance(self.btns[0], TileButton):                      # every tile in a group uses the same label size: the one the longest label needs
+            w = self.btns[0].width() - 8; f = QFont(self.font()); f.setBold(True); px = 12
+            while px > 8:
+                f.setPixelSize(px)
+                if max(QFontMetrics(f).horizontalAdvance(b.label) for b in self.btns) <= w: break
+                px -= 1
+            for b in self.btns:
+                if getattr(b, "px", None) != px: b.px = px; b.update()
 
     def set_index(self, i):
         if 0 <= i < len(self.btns): self.btns[i].setChecked(True)
@@ -689,9 +712,9 @@ class Window(QMainWindow if Qt else object):
     def sep(v):
         f = QFrame(); f.setObjectName("sep"); v.addWidget(f)
 
-    def line(self, v, text, *widgets, sub=None):
+    def line(self, v, text, *widgets, sub=None, name_min=None):
         """One settings row: the name on the left, the control on the right (under the name when the window is narrow)."""
-        lab = QLabel(text); lab.setWordWrap(True); v.addWidget(Row(lab, widgets))
+        lab = QLabel(text); lab.setWordWrap(True); v.addWidget(Row(lab, widgets, name_min=name_min))
         if sub: v.addWidget(self.hint(sub))
         return lab
 
@@ -704,8 +727,8 @@ class Window(QMainWindow if Qt else object):
     def slider(self, v, text, lo, hi, step, cb, final=None, suffix="", prefix=""):
         """The name on the left, the current value on the right, a full-width slider underneath."""
         s = QSlider(Qt.Orientation.Horizontal); s.setRange(lo, hi); s.setSingleStep(step); s.setPageStep(step)
-        val = QLabel(f"{prefix}{s.value()}{suffix}"); val.setObjectName("stats"); s.vlabel = val
-        s.valueChanged.connect(lambda x: val.setText(f"{prefix}{x}{suffix}")); s.valueChanged.connect(lambda x: None if self.loading else cb(x))
+        val = QLabel(f"{prefix if s.value() else ''}{s.value()}{suffix}"); val.setObjectName("stats"); s.vlabel = val
+        s.valueChanged.connect(lambda x: val.setText(f"{prefix if x else ''}{x}{suffix}")); s.valueChanged.connect(lambda x: None if self.loading else cb(x))
         if final: s.sliderReleased.connect(lambda: final(s.value()))
         lab = QLabel(text); lab.setWordWrap(True); h = QHBoxLayout(); h.addWidget(lab, 1); h.addWidget(val); v.addLayout(h); v.addWidget(s); return s
 
@@ -720,7 +743,7 @@ class Window(QMainWindow if Qt else object):
         self.banner = QFrame(); self.banner.setObjectName("banner"); bl = QHBoxLayout(self.banner); bl.setContentsMargins(14, 10, 10, 10); self.banner_lbl = QLabel(""); self.banner_lbl.setWordWrap(True); bl.addWidget(self.banner_lbl, 1)
         bl.addWidget(self.btn("Update", self.update_now, True)); bl.addWidget(self.btn("Later", lambda: self.banner.setVisible(False))); lay.addWidget(self.banner); self.banner.setVisible(False)
         self.hp_cb = QComboBox(); self.hp_cb.setMinimumWidth(150); self.hp_cb.setToolTip("A profile sets power, fans, lighting, battery and audio in one click. Manage them under Profiles.")
-        self.line(lay, "Profile", self.hp_cb, self.btn("Apply", self.hp_apply, True), self.btn("Manage…", lambda: self.go("profiles")))
+        self.line(lay, "Profile", self.hp_cb, self.btn("Apply", self.hp_apply, True), self.btn("Manage…", lambda: self.go("profiles")), name_min=56)
         v = self.card(lay, "Performance Mode", "performance", True); self.stat_cpu = v.right
         try: self.modes = hw.supported_modes()
         except Exception: self.modes = list(hw.MODES)
@@ -748,7 +771,7 @@ class Window(QMainWindow if Qt else object):
         self.curve_box = QWidget(); cb = QVBoxLayout(self.curve_box); cb.setContentsMargins(0, 0, 0, 0)
         self.curve_cb = QComboBox(); self.curve_cb.setMinimumWidth(140); self.curve_cb.activated.connect(self.curve_picked)
         self.line(cb, "Smart curve", self.curve_cb, self.btn("Edit", lambda: self.go("curves"))); v.addWidget(self.curve_box)
-        self.fan_hint = self.hint("Manual: the sliders go from 20 to 100 %. Turn fans off asks first, only works while cool, and the fans return to Auto by themselves if it gets warm; on this laptop the firmware may keep them at a minimum speed, and TrueSense tells you what they really do. Smart follows your fan curve. Auto is the firmware's own control, exactly like Auto in PredatorSense on Windows (fans stop when cool)."); v.addWidget(self.fan_hint)
+        self.fan_hint = self.hint(self.FAN_HINTS[0]); v.addWidget(self.fan_hint)
         self.fan_box = QWidget(); fb = QVBoxLayout(self.fan_box); fb.setContentsMargins(0, 0, 0, 0); fb.setSpacing(8)      # only shown while Manual is chosen
         self.fan_link = self.switch(fb, "Control both fans together", self.fan_link_changed)
         self.fan_off_btn = self.btn("Turn fans off…", self.fan_off_ask); self.fan_off_btn.setToolTip("Asks first; only allowed while cool; TrueSense gives the fans back to the firmware if the laptop gets warm. It then tells you what the fans really do.")
@@ -832,9 +855,14 @@ class Window(QMainWindow if Qt else object):
         if self.loading: return
         self.auto_hint.setText(AUTO_HINT[AUTO_KEYS[i]]); self.smart_box.setVisible(i == 2); self.do(lambda: ipc.call("set", key="auto_mode", value=AUTO_KEYS[i]), lambda r: f"Mode control: {AUTO_KEYS[i]}", refresh=False)
 
+    FAN_HINTS = ("Follows your fan curve: quiet when cool, faster as it heats. Edit it under Fan curves.",
+                 "The firmware's own control, exactly like Auto in PredatorSense on Windows (the fans stop when cool).",
+                 "Both fans at full speed until you pick another mode.",
+                 "The sliders go from 20 to 100 %. Turn fans off asks first and only works while cool; the fans return to Auto by themselves if it gets warm. On this laptop the firmware may keep them at a minimum speed, and TrueSense tells you what they really do.")
+
     def fan_picked(self, i):
         if self.loading: return
-        self.fan_box.setVisible(i == 3); self.curve_box.setVisible(i == 0); self.fan_apply(i)
+        self.fan_box.setVisible(i == 3); self.curve_box.setVisible(i == 0); self.fan_hint.setText(self.FAN_HINTS[i]); self.fan_apply(i)
 
     def manual_duty(self):
         """(cpu %, gpu %) from whichever sliders are showing."""
@@ -926,7 +954,7 @@ class Window(QMainWindow if Qt else object):
         c = self.card(v, "At boot")
         c.addWidget(self.hint("Applied by the TrueSense service when the laptop starts (before you log in) and again after every resume from suspend."))
         self.boot_cb = QComboBox(); self.boot_cb.setMinimumWidth(150); self.line(c, "Profile", self.boot_cb, self.btn("Use", self.boot_set, True)); self.line(c, "Boot lighting", self.btn("Don't change at boot", lambda: self.do(lambda: ipc.call("boot_look", action="clear"), "Lighting is left alone at boot", refresh=False) or QTimer.singleShot(500, self.reload_looks)))
-        self.boot_lbl = self.hint("…"); c.addWidget(self.boot_lbl); self.reload_looks(); v.addStretch(); return w
+        self.boot_lbl = self.hint("Checking what is applied at boot…"); c.addWidget(self.boot_lbl); self.reload_looks(); v.addStretch(); return w
 
     def ks_reload(self, select=None):
         cur = select or (self.ks_cb.currentText() if self.ks_cb.count() else ""); self.ks_cb.clear(); self.ks_cb.addItems(keyprofiles.names())
@@ -1045,7 +1073,7 @@ class Window(QMainWindow if Qt else object):
         self.pk_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("pkb", lambda: keyboard.set_brightness(x)))
         self.line(v, "Fill and presets", self.btn("Fill all", self.fill_all), self.btn("Rainbow", self.rainbow_all))
         self.line(v, "Reset", self.btn("Reset to stock", self.reset_keys))
-        self.pk_name = QLineEdit(); self.pk_name.setPlaceholderText("name, e.g. my-keys"); self.pk_name.setMinimumWidth(130); self.line(v, "Save as a lighting profile", self.pk_name, self.btn("Save", self.save_perkey_look))
+        self.pk_name = QLineEdit(); self.pk_name.setPlaceholderText("name, e.g. my-keys"); self.pk_name.setMinimumWidth(130); self.line(v, "Save as a lighting profile (listed under Profiles)", self.pk_name, self.btn("Save", self.save_perkey_look))
         lay.addStretch(); return w
 
     def sel_changed(self):
@@ -1211,7 +1239,7 @@ class Window(QMainWindow if Qt else object):
         self.dts = self.switch(v, "Acer DTS sound", lambda x: self.do(lambda: audio.dts_power(x), "DTS " + ("on" if x else "off")), "This laptop plays on the speakers or the headphone jack, not both at once.")
         v = self.card(lay, "3.5 mm jack")
         self.jack = self.seg(v, "I plugged in", [l for _, l in JACK], self.jack_pick); self.jack_hint = self.hint(""); v.addWidget(self.jack_hint)
-        self.jack_state = QLabel("…"); self.jack_state.setObjectName("hint"); v.addWidget(self.jack_state)
+        self.jack_state = QLabel("Looking at the 3.5 mm jack…"); self.jack_state.setObjectName("hint"); v.addWidget(self.jack_state)
         self.boost = self.slider(v, "Headset mic boost", 0, 3, 1, lambda x: None, lambda x: self.do(lambda: audio.headset_boost(x), lambda r: f"Boost: {r}"))
         v = self.card(lay, "Microphone")
         self.micvol = self.slider(v, "Microphone volume", 0, 150, 5, lambda x: None, lambda x: self.do(lambda: audio.mic_volume(x), lambda r: f"Microphone volume: {r} %", refresh=False), suffix=" %")
@@ -1226,9 +1254,10 @@ class Window(QMainWindow if Qt else object):
 
     # ---- Settings --------------------------------------------------------------------------------------------------------------------------
     def p_settings(self):
-        lay = self.page("Settings"); v = self.card(lay, "Start up")
+        lay = self.page("Settings"); v = self.card(lay, "Window")
         self.autostart = self.switch(v, "Open this window at login", self.set_autostart, "Writes ~/.config/autostart/truesense.desktop. Hyprland needs `exec-once = truesense gui` (or uwsm) to run autostart entries.")
         self.autostart.setChecked(os.path.exists(AUTOSTART)); v.addWidget(self.hint("Lighting at login is set under At login below, and at boot in Lighting, Profiles. The PREDATOR key has its own page."))
+        self.size_sw = self.switch(v, "Fixed-size window", lambda x: self.apply_size_mode(x), sub="On (default): the compact 480 pixel window that floats on Hyprland and sway. Off: resize the window freely (it tiles on tiling desktops)."); self.size_sw.setChecked(bool(userstate.get("gui_fixed", True)))
         v = self.card(lay, "At login")
         v.addWidget(self.hint("What the lights and a profile do when you log in (the truesense-startup service). Boot lighting, before login, is in Lighting, Profiles."))
         self.su_kb = QComboBox(); self.su_rear = QComboBox(); self.su_prof = QComboBox()
@@ -1237,20 +1266,21 @@ class Window(QMainWindow if Qt else object):
         self.line(v, "Keyboard lighting", self.su_kb); self.line(v, "Rear light bar", self.su_rear); self.line(v, "Profile (applied first)", self.su_prof); self.line(v, "Try it now", self.btn("Apply the login setup", self.su_apply)); self.su_reload()
         v = self.card(lay, "Touchpad")
         self.tp_sw = self.switch(v, "Touchpad on", lambda x: self.do(lambda: ipc.call("touchpad", action="on" if x else "off"), "Touchpad " + ("on" if x else "off"), refresh=False), "The same as Fn+F10.")
+        v = self.card(lay, "Power management")
+        self.pm_sw = self.switch(v, "TrueSense manages power", lambda x: self.pm_set(x), sub="Stops and disables other power managers that fight it (auto-cpufreq, TLP, tuned, power-profiles-daemon) and puts the CPU back to sane defaults, turbo on. Off puts them back exactly as they were."); self.pm_lbl = self.hint(""); self.pm_lbl.setVisible(False); v.addWidget(self.pm_lbl)
         v = self.card(lay, "Updates")
         from . import __version__
         self.upd_lbl = self.hint("Not checked yet."); self.upd_btn = self.btn("Update…", self.update_now, True); self.upd_btn.setVisible(False); self.notes_btn = self.btn("What's new", self.open_notes); self.notes_btn.setVisible(False)
         self.line(v, f"Installed: version {__version__}", self.btn("Check now", lambda: self.check_updates(True)), self.notes_btn, self.upd_btn); v.addWidget(self.upd_lbl)
         self.auto_upd = self.switch(v, "Check for updates automatically", self.set_auto_update, "Once a day it asks GitHub for the newest release number (nothing else is sent) and shows a notification; nothing is installed without you pressing Update.")
         self.auto_upd.setChecked(bool(self.cfg["update"]["auto_check"]))
-        v = self.card(lay, "About")
-        lg = QLabel(); lg.setPixmap(logo_pixmap(40)); lg.setFixedSize(42, 42); self.line(v, f"TrueSense {__version__}", lg)
-        self.line(v, "Credits and licence", self.btn("Credits", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense/blob/main/docs/CREDITS.md"))), self.btn("Source", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense"))))
-        self.size_sw = self.switch(v, "Fixed-size window", lambda x: self.apply_size_mode(x), sub="On (default): the compact 480 pixel window that floats on Hyprland and sway. Off: resize the window freely (it tiles on tiling desktops)."); self.size_sw.setChecked(bool(userstate.get("gui_fixed", True)))
-        self.pm_sw = self.switch(v, "TrueSense manages power", lambda x: self.pm_set(x), sub="Stops and disables other power managers that fight it (auto-cpufreq, TLP, tuned, power-profiles-daemon) and puts the CPU back to sane defaults, turbo on. Off puts them back exactly as they were."); self.pm_lbl = self.hint(""); v.addWidget(self.pm_lbl)
+        v = self.card(lay, "Diagnostics")
         self.line(v, "Configuration", self.btn("Show…", self.show_config), self.btn("Check", self.check_config)); self.line(v, "Service", self.btn("Status…", self.show_service))
         self.line(v, "System check", self.btn("Run check…", self.run_doctor)); self.line(v, "Support", self.btn("Copy report", self.copy_report))
         self.line(v, "Hardware self-test", self.btn("Run self-test…", self.run_selftest), sub="Sets each firmware feature, reads it back and restores it (fans are skipped). Takes about a minute."); self.line(v, "Service log", self.btn("Show log…", self.show_log))
+        v = self.card(lay, "About")
+        lg = QLabel(); lg.setPixmap(logo_pixmap(40)); lg.setFixedSize(42, 42); self.line(v, f"TrueSense {__version__}", lg)
+        self.line(v, "Credits and licence", self.btn("Credits", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense/blob/main/docs/CREDITS.md"))), self.btn("Source", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense"))))
         v = self.card(lay, "Reset")
         self.line(v, "Everything back to defaults", self.btn("Reset all…", self.reset_all)); v.addWidget(self.hint("Back to how a fresh install behaves, like PredatorSense on Windows: Native auto mode control, firmware fans, power limits left to the firmware, lighting stock, undervolt off, PREDATOR key `default`. Your saved profiles are kept."))
         lay.addStretch()
@@ -1331,12 +1361,12 @@ class Window(QMainWindow if Qt else object):
             self.loading = True
             try: self.tp_sw.setChecked(bool(r["tp"]))
             finally: self.loading = False
-        if "error" in r: self.pm_lbl.setText("Power managers: could not ask the service (" + r["error"] + ")"); return
+        if "error" in r: self.pm_lbl.setVisible(True); self.pm_lbl.setText("Power managers: could not ask the service (" + r["error"] + ")"); return
         self.loading = True
         try: self.pm_sw.setChecked(bool(r.get("on")))
         finally: self.loading = False
         found = [m["unit"] + (" (running)" if m["active"] else " (enabled)") for m in r.get("found", [])]
-        self.pm_lbl.setText(("Another power manager is present: " + ", ".join(found) + (". Turn this on to stop it." if not r.get("on") else ". It will be stopped.")) if found else "No other power manager is running or enabled.")
+        self.pm_lbl.setVisible(True); self.pm_lbl.setText(("Another power manager is present: " + ", ".join(found) + (". Turn this on to stop it." if not r.get("on") else ". It will be stopped.")) if found else "No other power manager is running or enabled.")
         if r.get("done"): self.say(r["done"])
 
     def pm_set(self, on):
@@ -1502,7 +1532,7 @@ class Window(QMainWindow if Qt else object):
         self.uv_tabs = Segmented(["CPU", "GPU"], tiles=True, icons=["performance", "gpu"]); lay.addWidget(self.uv_tabs); uvstack = QStackedWidget(); lay.addWidget(uvstack)
         self.uv_tabs.picked.connect(uvstack.setCurrentIndex); self.uv_tabs.set_index(0); page_lay = lay
         cpu_w = QWidget(); lay = QVBoxLayout(cpu_w); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(14)
-        v = self.card(lay, "Right now", "", True); self.uv_now = v.right; self.uv_state = self.hint("…"); v.addWidget(self.uv_state)
+        v = self.card(lay, "Right now", "", True); self.uv_now = v.right; self.uv_state = self.hint("Reading the current voltage…"); v.addWidget(self.uv_state)
         v = self.card(lay, "Profile")
         self.uv_list = QComboBox(); self.uv_list.setMinimumWidth(150); self.uv_list.activated.connect(lambda i: self.load_uv(self.uv_list.currentText()))
         self.line(v, "Profile", self.uv_list, self.btn("Reset", self.uv_reset), self.btn("Apply", self.uv_apply, True)); self.uv_copy = self.btn("Copy to edit", self.uv_copy_do); self.uv_del = self.btn("Delete", self.uv_delete)
@@ -1527,7 +1557,7 @@ class Window(QMainWindow if Qt else object):
 
     def build_gpu_uv(self, lay):
         lay.addWidget(self.hint("GPU undervolt shifts the GPU's voltage/frequency curve up and caps the top clock, so it reaches its speed at a lower voltage. Neither setting survives a reboot."))
-        v = self.card(lay, "Right now", "", True); self.gpu_now = v.right; self.gpu_state = self.hint("…"); v.addWidget(self.gpu_state)
+        v = self.card(lay, "Right now", "", True); self.gpu_now = v.right; self.gpu_state = self.hint("Reading the GPU clocks…"); v.addWidget(self.gpu_state)
         v = self.card(lay, "Profile")
         self.gp_list = QComboBox(); self.gp_list.setMinimumWidth(150); self.gp_list.activated.connect(lambda i: self.load_gpu_uv(self.gp_list.currentText()))
         self.line(v, "Profile", self.gp_list, self.btn("Reset", self.gpu_uv_reset), self.btn("Apply", self.gpu_uv_apply, True)); self.gp_copy = self.btn("Copy to edit", self.gpu_uv_copy); self.gp_del = self.btn("Delete", self.gpu_uv_delete)
@@ -1936,7 +1966,7 @@ class Window(QMainWindow if Qt else object):
                 if d.get("fan", {}).get("mode") == "manual":
                     dp = d["fan"]["duty_register_pct"]; c_, g_ = max(20, dp["cpu"]), max(20, dp["gpu"])
                     self._set(self.fan_cpu, c_); self._set(self.fan_gpu, g_); self._set(self.fan_pct, max(c_, g_))
-                fi = 0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1); self.fan.set_index(fi); self.fan_box.setVisible(fi == 3); self.curve_box.setVisible(fi == 0)
+                fi = 0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1); self.fan.set_index(fi); self.fan_box.setVisible(fi == 3); self.curve_box.setVisible(fi == 0); self.fan_hint.setText(self.FAN_HINTS[fi])
             if "ac" in d: self.src = "AC" if d["ac"] else "Battery"
             if d.get("mode") in self.modes: self.power.set_index(self.modes.index(d["mode"]))
             if "rear" in d:
