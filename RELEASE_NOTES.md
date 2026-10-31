@@ -1,8 +1,13 @@
 # Release notes
 
-## Unreleased
+## 0.3.6 (2026-10-31): polish, a settings-file race fixed, clearer Profiles page
 
-Polish: the Home profile picker fits one line, the mode tiles share one label size, the fan hint matches the chosen fan mode, Settings is grouped (Window, At login, Touchpad, Power management, Updates, Diagnostics, About, Reset), the Updates row no longer stretches its button, "-0 mV" reads "0 mV", and the "…" placeholders say what they are waiting for.
+- **Fixed:** the per-user settings file could lose a setting when two things wrote at once (the window, the key service, the command line, or threads inside the window). It is now locked across threads and processes.
+- **Profiles page:** says plainly that a profile only changes what it lists, so switching from one profile to another can leave things from the earlier one switched on (for example battery-saver's 80 % limit).
+- **Home:** the profile picker fits on one line; all five mode tiles use the same label size; the fan hint matches the chosen fan mode instead of one long paragraph.
+- **Settings:** grouped into Window, At login, Touchpad, Power management, Updates, Diagnostics, About and Reset; the Updates row no longer stretches its button.
+- **Small things:** the undervolt offset reads "0 mV" instead of "-0 mV"; the "..." placeholders say what they are waiting for; the per-key "Save as a lighting profile" label says where the profile appears.
+- **Tests:** two flaky window tests are now deterministic, and there is a test that hammers the settings file from several threads.
 
 ## 0.3.5 (2026-10-31): new key animations, game rules, profiles page, power-manager takeover, responsive window
 

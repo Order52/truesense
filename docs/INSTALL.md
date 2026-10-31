@@ -7,7 +7,7 @@ Requires: an Acer Predator Helios 16 **PH16-71**, systemd, Linux with kernel hea
 curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
 curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash -s -- --no-gui   # extra options
 ```
-`get.sh` finds the newest tag, downloads it, and runs `tools/install.sh`. Pin a version with `TRUESENSE_VERSION=0.3.5`, verify it with `TRUESENSE_SHA256=<hash>`. Read the script first if you like: it is ~20 lines.
+`get.sh` finds the newest tag, downloads it, and runs `tools/install.sh`. Pin a version with `TRUESENSE_VERSION=0.3.6`, verify it with `TRUESENSE_SHA256=<hash>`. Read the script first if you like: it is ~20 lines.
 
 ## From a clone
 ```
