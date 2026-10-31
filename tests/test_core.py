@@ -569,3 +569,58 @@ class TestSimIsolation(unittest.TestCase):
         env = dict(_os.environ, TRUESENSE_SIM="1", PYTHONPATH=_os.path.join(_os.path.dirname(__file__), "..", "src")); env.pop("TRUESENSE_USERSTATE", None)
         out = subprocess.run([sys.executable, "-c", "from truesense import userstate; print(userstate.PATH)"], env=env, capture_output=True, text=True).stdout.strip()
         self.assertNotIn(".local/state", out); self.assertIn("truesense-sim", out)
+
+
+class TestPowerManagers(unittest.TestCase):
+    def fake(self):
+        import tempfile, os as _os
+        d = tempfile.mkdtemp(); sysd = d + "/cpu"; _os.makedirs(sysd + "/intel_pstate")
+        for n in range(3):
+            _os.makedirs(f"{sysd}/cpu{n}/cpufreq")
+            open(f"{sysd}/cpu{n}/cpufreq/scaling_governor", "w").write("performance"); open(f"{sysd}/cpu{n}/cpufreq/energy_performance_preference", "w").write("performance")
+        open(sysd + "/intel_pstate/no_turbo", "w").write("1")
+        units = {"auto-cpufreq": {"active": True, "enabled": True}, "tlp": {"active": False, "enabled": False}, "ananicy-cpp": {"active": True, "enabled": True}}; calls = []
+        def run(*cmd, timeout=30):
+            calls.append(cmd); verb, unit = cmd[1], cmd[-1].replace(".service", ""); u = units.get(unit, {"active": False, "enabled": False})
+            if verb == "is-active": return 0, "active" if u["active"] else "inactive"
+            if verb == "is-enabled": return 0, "enabled" if u["enabled"] else "disabled"
+            if verb == "disable": u["active"] = u["enabled"] = False
+            if verb == "enable": u["enabled"] = True
+            if verb == "start": u["active"] = True
+            return 0, ""
+        return sysd, d + "/rec.json", run, units, calls
+
+    def test_takeover_stops_only_known_managers_fixes_the_cpu_and_restore_undoes_it(self):
+        from truesense import powermgr as pm
+        sysd, rec, run, units, calls = self.fake()
+        self.assertEqual([m["unit"] for m in pm.status(run)], ["auto-cpufreq"], "ananicy-cpp and tlp (not running) are not on the list")
+        r = pm.takeover(run, sysd, rec); self.assertEqual(r["stopped"], ["auto-cpufreq"]); self.assertEqual(r["failed"], []); self.assertEqual(r["cpu_not_set"], [])
+        self.assertFalse(units["auto-cpufreq"]["active"] or units["auto-cpufreq"]["enabled"]); self.assertTrue(units["ananicy-cpp"]["active"], "unrelated services are left alone")
+        self.assertEqual(pm.cpu_state(sysd), {"no_turbo": "0", "governor": "powersave", "epp": "balance_performance"})
+        self.assertFalse([c for c in calls if c[-1].replace(".service", "") not in pm.UNITS and c[-1].replace(".service", "") != "ananicy-cpp"])
+        self.assertEqual(pm.load(rec)["cpu"], {"no_turbo": "1", "governor": "performance", "epp": "performance"})
+        pm.takeover(run, sysd, rec); self.assertEqual(pm.load(rec)["cpu"]["governor"], "performance", "a second takeover keeps the ORIGINAL state to go back to")
+        r = pm.restore(run, sysd, rec); self.assertEqual(r["restored"], ["auto-cpufreq"]); self.assertTrue(units["auto-cpufreq"]["active"] and units["auto-cpufreq"]["enabled"])
+        self.assertEqual(pm.cpu_state(sysd), {"no_turbo": "1", "governor": "performance", "epp": "performance"}); self.assertEqual(pm.load(rec), {})
+
+    def test_a_hand_edited_record_cannot_touch_other_services_and_failures_are_reported(self):
+        import json as _json
+        from truesense import powermgr as pm
+        sysd, rec, run, units, calls = self.fake()
+        open(rec, "w").write(_json.dumps({"units": [{"unit": "sshd", "was_active": True, "was_enabled": True}], "cpu": None})); calls.clear()
+        pm.restore(run, sysd, rec); self.assertFalse(calls, "only units from the fixed list are ever started or enabled")
+        sysd, rec, run, units, calls = self.fake()
+        def stuck(*cmd, timeout=30): return (1, "Access denied") if cmd[1] == "disable" else run(*cmd)
+        r = pm.takeover(stuck, sysd, rec); self.assertEqual(r["stopped"], []); self.assertTrue(r["failed"] and "auto-cpufreq" in r["failed"][0])
+
+    def test_daemon_handler_remembers_the_choice(self):
+        from truesense import powermgr as pm
+        b = TestDaemonLogic.make(self); h = b.handlers(); sysd, rec, run, units, calls = self.fake()
+        o = (pm.status, pm.takeover, pm.restore, pm.load)
+        pm.status = lambda r=None: o[0](run); pm.takeover = lambda: o[1](run, sysd, rec); pm.restore = lambda: o[2](run, sysd, rec); pm.load = lambda p=None: o[3](rec)
+        try:
+            self.assertFalse(h["power_managers"](action="status")["on"]); r = h["power_managers"](action="takeover"); self.assertTrue(r["on"]); self.assertEqual(r["stopped"], ["auto-cpufreq"]); self.assertTrue(b.st.get("pm_takeover"))
+            units["auto-cpufreq"]["active"] = True; b.tick = 4; b.pm_guard(); self.assertFalse(units["auto-cpufreq"]["active"], "a manager that came back is stopped again")
+            r = h["power_managers"](action="restore"); self.assertFalse(r["on"]); self.assertTrue(units["auto-cpufreq"]["active"]); self.assertFalse(b.st.get("pm_takeover"))
+            with self.assertRaises(device.HwError): h["power_managers"](action="rm -rf")
+        finally: pm.status, pm.takeover, pm.restore, pm.load = o

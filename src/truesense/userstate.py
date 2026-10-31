@@ -4,7 +4,7 @@ import json, os
 
 import tempfile
 # The simulator (TRUESENSE_SIM=1) must never touch your real settings: the key service running on this machine would act on them.
-PATH = os.environ.get("TRUESENSE_USERSTATE") or (os.path.join(tempfile.gettempdir(), f"truesense-sim-{os.getuid()}", "user.json") if os.environ.get("TRUESENSE_SIM")
+PATH = os.environ.get("TRUESENSE_USERSTATE") or (os.path.join(tempfile.mkdtemp(prefix="truesense-sim-"), "user.json") if os.environ.get("TRUESENSE_SIM")
                                                   else os.path.expanduser("~/.local/state/truesense/user.json"))
 
 

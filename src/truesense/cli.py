@@ -65,6 +65,7 @@ def build():
     q = ps.add_parser("auto", help="automatic power mode: off | native (PredatorSense-like: power source only) | smart (heat, load and battery aware); on = smart"); q.add_argument("action", nargs="?", default="status", choices=["off", "native", "smart", "on", "toggle", "status"])
     q = ps.add_parser("hold", help="keep the current power mode against the automatic profile"); q.add_argument("minutes", nargs="?", type=float, default=30)
     ps.add_parser("release", help="end a hold")
+    q = ps.add_parser("managers", help="other power managers (auto-cpufreq, TLP, tuned, power-profiles-daemon, system76-power): list | stop (TrueSense manages power: stops them, sets sane CPU defaults, remembers) | restore"); q.add_argument("action", nargs="?", default="list", choices=["list", "stop", "restore"])
     q = ps.add_parser("game", help="game rules: a program raises the power mode while it runs: list | add NAME MODE | remove NAME | clear"); q.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove", "clear"]); q.add_argument("name", nargs="?"); q.add_argument("mode", nargs="?", choices=list(hw.MODES))
     # fan
     p = sub.add_parser("fan", help="fans: firmware auto, max, manual %%, smart curve"); fs = p.add_subparsers(dest="verb")
@@ -234,6 +235,11 @@ def h_power(a):
             p = sp.save(a.name, base); emit(p, f"saved smart profile '{a.name}' (use it: truesense power smart use {a.name})")
         elif act == "delete": sp.delete(a.name or ""); emit(a.name, f"deleted smart profile '{a.name}'")
     elif v == "hold": ipc.call("hold", minutes=a.minutes); emit(f"holding the current power mode for {a.minutes:g} min")
+    elif v == "managers":
+        r = ipc.call("power_managers", action={"list": "status", "stop": "takeover", "restore": "restore"}[a.action])
+        if a.action == "list": emit(r, ("TrueSense manages power: " + ("ON" if r["on"] else "off")) + "\n" + ("\n".join(f"  {m['unit']:<24} {'running' if m['active'] else 'not running'}, {'enabled' if m['enabled'] else 'disabled'}" for m in r["found"]) or "  no other power manager is running or enabled"))
+        elif a.action == "stop": emit(r, ("stopped: " + (", ".join(r["stopped"]) or "nothing (no other power manager was running)")) + (f"\nCOULD NOT STOP: {', '.join(r['failed'])}" if r["failed"] else "") + f"\nCPU now: governor {r['cpu']['governor']}, energy preference {r['cpu']['epp']}, turbo {'on' if r['cpu']['no_turbo'] == '0' else 'OFF' if r['cpu']['no_turbo'] else 'n/a'}\n(undo: truesense power managers restore)")
+        else: emit(r, "restored: " + (", ".join(r["restored"]) or "nothing (TrueSense had not stopped anything)"))
     elif v == "game":
         if a.action == "add" and not (a.name and a.mode): raise HwError("usage: truesense power game add PROGRAM MODE   (e.g. add eldenring.exe turbo)")
         if a.action == "remove" and not a.name: raise HwError("usage: truesense power game remove PROGRAM")

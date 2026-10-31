@@ -4,7 +4,7 @@
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
 import os, shlex, subprocess, sys, threading, time
-from . import actions, audio, backend as hw, config, control, cpu, curves, designs, gamerules, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, perkeyfx, profiles, smartprofiles, undervolt, update, userstate
+from . import actions, audio, backend as hw, config, control, cpu, curves, designs, gamerules, gpuundervolt, powermgr, ipc, keybinds, keyboard, keymap, looks, perkeyfx, profiles, smartprofiles, undervolt, update, userstate
 from .device import HwError
 
 try:
@@ -279,6 +279,7 @@ class Bus(QObject if Qt else object):
     upd = pyqtSignal(dict) if Qt else None
     refreshed = pyqtSignal(dict) if Qt else None
     game = pyqtSignal(dict) if Qt else None
+    pm = pyqtSignal(dict) if Qt else None
 
 
 class ColorButton(QPushButton if Qt else object):
@@ -572,14 +573,14 @@ class CurveEditor(QWidget if Qt else object):
 class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
-        self.apply_size_mode(bool(userstate.get("gui_fixed", False)), save=False)
+        self.apply_size_mode(bool(userstate.get("gui_fixed", True)), save=False)
         self.wheel_guard = WheelGuard(self); QApplication.instance().installEventFilter(self.wheel_guard)
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.bus.game.connect(lambda r: self.game_show(r)); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.bus.game.connect(lambda r: self.game_show(r)); self.bus.pm.connect(lambda r: self.pm_show(r)); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         self.nav = [0]; self.nav_fwd = []; self.navigating = False; self.nav_filter = NavFilter(self); QApplication.instance().installEventFilter(self.nav_filter)
         for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
-        self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else (self.battery_refresh() if i == PAGES["battery"] else None))
+        self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else (self.battery_refresh() if i == PAGES["battery"] else (self.pm_refresh() if i == PAGES["settings"] else None)))
         self.pages.currentChanged.connect(self.nav_changed); QShortcut(QKeySequence("Alt+Left"), self, activated=self.nav_back); QShortcut(QKeySequence("Alt+Right"), self, activated=self.nav_forward)
         QShortcut(QKeySequence("Escape"), self, activated=self.close); QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
@@ -612,7 +613,7 @@ class Window(QMainWindow if Qt else object):
         self.statusBar().showMessage(t, 9000 if t.startswith("Error") else 6000)
 
     def apply_size_mode(self, fixed, save=True):
-        """Resizable by default (fits any window size). "Fixed size" gives the old 480 pixel window, which tiling desktops (Hyprland, sway) keep floating."""
+        """Fixed size by default: the compact 480 pixel window that tiling desktops (Hyprland, sway) keep floating. Turned off, the window resizes freely and every page adapts down to 380 pixels."""
         if save: userstate.set("gui_fixed", bool(fixed))
         h = min(760, QApplication.primaryScreen().availableGeometry().height() - 60)
         if fixed: self.setFixedSize(480, h)
@@ -1168,7 +1169,8 @@ class Window(QMainWindow if Qt else object):
         v = self.card(lay, "About")
         lg = QLabel(); lg.setPixmap(logo_pixmap(40)); lg.setFixedSize(42, 42); self.line(v, f"TrueSense {__version__}", lg)
         self.line(v, "Credits and licence", self.btn("Credits", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense/blob/main/docs/CREDITS.md"))), self.btn("Source", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense"))))
-        self.size_sw = self.switch(v, "Fixed-size window", lambda x: self.apply_size_mode(x), sub="Off: resize the window freely (it tiles on tiling desktops). On: the compact 480 pixel window that floats on Hyprland and sway."); self.size_sw.setChecked(bool(userstate.get("gui_fixed", False)))
+        self.size_sw = self.switch(v, "Fixed-size window", lambda x: self.apply_size_mode(x), sub="On (default): the compact 480 pixel window that floats on Hyprland and sway. Off: resize the window freely (it tiles on tiling desktops)."); self.size_sw.setChecked(bool(userstate.get("gui_fixed", True)))
+        self.pm_sw = self.switch(v, "TrueSense manages power", lambda x: self.pm_set(x), sub="Stops and disables other power managers that fight it (auto-cpufreq, TLP, tuned, power-profiles-daemon) and puts the CPU back to sane defaults, turbo on. Off puts them back exactly as they were."); self.pm_lbl = self.hint(""); v.addWidget(self.pm_lbl)
         self.line(v, "System check", self.btn("Run check…", self.run_doctor)); self.line(v, "Support", self.btn("Copy report", self.copy_report))
         self.line(v, "Hardware self-test", self.btn("Run self-test…", self.run_selftest), sub="Sets each firmware feature, reads it back and restores it (fans are skipped). Takes about a minute."); self.line(v, "Service log", self.btn("Show log…", self.show_log))
         v = self.card(lay, "Reset")
@@ -1235,6 +1237,34 @@ class Window(QMainWindow if Qt else object):
             except Exception as e: txt = f"The check failed: {e}"
             self.say_report(txt)
         threading.Thread(target=work, daemon=True).start()
+
+    def pm_refresh(self):
+        def go():
+            try: r = ipc.call("power_managers", action="status")
+            except Exception as e: r = {"error": str(e)}
+            try: self.bus.pm.emit(r)
+            except RuntimeError: pass
+        threading.Thread(target=go, daemon=True).start()
+
+    def pm_show(self, r):
+        if "error" in r: self.pm_lbl.setText("Power managers: could not ask the service (" + r["error"] + ")"); return
+        self.loading = True
+        try: self.pm_sw.setChecked(bool(r.get("on")))
+        finally: self.loading = False
+        found = [m["unit"] + (" (running)" if m["active"] else " (enabled)") for m in r.get("found", [])]
+        self.pm_lbl.setText(("Another power manager is present: " + ", ".join(found) + (". Turn this on to stop it." if not r.get("on") else ". It will be stopped.")) if found else "No other power manager is running or enabled.")
+        if r.get("done"): self.say(r["done"])
+
+    def pm_set(self, on):
+        def go():
+            try:
+                r = ipc.call("power_managers", action="takeover" if on else "restore")
+                msg = ("Stopped: " + (", ".join(r["stopped"]) or "nothing was running") + (f". Could not stop: {', '.join(r['failed'])}" if r["failed"] else "") if on else "Restored: " + (", ".join(r["restored"]) or "nothing to restore"))
+                r2 = ipc.call("power_managers", action="status"); r2["done"] = msg
+            except Exception as e: r2 = {"error": str(e)}
+            try: self.bus.pm.emit(r2)
+            except RuntimeError: pass
+        threading.Thread(target=go, daemon=True).start()
 
     def run_selftest(self):
         if QMessageBox.question(self, "Hardware self-test", "This briefly changes power mode, lighting, battery and display settings and restores them. The fans are not touched.\n\nRun it now?") != QMessageBox.StandardButton.Yes: return

@@ -8,6 +8,7 @@ TrueSense changes how a real laptop runs: fans, power, voltages, battery. This p
 |---|---|
 | Every firmware setting | read the value, write, **read it back**; a mismatch is an error, never silently accepted |
 | Fans | return to the firmware's own control on service stop, crash or exit; the module hands them back when it unloads; the service restarts itself (systemd watchdog) |
+| Other power managers | only a fixed list (auto-cpufreq, tlp, tuned, tuned-ppd, power-profiles-daemon, system76-power) is stopped, only when you switch *TrueSense manages power* on; what was stopped and the CPU settings before are written down first, and `power managers restore` undoes it |
 | Manual fans | duty 20 to 100 % per fan, or 0 to stop that fan (both together or only one): needs confirmation, only below 60 °C CPU / 55 °C GPU, and the service gives ALL fans back to the firmware at 70 °C CPU / 65 °C GPU. After a stop the duty register is read back; if the firmware did not take it the fans go back to Auto |
 | Fans **off** (0 %) | needs a typed-in confirmation; refused unless the CPU is under 60 °C and the GPU under 55 °C; the service gives the fans back to the firmware at 70 °C CPU or 65 °C GPU, or if the device stops answering. **Not yet tried on real hardware.** |
 | Smart fan | the curve must reach 100 % by 95 °C (CPU) and 85 °C (GPU) and may only rise with temperature; hot (92 °C CPU / 82 °C GPU) means full speed; fan changes only rise at once and fall slowly |

@@ -108,6 +108,10 @@ Read the current value, write, read back, keep a restore path. Fans return to fi
 ## Porting to another model
 `sudo tools/collect_hardware_data.sh` (read-only) collects ACPI/codec facts. **Never publish the raw ACPI dump**: it contains firmware tables, including one that holds the OEM Windows product key.
 
+### Other power managers
+
+`truesense power managers list` shows auto-cpufreq, TLP, tuned, power-profiles-daemon or system76-power if one is running or enabled. `truesense power managers stop` (or Settings, *TrueSense manages power*) stops and disables them, sets the CPU back to the kernel defaults (governor powersave, energy preference balance_performance, turbo on) and remembers everything; `truesense power managers restore` puts it all back exactly as it was. While the option is on the service stops a manager that comes back after an update or reboot. Only that fixed list is ever touched. Off by default.
+
 ### Game rules
 
 `truesense power game add eldenring.exe turbo` raises the power mode while that program runs (works with Native and Smart auto); `list`, `remove NAME`, `clear`. Names match the process name, the program file or a Wine/Proton `.exe`. Turbo still backs off to Performance if the laptop is too hot, and a nearly empty battery wins. When the game ends the automatic profile takes over again by itself.

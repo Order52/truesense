@@ -103,8 +103,17 @@ def c_power_managers():
     on = [u for u in units if active(u + ".service")]
     if not on: return OK, "no other power manager is running", ""
     risky = [u for u in on if u in ("tuned", "tlp", "auto-cpufreq", "system76-power")]
-    if risky: return WARN, "also running: " + ", ".join(on), "these can override CPU frequency or limits; consider: sudo systemctl disable --now " + " ".join(risky)
+    if risky: return WARN, "also running: " + ", ".join(on), "these can override CPU frequency, turbo or limits. Let TrueSense stop them (undoable): truesense power managers stop   (or Settings, TrueSense manages power)"
     return INFO, "also running: " + ", ".join(on) + " (they do not touch the firmware power modes)", ""
+
+
+def c_turbo():
+    t = None
+    try:
+        with open("/sys/devices/system/cpu/intel_pstate/no_turbo") as f: t = f.read().strip()
+    except OSError: return INFO, "no intel_pstate turbo switch on this CPU", ""
+    if t == "1": return WARN, "CPU turbo boost is OFF: the CPU is held at its base clock", "a power manager may have left it off: truesense power managers stop   (or: echo 0 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo)"
+    return OK, "CPU turbo boost is on", ""
 
 
 def c_daemon():
@@ -191,7 +200,7 @@ def c_fans():
 
 
 CHECKS = [("Model", c_model), ("Python", c_python), ("Kernel", c_kernel), ("Kernel headers", c_headers), ("DKMS", c_dkms), ("Kernel module", c_module), ("Device", c_device),
-          ("Conflicts", c_conflicts), ("Power managers", c_power_managers), ("Daemon", c_daemon), ("Service version", c_service_version), ("User services", c_user_services), ("udev / keyboard", c_udev), ("Config", c_config), ("Secure Boot", c_secure_boot),
+          ("Conflicts", c_conflicts), ("Power managers", c_power_managers), ("CPU turbo", c_turbo), ("Daemon", c_daemon), ("Service version", c_service_version), ("User services", c_user_services), ("udev / keyboard", c_udev), ("Config", c_config), ("Secure Boot", c_secure_boot),
           ("Audio", c_audio), ("Fans", c_fans), ("Window", c_window), ("Status bars", c_bars)]
 
 

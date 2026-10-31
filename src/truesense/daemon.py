@@ -6,7 +6,7 @@ a missing/failing device never kills the daemon (it keeps waiting and retrying).
 20 % ~1700 rpm, 30 2160, 40 2850, 50 3460, 60 4070, 70 4600, 80 5100, 100 6050. Firmware Auto is the only way to reach 0 rpm, so when calm control goes back to it.
 """
 import glob, os, pwd, signal, socket, subprocess, threading, time
-from . import backend as hw, config, cpu, curves, gamerules, gpuundervolt, ipc, looks, smartprofiles, undervolt, osd, state as statemod, touchpad
+from . import backend as hw, config, cpu, curves, gamerules, gpuundervolt, powermgr, ipc, looks, smartprofiles, undervolt, osd, state as statemod, touchpad
 
 RUN = os.environ.get("TRUESENSE_RUN", "/run/truesense")
 FAN_OFF_START_CPU, FAN_OFF_START_GPU = 60, 55        # fans may only be turned off below these temperatures ...
@@ -236,6 +236,14 @@ class Brain:
         try: return smartprofiles.validate(data) if data else smartprofiles.load(self.st.get("smart_profile", "truesense"))
         except hw.HwError as e: self.log(f"smart profile invalid, using the built-in: {e}", 30); return smartprofiles.load("truesense")
 
+    def pm_guard(self):
+        try:
+            if not powermgr.status(): return
+            r = powermgr.takeover()
+            self.log(f"power managers stopped again: {', '.join(r['stopped']) or 'none'}" + (f"; failed: {r['failed']}" if r["failed"] else ""), 20)
+            if r["stopped"]: self.say("Stopped another power manager: " + ", ".join(r["stopped"]), "power")
+        except Exception as e: self.log(f"power manager check failed: {e}", 30)
+
     def game_mode(self):
         """Mode asked for by a running game rule (None if none). The process list is read every 3rd tick (cheap, and games do not start every second)."""
         rules = self.st.get("game_rules") or {}
@@ -404,6 +412,7 @@ class Brain:
         self.interval = 1.0 if (smart and (self.activity != "idle" or self.calm < 30)) or self.fan_off else 2.0
         if smart: self.ensure_gpu_stream()
         if self.tick % 5 == 0: self.charge_full_check()
+        if self.tick % 150 == 5 and self.st.get("pm_takeover"): self.pm_guard()           # while "TrueSense manages power" is on, a manager that came back (update, reboot) is stopped again
 
     def _step(self):
         self.tick += 1
@@ -598,6 +607,18 @@ class Brain:
                 if action != "list": self.st.set("game_rules", rules); self.last_target = None
                 return {"rules": rules, "running": gamerules.running(rules)}
 
+        def power_managers(action="status"):
+            """Other power managers (a fixed list): status | takeover (stop them, fix CPU defaults, remember) | restore (undo exactly that)."""
+            if action == "status":
+                return {"on": bool(self.st.get("pm_takeover")), "found": powermgr.status(), "recorded": bool(powermgr.load())}
+            if action == "takeover":
+                self.st.set("pm_takeover", True); r = powermgr.takeover()
+                if r["failed"]: self.log(f"power managers: could not stop {r['failed']}", 30)
+                self.log(f"TrueSense manages power: stopped {r['stopped'] or 'nothing (none running)'}", 20); return {**r, "on": True}
+            if action == "restore":
+                self.st.set("pm_takeover", False); r = powermgr.restore(); self.log(f"power managers restored: {r['restored'] or 'nothing to restore'}", 20); return {**r, "on": False}
+            raise hw.HwError("power_managers: status | takeover | restore")
+
         def hold(minutes=None):
             with self.lock: return self.set_hold(minutes)
 
@@ -617,7 +638,7 @@ class Brain:
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "gpu_undervolt": gpu_undervolt, "battery_full": battery_full, "power": power, "boot_look": boot_look, "hold": hold, "game_rules": game_rules, "cpu_limits": limits, "cpu_info": cpu_info, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "gpu_undervolt": gpu_undervolt, "battery_full": battery_full, "power": power, "boot_look": boot_look, "hold": hold, "game_rules": game_rules, "power_managers": power_managers, "cpu_limits": limits, "cpu_info": cpu_info, "touchpad": touch}
 
 
 def main():
