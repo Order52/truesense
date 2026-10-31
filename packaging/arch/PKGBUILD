@@ -22,6 +22,7 @@ package() {
     install -d "$pkgdir/usr/lib/truesense"
     cp -r "$_src/src/truesense" "$pkgdir/usr/lib/truesense/"
     find "$pkgdir/usr/lib/truesense" -name __pycache__ -prune -exec rm -rf {} +
+    python3 -m compileall -q -d /usr/lib/truesense/truesense "$pkgdir/usr/lib/truesense/truesense"      # the install dir is root-owned: ship the bytecode so every launch skips compiling
     install -Dm755 /dev/stdin "$pkgdir/usr/bin/truesense" <<'WRAP'
 #!/bin/sh
 exec env PYTHONPATH=/usr/lib/truesense python3 -m truesense "$@"

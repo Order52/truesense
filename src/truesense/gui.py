@@ -9,8 +9,23 @@ import subprocess
 import sys
 import threading
 import time
-from . import actions, audio, backend as hw, config, control, cpu, curves, designs, gamerules, gpuundervolt, ipc, keybinds, keyboard, keymap, keyprofiles, looks, perkeyfx, profiles, smartprofiles, startup, touchpad, undervolt, update, userstate
+from . import actions, audio, backend as hw, config, control, cpu, curves, designs, gamerules, gpuundervolt, ipc, keybinds, keyboard, keymap, keyprofiles, looks, perkeyfx, profiles, smartprofiles, startup, touchpad, undervolt, userstate
 from .device import HwError
+
+
+class _Lazy:
+    """A module that is imported the first time one of its names is used. `update` pulls in the whole HTTP stack (urllib, http.client, ssl: about 13 ms) and is only needed when you
+    check for updates, so the window no longer pays for it at start-up."""
+    def __init__(self, name): self._name, self._mod = name, None
+
+    def __getattr__(self, attr):
+        if self._mod is None:
+            import importlib
+            self._mod = importlib.import_module("." + self._name, __package__)
+        return getattr(self._mod, attr)
+
+
+update = _Lazy("update")
 
 try:
     from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QRectF, QEvent
@@ -638,7 +653,8 @@ class CurveEditor(QWidget if Qt else object):
 
 
 class Window(QMainWindow if Qt else object):
-    def __init__(self):
+    def __init__(self, lazy=False):
+        """lazy=True (the real launcher): only Home is built before the window appears; the other pages are built right after the first paint, one per event-loop turn, or at once if you navigate first."""
         super().__init__(); self.setWindowTitle("TrueSense")
         self.apply_size_mode(bool(userstate.get("gui_fixed", True)), save=False)
         self.wheel_guard = WheelGuard(self); QApplication.instance().installEventFilter(self.wheel_guard)
@@ -646,7 +662,15 @@ class Window(QMainWindow if Qt else object):
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         self.nav = [0]; self.nav_fwd = []; self.navigating = False; self.nav_filter = NavFilter(self); QApplication.instance().installEventFilter(self.nav_filter)
-        for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt, self.p_profiles): build()
+        self._builders = (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt, self.p_profiles)
+        self.built = False; self.pending_apply = None; self._target = None; self._next = 1
+        if lazy:
+            self._builders[0]()
+            for _ in self._builders[1:]: self.pages.addWidget(QWidget())                       # placeholders keep every page number where PAGES says it is
+            QTimer.singleShot(30, self._build_next)                                            # after the first paint
+        else:
+            for build in self._builders: build()
+            self.built = True
         self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else (self.battery_refresh() if i == PAGES["battery"] else (self.pm_refresh() if i == PAGES["settings"] else None)))
         self.pages.currentChanged.connect(self.nav_changed); QShortcut(QKeySequence("Alt+Left"), self, activated=self.nav_back); QShortcut(QKeySequence("Alt+Right"), self, activated=self.nav_forward)
         QShortcut(QKeySequence("Escape"), self, activated=self.close); QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
@@ -708,6 +732,7 @@ class Window(QMainWindow if Qt else object):
         finally: self.navigating = False
 
     def go(self, name):
+        self.ensure_built()
         if name == "keys": self.pages.setCurrentIndex(PAGES["lighting"]); self.light_tabs.set_index(1); self.light_stack.setCurrentIndex(1); return
         self.pages.setCurrentIndex(PAGES[name])
 
@@ -733,13 +758,36 @@ class Window(QMainWindow if Qt else object):
 
     def page(self, heading, back=True):
         w = QWidget(); w.setMaximumWidth(860); lay = QVBoxLayout(w); lay.setContentsMargins(16, 18, 16, 20); lay.setSpacing(12)
-        sc = QScrollArea(); sc.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); sc.setWidget(w); self.pages.addWidget(sc)
+        sc = QScrollArea(); sc.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); sc.setWidget(w); self._place(sc)
         h = QHBoxLayout(); h.setSpacing(10)
         if back:
             b = self.btn(" Back", lambda: self.pages.setCurrentIndex(0)); b.setToolTip("Back to the main page. Alt+Left or the mouse back button go back one step; Esc closes the app."); b.setIcon(make_icon("back")); b.setObjectName("quiet"); h.addWidget(b)
         if not back:
             il = QLabel(); il.setPixmap(logo_pixmap(30)); il.setFixedSize(32, 32); h.addWidget(il)
         t_ = QLabel(heading); t_.setObjectName("brand" if not back else "h1"); h.addWidget(t_); h.addStretch(); lay.addLayout(h); return lay
+
+    def _place(self, sc):
+        if self._target is None: self.pages.addWidget(sc); return
+        ph = self.pages.widget(self._target); self.pages.insertWidget(self._target, sc); self.pages.removeWidget(ph); ph.deleteLater()
+
+    def _build_next(self):
+        """One more page, then back to the event loop (the window stays responsive while the rest is built)."""
+        if self.built or self.closing: return
+        self._build_one()
+        if self._next < len(self._builders): QTimer.singleShot(0, self._build_next)
+
+    def _build_one(self):
+        i = self._next; self._next += 1; self._target = i
+        try: self._builders[i]()
+        finally: self._target = None
+        if self._next >= len(self._builders):
+            self.built = True
+            if self.pending_apply: d, self.pending_apply = self.pending_apply, None; self._apply(d)       # data that arrived while pages were still being built
+            self.tick()
+
+    def ensure_built(self):
+        """Anything that touches a page that may not exist yet (navigation, the single-instance hand-off) builds the rest first."""
+        while not self.built: self._build_one()
 
     def card(self, lay, title, icon="", right=False):
         """A plain section: icon and title on the left, a live value on the right, rows underneath."""
@@ -1971,7 +2019,7 @@ class Window(QMainWindow if Qt else object):
         """Once a second: temperatures and fans. Every 2 s (every 6 s when the window is not the focused one), when you are not touching anything, re-read what changes by itself: power mode,
         fans, power source (mostly from the service, one cheap call). The slow settings (lighting, battery, screen, boot, GPU) are re-read every 20 s and whenever you come back to the window,
         open a page or change something. Every hardware read costs the firmware a few milliseconds, so the window asks for as little as it can."""
-        if not self.isVisible() or self.isMinimized(): return
+        if not self.built or not self.isVisible() or self.isMinimized(): return
         active = self.isActiveWindow(); self.ticks += 1
         if (active or self.ticks % 2 == 0) and not self.sensing: self.sensing = True; threading.Thread(target=self._read_sensors, daemon=True).start()
         idle = time.monotonic() - self.last_action > 2.0 and not any(self.busy.values()) and not self.pending
@@ -2024,6 +2072,7 @@ class Window(QMainWindow if Qt else object):
 
     def _apply(self, d):
         if self.closing: return
+        if not self.built: self.pending_apply = {**(self.pending_apply or {}), **d}; return
         self.loading = True
         try:
             if "state" in d:
@@ -2114,13 +2163,13 @@ def main(page=None):
     if probe.waitForConnected(150):                                   # already open: bring that window forward instead of starting a second one
         probe.write((page or "home").encode()); probe.flush(); probe.waitForBytesWritten(300); return 0
     QLocalServer.removeServer(name); server = QLocalServer(); server.listen(name)
-    w = Window(); _WINDOW[0] = w; w.show()
+    w = Window(lazy=True); _WINDOW[0] = w; w.show()
     if page in PAGES or page == "keys": w.go(page)
     def handoff():
         c = server.nextPendingConnection()
         if c and c.waitForReadyRead(300):
             p_ = bytes(c.readAll()).decode()
-            if p_ in PAGES: w.pages.setCurrentIndex(PAGES[p_])
+            if p_ in PAGES: w.ensure_built(); w.pages.setCurrentIndex(PAGES[p_])
         w.showNormal(); w.raise_(); w.activateWindow()
     server.newConnection.connect(handoff)
     return app.exec()

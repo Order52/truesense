@@ -112,6 +112,16 @@ def c_power_managers():
     return INFO, "also running: " + ", ".join(on) + " (they do not touch the firmware power modes)", ""
 
 
+def c_bytecode():
+    """The installed package is root-owned, so only the installer can create its bytecode cache; without it every launch recompiles (about 50 ms for the window)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if not here.startswith(("/usr/", "/opt/")): return INFO, "running from a source checkout (the Python bytecode cache check applies to the installed copy)", ""
+    cache = os.path.join(here, "__pycache__"); have = set(os.listdir(cache)) if os.path.isdir(cache) else set()
+    missing = sorted(f[:-3] for f in os.listdir(here) if f.endswith(".py") and not any(c.startswith(f[:-3] + ".cpython") for c in have))
+    if missing: return WARN, f"no cached bytecode for {len(missing)} module(s) (e.g. {', '.join(missing[:3])}): every launch recompiles them", "re-run the installer: sudo tools/install.sh (or: truesense update apply)"
+    return OK, "Python bytecode cache present (fast start-up)", ""
+
+
 def c_turbo():
     t = None
     try:
@@ -208,7 +218,7 @@ def c_fans():
 
 
 CHECKS = [("Model", c_model), ("Python", c_python), ("Kernel", c_kernel), ("Kernel headers", c_headers), ("DKMS", c_dkms), ("Kernel module", c_module), ("Device", c_device),
-          ("Conflicts", c_conflicts), ("Power managers", c_power_managers), ("CPU turbo", c_turbo), ("Daemon", c_daemon), ("Service version", c_service_version), ("User services", c_user_services), ("udev / keyboard", c_udev), ("Config", c_config), ("Secure Boot", c_secure_boot),
+          ("Conflicts", c_conflicts), ("Power managers", c_power_managers), ("CPU turbo", c_turbo), ("Start-up speed", c_bytecode), ("Daemon", c_daemon), ("Service version", c_service_version), ("User services", c_user_services), ("udev / keyboard", c_udev), ("Config", c_config), ("Secure Boot", c_secure_boot),
           ("Audio", c_audio), ("Fans", c_fans), ("Window", c_window), ("Status bars", c_bars)]
 
 

@@ -1,5 +1,12 @@
 # Release notes
 
+## Unreleased
+
+**Much faster launch** (measured from process start to a visible window: 266 ms before, 92 ms now)
+- The window builds only Home before it appears; the other nine pages are built right after the first paint, one per event-loop turn, or at once if you navigate first. The page numbers never change, and data that arrives early is held back and applied once everything exists.
+- The installer (and the Arch packages) now byte-compile the program as root. The installed folder is root-owned, so your user could not write the Python cache and recompiled `gui.py` and 14 other modules on every launch (and on many command-line calls). `doctor` has a new "Start-up speed" check that warns when the cache is missing.
+- The update module (and with it the HTTP stack: `urllib`, `http.client`, `ssl`) is loaded only when you check for updates.
+
 ## 0.3.11 (2026-10-31): faster start-up, accessible controls, lint in CI
 
 **Faster**

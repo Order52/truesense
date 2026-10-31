@@ -297,6 +297,29 @@ class TestWindowLogic(unittest.TestCase):
         w.go("settings"); lab = [r for r in w.pages.widget(gui.PAGES["settings"]).widget().findChildren(gui.Row) if r.widgets and isinstance(r.widgets[0], QComboBox)][0]
         self.assertIs(lab.label.buddy(), lab.widgets[0], "clicking a row's name focuses its drop-down"); w.close()
 
+    def test_the_window_shows_home_first_and_builds_the_other_pages_afterwards(self):
+        from PyQt6.QtWidgets import QScrollArea
+        w = gui.Window(lazy=True); w.show(); self.assertFalse(w.built); self.assertEqual(w.pages.count(), len(gui.PAGES), "placeholders keep every page number fixed")
+        self.assertIsInstance(w.pages.widget(0), QScrollArea); self.assertFalse(hasattr(w, "kb_level"), "the Lighting page is not built yet"); w.tick()            # must not touch missing pages
+        seen = []; orig = w._apply; w._apply = lambda d: (seen.append((w.built, dict(d))), orig(d))[1]
+        w._apply({"zz_marker": 1}); self.assertIn("zz_marker", w.pending_apply, "data that arrives early is kept, not lost or crashed on")
+        self.assertTrue(self._wait(lambda: w.built, timeout=10), "the rest is built in the background")
+        for i in range(len(gui.PAGES)): self.assertIsInstance(w.pages.widget(i), QScrollArea, f"page {i} is real")
+        self.assertIsNone(w.pending_apply, "the held-back data was handed over"); self.assertTrue(any(built and "zz_marker" in d for built, d in seen), "...and applied only once every page exists"); w.close()
+
+    def test_navigating_before_the_pages_exist_builds_them_at_once(self):
+        w = gui.Window(lazy=True); w.show(); self.assertFalse(w.built)
+        w.go("settings"); self.assertTrue(w.built); self.assertEqual(w.pages.currentIndex(), gui.PAGES["settings"]); self.assertTrue(hasattr(w, "pm_sw"))
+        w.go("keys"); self.assertEqual(w.pages.currentIndex(), gui.PAGES["lighting"]); w.close()
+        w2 = gui.Window(lazy=True); w2.ensure_built(); self.assertTrue(w2.built); w2.ensure_built(); w2.close()                               # idempotent
+
+    def test_the_update_module_loads_only_when_it_is_used(self):
+        import subprocess
+        import sys as _sys
+        code = "import sys; from truesense import gui; a = 'urllib.request' in sys.modules; gui.update.parse('v0.3.11'); print(a, 'urllib.request' in sys.modules)"
+        env = dict(os.environ, PYTHONPATH=os.path.join(os.path.dirname(__file__), "..", "src"), QT_QPA_PLATFORM="offscreen")
+        self.assertEqual(subprocess.run([_sys.executable, "-c", code], env=env, capture_output=True, text=True).stdout.split(), ["False", "True"])
+
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
         w = gui.Window(); w.go("keys"); names = [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]; self.assertIn("gaming", names)

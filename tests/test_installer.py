@@ -46,3 +46,16 @@ class Installer(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
 
 if __name__ == "__main__": unittest.main()
+
+
+class TestInstallerPrecompiles(unittest.TestCase):
+    """The installed tree is root-owned, so only the installer can create the bytecode cache; without it every launch recompiles gui.py and friends (measured: about 40 ms)."""
+    def test_install_script_byte_compiles_before_the_swap_and_with_the_final_path(self):
+        import os as _os
+        root = _os.path.join(_os.path.dirname(__file__), "..")
+        with open(_os.path.join(root, "tools", "install.sh")) as f: s = f.read()
+        i_copy = s.index('cp -r "$ROOT/src/truesense" "$PREFIX/lib/truesense.new/"'); i_comp = s.index("compileall"); i_swap = s.index('mv "$PREFIX/lib/truesense.new" "$PREFIX/lib/truesense"')
+        self.assertTrue(i_copy < i_comp < i_swap, "compile after copying and before the new tree is swapped into place")
+        self.assertIn('-d "$PREFIX/lib/truesense/truesense"', s, "error messages must point at the final location, not the staging directory")
+        for pkg in ("packaging/arch/PKGBUILD", "packaging/aur/PKGBUILD.template"):
+            with open(_os.path.join(root, pkg)) as f: self.assertIn("compileall", f.read(), pkg)

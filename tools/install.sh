@@ -185,6 +185,8 @@ if [ "$AUDIO" = 1 ]; then p=$(pkg audio); if [ -n "$p" ]; then pkg_install $p ||
 install -d "$PREFIX/lib/truesense" "$PREFIX/bin" "$PREFIX/share/truesense/profiles" /etc/truesense
 rm -rf "$PREFIX/lib/truesense.new" "$PREFIX/lib/truesense.prev"                                              # build the new tree beside the old one, then swap
 mkdir -p "$PREFIX/lib/truesense.new"; cp -r "$ROOT/src/truesense" "$PREFIX/lib/truesense.new/"; find "$PREFIX/lib/truesense.new" -name __pycache__ -prune -exec rm -rf {} +
+# Byte-compile now, as root: the installed tree is root-owned, so a normal user's Python cannot write the cache and would recompile (the window alone: about 50 ms) on every launch.
+python3 -m compileall -q -d "$PREFIX/lib/truesense/truesense" "$PREFIX/lib/truesense.new/truesense" >/dev/null 2>&1 || echo "  note: could not pre-compile the Python files (start-up will be slightly slower)"
 install -m755 "$ROOT/packaging/health.sh" "$PREFIX/lib/truesense.new/health.sh"
 [ -d "$PREFIX/lib/truesense" ] && mv "$PREFIX/lib/truesense" "$PREFIX/lib/truesense.prev"; mv "$PREFIX/lib/truesense.new" "$PREFIX/lib/truesense"
 printf '#!/bin/sh\nexec env PYTHONPATH=%s/lib/truesense python3 -m truesense "$@"\n' "$PREFIX" > "$PREFIX/bin/truesense"; chmod 755 "$PREFIX/bin/truesense"
