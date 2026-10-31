@@ -3,7 +3,11 @@
 
 Areas: status sensors power fan battery display boot gpu rear keyboard look update startup audio keys profile cpu touchpad service config doctor selftest completion gui
 """
-import argparse, json, os, subprocess, sys
+import argparse
+import json
+import os
+import subprocess
+import sys
 from . import __version__
 from .device import HwError
 
@@ -384,7 +388,7 @@ def h_look(a):
 
 
 def h_startup(a):
-    from . import config, startup, profiles, keyprofiles, looks, ipc
+    from . import config, startup, looks, ipc
     v = a.verb or "show"
     if v == "boot":
         cur = ipc.call("boot_look", action="get")
@@ -399,7 +403,7 @@ def h_startup(a):
 
 
 def h_keyboard(a):
-    from . import actions, backend as hw, config, keyboard as kb, keymap as km, keyprofiles, ipc
+    from . import actions, backend as hw, keyboard as kb, keymap as km, keyprofiles, ipc
     v = a.verb or "status"
     def done(msg="sent"): emit(msg)
     if v == "status": emit({"look": kb.last(), "brightness": kb.get_brightness(), "max": kb.MAX_BRIGHT, "backlight_timeout": hw.get_kb_timeout(), "lighting_profiles": keyprofiles.names()})
@@ -623,6 +627,7 @@ def h_config(a):
     elif v == "validate":
         p = config.validate(config.load()); emit(p, "configuration valid" if not p else "\n".join(p)); return 1 if p else 0
     else: emit(config.load(), config.dumps(config.load()))
+    return None
 
 
 def h_completion(a):

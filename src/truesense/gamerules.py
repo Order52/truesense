@@ -5,7 +5,8 @@ The service looks at the running programs every few seconds. A matching program 
 the automatic profile takes over again by itself. Names match the process name (as `ps -e` shows it, 15 characters), the program file's name, or - for Wine/Proton games - any
 `.exe` on the command line. Case does not matter. Turbo still backs off to Performance if the laptop overheats, and Eco is forced when the battery is low.
 """
-import os, re
+import os
+import re
 from .device import HwError
 
 MODES = ("eco", "quiet", "balanced", "performance", "turbo")
@@ -44,7 +45,7 @@ def names_of(pid, proc="/proc"):
 def running(rules, proc="/proc"):
     """The mode of the highest-ranked rule whose program is running now, or None."""
     if not rules: return None
-    want = {k: m for k, m in rules.items()}; best = None
+    want = dict(rules); best = None
     try: pids = [p for p in os.listdir(proc) if p.isdigit()]
     except OSError: return None
     for pid in pids:

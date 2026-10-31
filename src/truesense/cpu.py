@@ -4,7 +4,9 @@
 Safety: limits are range-checked; the undervolt is read-only unless --confirm is given, starts at -10 mV steps, refuses beyond -120 mV,
 and `uv reset` writes 0. Nothing here runs automatically; the daemon only touches PL1/PL2 (config [cpu] pl_*_w).
 """
-import os, struct, subprocess
+import os
+import struct
+import subprocess
 from . import util
 from .backend import HwError
 

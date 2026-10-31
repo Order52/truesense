@@ -4,7 +4,10 @@
 Style (config [osd] style, env TRUESENSE_OSD overrides): native = the compositor's own notification, then the desktop notification daemon;
 noctalia = Noctalia's OSD popup; none = silent. Missing helper programs are never an error.
 """
-import glob, os, pwd, subprocess
+import glob
+import os
+import pwd
+import subprocess
 
 ICON_NOCT = {"audio": "headphones", "speaker": "device-speaker", "power": "gauge", "fan": "gauge", "mic": "microphone"}
 

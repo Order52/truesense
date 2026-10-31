@@ -4,7 +4,9 @@
 Built-in profiles are read-only (copy one to make your own); yours live in ~/.config/truesense/keys/NAME.json. Using a profile writes its actions into your
 config ([keys]) and records its name; the key service notices the change and reloads by itself.
 """
-import json, os, re
+import json
+import os
+import re
 from . import actions, config
 from .device import HwError
 

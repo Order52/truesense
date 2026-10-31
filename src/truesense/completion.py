@@ -14,7 +14,7 @@ def tree(parser):
 def generate(parser, shell):
     t = tree(parser)
     if shell == "fish":
-        lines = [f"complete -c truesense -f"]
+        lines = ["complete -c truesense -f"]
         for area, sub in t["sub"].items():
             lines.append(f"complete -c truesense -n '__fish_use_subcommand' -a {area}")
             for verb in list(sub["sub"]) + sub["choices"]:
@@ -27,9 +27,8 @@ def generate(parser, shell):
         for verb, s2 in sub["sub"].items():
             w2 = " ".join(s2["choices"] + s2["opts"])
             if w2: deep.append(f'        {verb}) COMPREPLY=( $(compgen -W "{w2}" -- "$cur") ); return;;')
-        deep_txt = ("      case ${COMP_WORDS[2]} in\n" + "\n".join(deep) + "\n      esac\n") if deep and False else ""
         cases.append(f'    {area}) if [ "$COMP_CWORD" -eq 2 ]; then COMPREPLY=( $(compgen -W "{words}" -- "$cur") ); else '
-                     f'case "${{COMP_WORDS[2]}}" in\n' + "\n".join(deep) + f'\n        *) COMPREPLY=( $(compgen -W "--json" -- "$cur") );; esac; fi;;')
+                     f'case "${{COMP_WORDS[2]}}" in\n' + "\n".join(deep) + '\n        *) COMPREPLY=( $(compgen -W "--json" -- "$cur") );; esac; fi;;')
     body = f'''_truesense() {{
   local cur="${{COMP_WORDS[COMP_CWORD]}}"
   if [ "$COMP_CWORD" -eq 1 ]; then COMPREPLY=( $(compgen -W "{' '.join(t['sub'])} --json --help --version" -- "$cur") ); return; fi

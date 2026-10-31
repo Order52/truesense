@@ -4,7 +4,10 @@
 Packets are 8 bytes, checksum = 0xFF - (sum of bytes 0..6) & 0xFF, sent with HIDIOCSFEATURE (report id 0 prefix).
 The packet formats are in docs/PROTOCOL.md; what was checked on the real keyboard is in docs/STATUS.md.
 """
-import fcntl, glob, os, time
+import fcntl
+import glob
+import os
+import time
 from . import util, userstate
 from .backend import HwError
 
@@ -59,9 +62,10 @@ def set_effect(name, color="ffffff", speed=5, brightness=30, direction=0):
     r, g, b = (0, 0, 0) if name in NO_COLOR else bytes.fromhex(color)
     pre = bytes([0xB1, 0, 0, 0, 0, 0, 0, 0x4E])
     if name == "off":
-        _send([pre, _pkt(0x08, 0x02, 0, 0, 0, 0, 0), _pkt(0x14, 0, 0, 0, 0, 0, 0)]); userstate.set("keyboard", {"mode": "off"}); return
+        _send([pre, _pkt(0x08, 0x02, 0, 0, 0, 0, 0), _pkt(0x14, 0, 0, 0, 0, 0, 0)]); userstate.set("keyboard", {"mode": "off"}); return None
     _send([pre, _pkt(0x14, 0, 0, r, g, b, 0), _pkt(0x08, 0x02, EFFECTS[name], SPEED_MAX - speed, brightness, 0x01, direction + 1)])
     userstate.set("keyboard", {"mode": "effect", "name": name, "color": color.lstrip("#").lower(), "speed": speed, "brightness": brightness, "direction": direction})
+    return None
 
 def _hexcells(cells): return ["%02x%02x%02x" % tuple(c) for c in cells[:128]]
 
@@ -145,6 +149,7 @@ def set_brightness(level):
     if s.get("mode") == "operating": return set_operating_mode(s.get("color", "00aec7"), brightness=level)
     _send([_pkt(0x08, 0x02, 0x33, 0x05, level, 0x08, 0x01)])
     if s.get("mode") == "perkey": userstate.set("keyboard", {**s, "brightness": level})
+    return None
 
 def off():
     """Backlight off, keeping the look: brightness 0 in whatever mode is running (the effect `off` packet did not blank this keyboard)."""
@@ -182,6 +187,7 @@ def set_color(color):
     if s.get("mode") == "operating": return set_operating_mode(color, brightness=b)
     from . import keymap
     per_key(keymap.to_list(keymap.canvas(keymap.hexcolor(color))), b)
+    return None
 
 
 def current_cells():

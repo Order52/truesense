@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 """Persistent daemon settings (survive reboots): /var/lib/truesense/state.json, written atomically. Defaults come from the config."""
-import json, os, threading
+import json
+import os
+import threading
 
 PATH = os.environ.get("TRUESENSE_STATE", "/var/lib/truesense/state.json")
 

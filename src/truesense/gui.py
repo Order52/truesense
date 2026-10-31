@@ -3,8 +3,13 @@
 
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
-import os, shlex, subprocess, sys, threading, time
-from . import actions, audio, backend as hw, config, control, cpu, curves, designs, gamerules, gpuundervolt, powermgr, ipc, keybinds, keyboard, keymap, keyprofiles, looks, perkeyfx, profiles, smartprofiles, startup, touchpad, undervolt, update, userstate
+import os
+import shlex
+import subprocess
+import sys
+import threading
+import time
+from . import actions, audio, backend as hw, config, control, cpu, curves, designs, gamerules, gpuundervolt, ipc, keybinds, keyboard, keymap, keyprofiles, looks, perkeyfx, profiles, smartprofiles, startup, touchpad, undervolt, update, userstate
 from .device import HwError
 
 try:
@@ -14,7 +19,7 @@ try:
     from PyQt6.QtCore import QByteArray, QSize
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QImage, QFontMetrics, QShortcut, QKeySequence
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                                 QPushButton, QScrollArea, QSlider, QBoxLayout, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
+                                 QAbstractButton, QPushButton, QScrollArea, QSlider, QBoxLayout, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
     from PyQt6.QtGui import QDesktopServices
     from PyQt6.QtCore import QUrl
 except ImportError as _e:
@@ -85,7 +90,7 @@ class Switch(QCheckBox if Qt else object):
 class TileButton(QPushButton if Qt else object):
     """A big choice tile: icon above, label below; the chosen one is outlined (or filled with its own colour, like the performance modes)."""
     def __init__(self, label, icon, fill=None):
-        super().__init__(); self.label, self.icon_name, self.fill = label, icon, fill
+        super().__init__(); self.label, self.icon_name, self.fill = label, icon, fill; self.setAccessibleName(label)
         self.setCheckable(True); self.setCursor(Qt.CursorShape.PointingHandCursor); self.setMinimumHeight(66); self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def minimumSizeHint(self): return QSize(50, 66)
@@ -221,8 +226,10 @@ class Row(QWidget if Qt else object):
         self.box = QBoxLayout(QBoxLayout.Direction.LeftToRight, self); self.box.setContentsMargins(0, 2, 0, 2); self.box.setSpacing(6)
         self.inner = QHBoxLayout(); self.inner.setSpacing(gap); self.inner.setContentsMargins(0, 0, 0, 0)
         self.box.addWidget(label, 1); self.box.addLayout(self.inner); self.pref = {}; self.policy = {}
-        for w in self.widgets:
+        for k, w in enumerate(self.widgets):
             self.inner.addWidget(w)
+            if not w.accessibleName() and not (isinstance(w, QAbstractButton) and w.text()): w.setAccessibleName(label.text())          # a screen reader announces the row's name for its control
+            if k == 0 and isinstance(w, (QComboBox, QLineEdit, QAbstractSpinBox)): label.setBuddy(w)                                      # clicking the name focuses the control
             if isinstance(w, (QComboBox, QLineEdit)): self.pref[w] = w.minimumWidth(); self.policy[w] = w.sizePolicy()
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)             # a row is exactly as tall as it needs: it must never soak up spare height in a taller tab
 
@@ -395,7 +402,7 @@ class PerKeyBoard(QWidget if Qt else object):
 
     def __init__(self):
         super().__init__(); self.cells = ["00aec7"] * 126 + ["000000"] * 2; self.sel = set(); self.keys = []; self.hover = None; self.band = None; self.base = set(); self.press_pos = None
-        self.setMouseTracking(True); self.setFocusPolicy(Qt.FocusPolicy.StrongFocus); self.setMinimumHeight(150); self._layout()
+        self.setMouseTracking(True); self.setFocusPolicy(Qt.FocusPolicy.StrongFocus); self.setMinimumHeight(150); self.setAccessibleName("Keyboard picture: click keys to select them"); self._layout()
 
     def _layout(self):
         seen = set(); ys = [0.0, 1.3, 2.3, 3.3, 4.3, 5.3]
@@ -503,7 +510,7 @@ class ActionEditor(QWidget if Qt else object):
     """One PREDATOR-key gesture: pick WHAT it does, then its detail (a mode, a profile, a script chosen with a file picker, ...). value() is the action spec."""
     changed = pyqtSignal() if Qt else None
 
-    def __init__(self):
+    def __init__(self, name=""):
         super().__init__(); v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(6)
         top = QHBoxLayout(); top.setSpacing(8); self.type = QComboBox(); self.type.addItems([a[0] for a in ACTION_TYPES]); self.type.setMinimumWidth(190); top.addWidget(self.type, 1)
         self.test_btn = QPushButton("Test"); top.addWidget(self.test_btn); v.addLayout(top)
@@ -514,12 +521,13 @@ class ActionEditor(QWidget if Qt else object):
         self.type.currentIndexChanged.connect(self._kind_changed); self.combo.currentIndexChanged.connect(lambda *_: self.changed.emit()); self.edit.textEdited.connect(lambda *_: self.changed.emit())
         self.combo.currentIndexChanged.connect(lambda *_: self.spin.setVisible(self.kind() == "fan" and self.combo.currentText() == "manual %"))
         self.spin.valueChanged.connect(lambda *_: self.changed.emit()); self.browse.clicked.connect(self._browse); self._kind_changed()
+        for w_, what in ((self.type, "action"), (self.combo, "choice"), (self.edit, "text or program"), (self.spin, "percent"), (self.test_btn, "test")): w_.setAccessibleName(f"{name} {what}".strip())      # named for screen readers
 
     def kind(self): return ACTION_TYPES[self.type.currentIndex()][1]
 
     def _kind_changed(self, *_):
         k = self.kind(); self.arg_row.setVisible(k != "fixed"); self.combo.clear()
-        items = {"mode": [m for m in hw.MODES], "auto": ["off", "native", "smart"], "fan": ["smart", "auto", "max", "manual %"], "profile": profiles.names(), "look": looks.names()}.get(k)
+        items = {"mode": list(hw.MODES), "auto": ["off", "native", "smart"], "fan": ["smart", "auto", "max", "manual %"], "profile": profiles.names(), "look": looks.names()}.get(k)
         if items is not None: self.combo.addItems(items)
         self.combo.setVisible(items is not None); self.spin.setVisible(False)
         self.edit.setVisible(k in ("cycle", "script", "command", "text")); self.browse.setVisible(k == "script")
@@ -551,13 +559,12 @@ class ActionEditor(QWidget if Qt else object):
 
     def set_spec(self, spec):
         name, _, arg = spec.partition(":"); self.blockSignals(True)
-        for i, (label, kind, base) in enumerate(ACTION_TYPES):
+        for i, (_label, kind, base) in enumerate(ACTION_TYPES):
             if kind == "fixed" and spec == base: self.type.setCurrentIndex(i); break
             if kind in ("mode", "auto", "profile", "look", "cycle", "fan", "text") and name == base and kind != "fixed":
                 if kind == "fan" and not (arg in ("smart", "auto", "max") or arg.isdigit()): continue
                 self.type.setCurrentIndex(i); self._kind_changed()
-                if kind == "cycle": self.edit.setText(arg)
-                elif kind == "text": self.edit.setText(arg)
+                if kind == "cycle" or kind == "text": self.edit.setText(arg)
                 elif kind == "fan":
                     if arg.isdigit(): self.combo.setCurrentText("manual %"); self.spin.setVisible(True); self.spin.setValue(int(arg))
                     else: self.combo.setCurrentText(arg)
@@ -643,7 +650,7 @@ class Window(QMainWindow if Qt else object):
         self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else (self.battery_refresh() if i == PAGES["battery"] else (self.pm_refresh() if i == PAGES["settings"] else None)))
         self.pages.currentChanged.connect(self.nav_changed); QShortcut(QKeySequence("Alt+Left"), self, activated=self.nav_back); QShortcut(QKeySequence("Alt+Right"), self, activated=self.nav_forward)
         QShortcut(QKeySequence("Escape"), self, activated=self.close); QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
-        self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
+        self.pages.currentChanged.connect(lambda i: self.refresh_if_stale(scope="audio" if i == PAGES["audio"] else None))
         if self.cfg["update"]["auto_check"]: QTimer.singleShot(6000, lambda: self.check_updates(False))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(1000); self.full_refresh(); self.tick()
 
@@ -729,7 +736,7 @@ class Window(QMainWindow if Qt else object):
         sc = QScrollArea(); sc.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); sc.setWidget(w); self.pages.addWidget(sc)
         h = QHBoxLayout(); h.setSpacing(10)
         if back:
-            b = self.btn(" Back", lambda: self.pages.setCurrentIndex(0)); b.setIcon(make_icon("back")); b.setObjectName("quiet"); h.addWidget(b)
+            b = self.btn(" Back", lambda: self.pages.setCurrentIndex(0)); b.setToolTip("Back to the main page. Alt+Left or the mouse back button go back one step; Esc closes the app."); b.setIcon(make_icon("back")); b.setObjectName("quiet"); h.addWidget(b)
         if not back:
             il = QLabel(); il.setPixmap(logo_pixmap(30)); il.setFixedSize(32, 32); h.addWidget(il)
         t_ = QLabel(heading); t_.setObjectName("brand" if not back else "h1"); h.addWidget(t_); h.addStretch(); lay.addLayout(h); return lay
@@ -766,7 +773,7 @@ class Window(QMainWindow if Qt else object):
 
     def slider(self, v, text, lo, hi, step, cb, final=None, suffix="", prefix=""):
         """The name on the left, the current value on the right, a full-width slider underneath."""
-        s = QSlider(Qt.Orientation.Horizontal); s.setRange(lo, hi); s.setSingleStep(step); s.setPageStep(step)
+        s = QSlider(Qt.Orientation.Horizontal); s.setRange(lo, hi); s.setSingleStep(step); s.setPageStep(step); s.setAccessibleName(text)
         val = QLabel(f"{prefix if s.value() else ''}{s.value()}{suffix}"); val.setObjectName("stats"); s.vlabel = val
         s.valueChanged.connect(lambda x: val.setText(f"{prefix if x else ''}{x}{suffix}")); s.valueChanged.connect(lambda x: None if self.loading else cb(x))
         if final: s.sliderReleased.connect(lambda: final(s.value()))
@@ -822,7 +829,7 @@ class Window(QMainWindow if Qt else object):
         self.fan_link.setChecked(bool(userstate.get("fan_link", True))); self.loading = False; self.fan_two.setVisible(not self.fan_link.isChecked()); self.fan_one.setVisible(self.fan_link.isChecked())
         v.addWidget(self.fan_box); self.fan_box.setVisible(False)
         btns = []
-        for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Fan curves", "fan", "curves"), ("PREDATOR key", "settings", "predator"), ("Undervolt", "performance", "undervolt"),
+        for _n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Fan curves", "fan", "curves"), ("PREDATOR key", "settings", "predator"), ("Undervolt", "performance", "undervolt"),
                                                ("Profiles", "manual", "profiles"), ("Battery and Screen", "battery", "battery"), ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
             b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); btns.append(b_)
         lay.addSpacing(4); lay.addWidget(FlowGrid(btns)); lay.addStretch()
@@ -1019,7 +1026,7 @@ class Window(QMainWindow if Qt else object):
         self.look_copy.setVisible(builtin); self.look_del.setEnabled(not builtin); self.look_save_btn.setEnabled(not builtin or bool(self.look_name.text().strip()))
         try: d = looks.describe(looks.load(name))
         except Exception: d = ""
-        self.look_msg.setText((f"Built in, read-only: PredatorSense's own lighting. Press Copy to edit to make your own.   {d}" if builtin else d))
+        self.look_msg.setText(f"Built in, read-only: PredatorSense's own lighting. Press Copy to edit to make your own.   {d}" if builtin else d)
 
     def look_save(self):
         name = self.look_name.text().strip() or self.look_cb.currentText()
@@ -1074,7 +1081,7 @@ class Window(QMainWindow if Qt else object):
         w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(0, 6, 0, 0); lay.setSpacing(14); self.history, self.redo_stack, self.recent = [], [], []
         lay.addWidget(self.hint("Click a key, drag a box around several, or Ctrl+click to add. Right-click a key to pick up its colour. Changes show on the keyboard as you make them."))
         self.board = PerKeyBoard(); self.board.selection_changed.connect(self.sel_changed); self.board.picked.connect(lambda h: self.set_colour(h, apply=False)); lay.addWidget(self.board)
-        self.sel_cb = QComboBox(); self.sel_cb.addItem("Select…", None); [self.sel_cb.addItem(l, g) for l, g in KB_GROUPS]; self.sel_cb.addItem("Nothing", "none"); self.sel_cb.addItem("Invert selection", "invert")
+        self.sel_cb = QComboBox(); self.sel_cb.setAccessibleName("Select keys by group"); self.sel_cb.addItem("Select…", None); [self.sel_cb.addItem(l, g) for l, g in KB_GROUPS]; self.sel_cb.addItem("Nothing", "none"); self.sel_cb.addItem("Invert selection", "invert")
         self.sel_cb.activated.connect(lambda i: (self.board.select_group(self.sel_cb.currentData()), self.sel_cb.setCurrentIndex(0)) if self.sel_cb.currentData() else None)
         self.sel_lbl = QLabel("No keys selected"); self.sel_lbl.setObjectName("hint"); h = QHBoxLayout(); h.addWidget(self.sel_lbl, 1); h.addWidget(self.sel_cb); lay.addLayout(h)
         v = self.card(lay, "Colour")
@@ -1084,7 +1091,7 @@ class Window(QMainWindow if Qt else object):
         g = QGridLayout(); g.setSpacing(6)
         for i, c in enumerate(PALETTE):
             b_ = QPushButton(); b_.setMinimumSize(20, 26); b_.setFixedHeight(26); b_.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed); b_.setStyleSheet(f"background:#{c}; border:2px solid #2e3239; border-radius:7px;"); b_.setCursor(Qt.CursorShape.PointingHandCursor)
-            b_.clicked.connect(lambda _, c=c: self.set_colour(c)); g.addWidget(b_, i // 8, i % 8)
+            b_.setAccessibleName(f"Colour #{c}"); b_.setToolTip(f"#{c}"); b_.clicked.connect(lambda _, c=c: self.set_colour(c)); g.addWidget(b_, i // 8, i % 8)
         v.addLayout(g); self.recent_row = QHBoxLayout(); self.recent_row.setSpacing(6); rl = QLabel("Recent"); rl.setObjectName("hint"); self.recent_row.addWidget(rl); self.recent_row.addStretch(); v.addLayout(self.recent_row)
         v = self.card(lay, "Tools")
         self.g1, self.g2 = ColorButton("ff2d55"), ColorButton("5856d6")
@@ -1152,7 +1159,7 @@ class Window(QMainWindow if Qt else object):
     def refresh_recent(self):
         while self.recent_row.count() > 2: w = self.recent_row.takeAt(1).widget(); w and w.deleteLater()
         for c in self.recent:
-            b_ = QPushButton(); b_.setFixedSize(26, 22); b_.setStyleSheet(f"background:#{c}; border:2px solid #2e3239; border-radius:6px;"); b_.clicked.connect(lambda _, c=c: self.set_colour(c)); self.recent_row.insertWidget(self.recent_row.count() - 1, b_)
+            b_ = QPushButton(); b_.setFixedSize(26, 22); b_.setStyleSheet(f"background:#{c}; border:2px solid #2e3239; border-radius:6px;"); b_.setAccessibleName(f"Recent colour #{c}"); b_.setToolTip(f"#{c}"); b_.clicked.connect(lambda _, c=c: self.set_colour(c)); self.recent_row.insertWidget(self.recent_row.count() - 1, b_)
 
     def _selected_by_x(self): return sorted(self.board.sel, key=self.board.x_of)
 
@@ -1454,7 +1461,8 @@ class Window(QMainWindow if Qt else object):
         if QMessageBox.question(self, "Hardware self-test", "This briefly changes power mode, lighting, battery and display settings and restores them. The fans are not touched.\n\nRun it now?") != QMessageBox.StandardButton.Yes: return
         self.say("Self-test running…")
         def work():
-            import io, contextlib
+            import io
+            import contextlib
             from . import selftest
             buf = io.StringIO()
             try:
@@ -1505,7 +1513,7 @@ class Window(QMainWindow if Qt else object):
         self.line(v, "Save as", self.kp_name, self.kp_save); self.line(v, "Default", self.btn("Reset to default", self.kp_reset)); self.kp_msg = self.hint(""); v.addWidget(self.kp_msg)
         self.kp_edit = {}
         for g in keybinds.GESTURES:
-            v = self.card(lay, keybinds.LABELS[g]); ed = ActionEditor(); v.addWidget(ed); self.kp_edit[g] = ed
+            v = self.card(lay, keybinds.LABELS[g]); ed = ActionEditor(keybinds.LABELS[g]); v.addWidget(ed); self.kp_edit[g] = ed
             ed.changed.connect(self.kp_dirty); ed.test_btn.clicked.connect(lambda _, ed=ed: self.do(lambda: actions.run(ed.value()) or "ok", lambda r: str(r), refresh=False))
         v = self.card(lay, "Timing"); self.kp_long = self.slider(v, "Long press after", 300, 2000, 50, lambda x: self.kp_dirty(), suffix=" ms"); self.kp_multi = self.slider(v, "Taps count together within", 200, 1000, 50, lambda x: self.kp_dirty(), suffix=" ms")
         self.kp_loading = False; self.reload_keyprofiles(); lay.addStretch()
@@ -1974,12 +1982,20 @@ class Window(QMainWindow if Qt else object):
             else: self.full_refresh("home" if (active and self.ticks % 20 == 0) else "home_fast")
 
     def event(self, e):
-        if e.type() == QEvent.Type.WindowActivate and getattr(self, "bus", None) is not None and not self.closing: QTimer.singleShot(150, lambda: self.full_refresh() if not self.refreshing else None)    # back at the window: show things as they are now
+        if e.type() == QEvent.Type.WindowActivate and getattr(self, "bus", None) is not None and not self.closing: QTimer.singleShot(150, self.refresh_if_stale)    # back at the window: show things as they are now
         return super().event(e)
+
+    last_full = 0.0
+
+    def refresh_if_stale(self, max_age=5.0, scope=None):
+        """The automatic refreshes (opening a page, coming back to the window) skip the full hardware read when one just ran: every read costs the firmware time. The audio page is always read."""
+        if self.refreshing or (scope in (None, "home") and time.monotonic() - self.last_full < max_age): return
+        self.full_refresh(scope)
 
     def full_refresh(self, scope=None):
         """Read the hardware off the UI thread. The audio page (pactl, amixer, DTS) is only read while it is shown, so the main page stays quick."""
         scope = scope or ("audio" if self.pages.currentIndex() == PAGES["audio"] else "home")
+        if scope == "home": self.last_full = time.monotonic()
         self.refreshing = True
         def work():
             d = {}

@@ -2,13 +2,16 @@
 # SPDX-License-Identifier: MIT
 """Regenerates docs/images/*.png: the real window, driven against the built-in hardware simulator and an in-process service, so the pictures are reproducible and show
 no personal data.   python3 tools/screenshots.py   (needs python-pyqt6; runs headless)"""
-import os, sys, tempfile, time
+import os
+import sys
+import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.environ.update(TRUESENSE_SIM="1", QT_QPA_PLATFORM="offscreen", HOME=tempfile.mkdtemp(prefix="ts-shots-"), TRUESENSE_SOCKET="/nonexistent/ts.sock", TRUESENSE_OSD="none")
 sys.path.insert(0, os.path.join(ROOT, "src"))
 from PyQt6.QtWidgets import QApplication                                    # noqa: E402
-from truesense import audio, config, daemon, device, gui, ipc, keyboard, keymap, looks, state, userstate   # noqa: E402
+from truesense import audio, config, daemon, device, gui, ipc, keyboard, keymap, state   # noqa: E402
 
 OUT = os.path.join(ROOT, "docs", "images"); os.makedirs(OUT, exist_ok=True)
 

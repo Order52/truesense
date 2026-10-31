@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 """Key names -> lighting cells for the PH16-71 keyboard (cell = col*6 + row), from the owner-verified map.
 Corrections vs the community map (verified by key presses): cell 2 = Esc, cell 5 = CapsLock, cell 70 = main-row minus."""
-import json, os, re
+import json
+import os
+import re
 from .backend import HwError
 from . import util
 
@@ -49,7 +51,7 @@ def hsv(h):
     return (round(r * 255), round(g * 255), round(b * 255))
 
 def canvas(base=(0, 0, 0)):
-    return {c: base for c in ALL}
+    return dict.fromkeys(ALL, base)
 
 def gradient(c1, c2):
     """Left-to-right gradient over the 22 columns (cell // 6)."""

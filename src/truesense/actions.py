@@ -16,7 +16,8 @@ An action is `name` or `name:argument`. Each returns a short message (shown on s
   look:<name> | auto:<off|native|smart> | auto-next                           lighting looks (truesense look), the mode control
   exec:<shell command>      runs as you, detached      |      notify:<text>
 """
-import os, subprocess
+import os
+import subprocess
 from . import audio, backend as hw, config, control, ipc, keyboard, keyprofiles, profiles, touchpad, userstate
 from .device import HwError
 
@@ -80,7 +81,7 @@ def run(spec, cfg=None):
 
     if name == "none": return ""
     if name in ("power-next", "power-prev", "power-cycle"):
-        order = [m for m in arg.split(",")] if name == "power-cycle" else cycle
+        order = arg.split(",") if name == "power-cycle" else cycle
         cur = hw.get_mode(); i = order.index(cur) if cur in order else -1
         new = control.power(order[(i + (-1 if name == "power-prev" else 1)) % len(order)], cfg["profile"]["hold_minutes"]); return f"Power mode: {new}"
     if name == "power": new = control.power(arg, cfg["profile"]["hold_minutes"]); return f"Power mode: {new}"

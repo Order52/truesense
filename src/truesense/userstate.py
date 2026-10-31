@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: MIT
 """Small per-user memory (~/.local/state/truesense/user.json): what a light was set to before `off`, last keyboard profile, ... Never required: every reader has a default."""
-import fcntl, json, os, threading
+import fcntl
+import json
+import os
+import threading
 
 import tempfile
 _LOCK = threading.Lock()
@@ -23,7 +26,7 @@ def set(key, value):
     with _LOCK:
         lockf = None
         try:
-            os.makedirs(os.path.dirname(PATH), exist_ok=True); lockf = open(PATH + ".lock", "a+"); fcntl.flock(lockf, fcntl.LOCK_EX)
+            os.makedirs(os.path.dirname(PATH), exist_ok=True); lockf = open(PATH + ".lock", "a+"); fcntl.flock(lockf, fcntl.LOCK_EX)  # noqa: SIM115 (held until the finally below; a with-block does not fit a lock that may be unavailable)
         except OSError: lockf = None                                    # no lock possible (read-only disk): carry on, it is only a convenience file
         try:
             d = load(); d[key] = value; tmp = f"{PATH}.{os.getpid()}.tmp"

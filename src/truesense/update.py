@@ -6,7 +6,17 @@ release from the project's GitHub repository, checks that it really is that vers
 sudo in a terminal): the same trust as `curl ... | sudo bash`, but only when you ask. The repository comes from the SYSTEM config (root-owned) or the built-in default,
 never from your user config, so a file you can write cannot point the updater somewhere else.
 """
-import hashlib, json, os, re, shutil, subprocess, tarfile, tempfile, time, urllib.error, urllib.request
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import time
+import urllib.error
+import urllib.request
 from . import __version__, config
 from .device import HwError
 

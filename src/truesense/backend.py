@@ -4,7 +4,10 @@
 Everything goes through the kernel helper (device.py). Every setter reads the old value, writes, and reads back (retrying for up to 1 s, because the firmware
 can answer -1 / the old value right after a write); set_* return the verified new value or raise HwError.
 """
-import glob, re, subprocess, time
+import glob
+import re
+import subprocess
+import time
 from . import util, userstate
 from .device import HwError, cmd, ival
 

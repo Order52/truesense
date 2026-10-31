@@ -3,7 +3,8 @@
 
 While it runs the daemon's smart fan and automatic profile are paused through the control socket (and put back afterwards), so nothing fights the test.
 """
-import contextlib, time
+import contextlib
+import time
 from . import backend as hw, device, ipc
 
 results = []
@@ -104,7 +105,7 @@ def run(skip_fans=False):
         return f"PL1 {d['pl1_w']} W / PL2 {d['pl2_w']} W readable ({'yours' if d.get('user') else 'automatic'})"
     check("CPU power limits (read)", limits)
     print("\n== stack health (doctor)")
-    import io, sys
+    import io
     from . import doctor
     buf = io.StringIO(); rc = doctor.run(False, buf); print(buf.getvalue().rstrip())
     results.append(rc == 0)

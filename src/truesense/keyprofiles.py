@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Saved keyboard lighting profiles: ~/.config/truesense/lighting/<name>.json (128 colours)."""
-import json, os
+import json
+import os
 from . import keyboard as kb, keymap as km, util
 from .backend import HwError
 

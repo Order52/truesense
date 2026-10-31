@@ -5,7 +5,9 @@ Built-in profiles are read-only (copy one to make your own). NOTHING here applie
 and "apply at boot" is opt-in with a crash guard (see daemon.apply_uv_boot). Offsets are not saved by the CPU: a reboot always returns to stock.
 Values below are common conservative starting points for 13th-gen HX chips, NOT validated on every unit: test each profile under load before trusting it.
 """
-import json, os, re
+import json
+import os
+import re
 from .device import HwError
 
 DIR = os.path.expanduser("~/.config/truesense/undervolt")

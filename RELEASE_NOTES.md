@@ -1,5 +1,16 @@
 # Release notes
 
+## Unreleased
+
+**Faster**
+- Opening the window now does one full hardware refresh instead of two (20 calls / 235 ms in the first 3 s instead of 33 calls / 467 ms), and switching pages or coming back to the window no longer re-reads everything when the data is less than 5 s old. Anything you change still refreshes at once.
+
+**Accessibility**
+- Every control now has a name a screen reader can announce (before, 144 switches, sliders, drop-downs, colour swatches and mode tiles were unnamed). Clicking a row's name focuses its drop-down or text box. A test keeps it that way.
+
+**Code quality**
+- Added `ruff.toml`, `make lint` and a lint job in CI (real bugs and unused code: pyflakes rules, syntax errors, a few correctness rules). Cleaned up what it found: unused imports and variables, dead code in the shell completion generator, one-import-per-line, explicit returns.
+
 ## 0.3.10 (2026-10-31): slower effects, a faster and lighter window, a cleaner look
 
 **Effect speed**

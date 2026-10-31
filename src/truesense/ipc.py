@@ -4,7 +4,11 @@
 The daemon (root) owns the privileged and persistent settings; the CLI, GUI and key service (running as the user) talk to it here instead of sharing files.
 The socket is world-connectable but every request is authorised by the caller's uid (SO_PEERCRED): root, or the configured desktop user.
 """
-import json, os, socket, struct, threading
+import json
+import os
+import socket
+import struct
+import threading
 from .device import HwError
 
 SOCK = os.environ.get("TRUESENSE_SOCKET", "/run/truesense/truesense.sock")

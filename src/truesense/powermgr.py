@@ -5,7 +5,10 @@
 (governor powersave, energy preference balance_performance, turbo on - a manager that was stopped half way can leave turbo OFF, which caps the CPU at its base clock),
 and `restore` undoes all of it. Only the fixed list below is ever touched; nothing else is run. The service re-checks every few minutes while the option is on.
 """
-import glob, json, os, subprocess
+import glob
+import json
+import os
+import subprocess
 from .device import HwError
 
 UNITS = ("auto-cpufreq", "tlp", "tuned", "tuned-ppd", "power-profiles-daemon", "system76-power")

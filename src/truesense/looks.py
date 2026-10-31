@@ -4,7 +4,9 @@
 Saved per user in ~/.config/truesense/looks/NAME.json. One look can also be chosen for BOOT: the daemon (root) keeps a self-contained copy in
 /var/lib/truesense/boot-look.json and applies it as soon as it starts and again after every resume from suspend, before anyone logs in.
 """
-import json, os, re
+import json
+import os
+import re
 from . import backend as hw, keyboard, userstate
 from .device import HwError
 

@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: MIT
-import os, tempfile, time, tomllib, threading, unittest
+import os
+import tempfile
+import time
+import tomllib
+import threading
+import unittest
 from truesense import actions, backend as hw, config, device, ipc, profiles, state, daemon
 from truesense.fnkeys import Gestures
 
@@ -409,7 +414,8 @@ class TestDaemonLogic(Base):
         h["set"](key="auto_mode", value="smart"); self.drive(b, 3, 45, 45, 2); self.assertEqual(b.interval, 1.0); self.assertTrue(b.gpu_started)
 
     def test_update_checks_compare_versions_cache_and_ignore_user_repo(self):
-        import tempfile, urllib.error
+        import tempfile
+        import urllib.error
         from truesense import update, __version__
         update.CACHE = tempfile.mkdtemp() + "/update.json"
         self.assertEqual(update.parse("v1.2.3"), (1, 2, 3)); self.assertIsNone(update.parse("main")); self.assertGreater(update.parse("v0.10.0"), update.parse("v0.9.9"))
@@ -437,7 +443,8 @@ class TestDaemonLogic(Base):
         self.assertEqual((info["version"], info["tag"]), ("0.3.1", "v0.3.1"), "a tag newer than the latest release page must win")
 
     def test_update_download_is_checked_before_anything_runs_as_root(self):
-        import io, tarfile, tempfile, urllib.request
+        import io
+        import tarfile
         from truesense import update
         def tarball(files, root="truesense-9.9.9"):
             buf = io.BytesIO()
@@ -478,7 +485,11 @@ class TestDaemonLogic(Base):
 
 class TestModules(unittest.TestCase):
     def test_every_module_imports_and_has_no_undefined_names(self):
-        import importlib, pkgutil, truesense, ast, builtins
+        import importlib
+        import pkgutil
+        import truesense
+        import ast
+        import builtins
         for m in pkgutil.iter_modules(truesense.__path__):
             if m.name in ("gui", "__main__"): continue            # gui needs GTK; __main__ runs the CLI
             importlib.import_module("truesense." + m.name)
@@ -513,7 +524,9 @@ class TestCli(Base):
         walk(ap); self.assertGreater(seen[0], 60)
 
     def test_json_anywhere_and_completion(self):
-        import io, contextlib, json
+        import io
+        import contextlib
+        import json
         from truesense import cli
         for argv in (["sensors", "--json"], ["--json", "sensors"]):
             buf = io.StringIO()
@@ -523,7 +536,8 @@ class TestCli(Base):
         for sh in ("bash", "zsh", "fish"): self.assertIn("truesense", completion.generate(cli.build(), sh))
 
     def test_errors_exit_nonzero_cleanly(self):
-        import io, contextlib
+        import io
+        import contextlib
         from truesense import cli
         err = io.StringIO()
         with contextlib.redirect_stderr(err): rc = cli.main(["fan", "set", "5"])
@@ -535,7 +549,9 @@ if __name__ == "__main__": unittest.main()
 
 class TestDesigns(unittest.TestCase):
     def test_builtin_designs_are_valid_and_user_files_win(self):
-        import tempfile, json as _json, os as _os
+        import tempfile
+        import json as _json
+        import os as _os
         from truesense import designs
         with tempfile.TemporaryDirectory() as d:
             _os.environ["XDG_CONFIG_HOME"] = d
@@ -553,7 +569,8 @@ class TestDesigns(unittest.TestCase):
             finally: _os.environ.pop("XDG_CONFIG_HOME", None)
 
     def test_image_is_scaled_to_the_key_grid(self):
-        import tempfile, os as _os
+        import tempfile
+        import os as _os
         from truesense import designs
         try: from PIL import Image
         except ImportError: self.skipTest("Pillow not installed")
@@ -565,7 +582,9 @@ class TestDesigns(unittest.TestCase):
 
 class TestSimIsolation(unittest.TestCase):
     def test_the_simulator_never_uses_the_real_user_state(self):
-        import subprocess, sys, os as _os
+        import subprocess
+        import sys
+        import os as _os
         env = dict(_os.environ, TRUESENSE_SIM="1", PYTHONPATH=_os.path.join(_os.path.dirname(__file__), "..", "src")); env.pop("TRUESENSE_USERSTATE", None)
         out = subprocess.run([sys.executable, "-c", "from truesense import userstate; print(userstate.PATH)"], env=env, capture_output=True, text=True).stdout.strip()
         self.assertNotIn(".local/state", out); self.assertIn("truesense-sim", out)
@@ -573,7 +592,8 @@ class TestSimIsolation(unittest.TestCase):
 
 class TestPowerManagers(unittest.TestCase):
     def fake(self):
-        import tempfile, os as _os
+        import tempfile
+        import os as _os
         d = tempfile.mkdtemp(); sysd = d + "/cpu"; _os.makedirs(sysd + "/intel_pstate")
         for n in range(3):
             _os.makedirs(f"{sysd}/cpu{n}/cpufreq")
@@ -638,7 +658,7 @@ class TestPowerManagers(unittest.TestCase):
 
 class TestUserStateLocking(unittest.TestCase):
     def test_concurrent_writers_never_lose_a_key(self):
-        import threading, tempfile, os as _os
+        import tempfile
         from truesense import userstate
         d = tempfile.mkdtemp(); old = userstate.PATH; userstate.PATH = d + "/user.json"
         try:
@@ -651,7 +671,8 @@ class TestUserStateLocking(unittest.TestCase):
 
 class TestUpdateWithoutPolkitAgent(unittest.TestCase):
     def fake_proc(self, *cmds):
-        import tempfile, os as _os
+        import tempfile
+        import os as _os
         d = tempfile.mkdtemp()
         for i, c in enumerate(cmds, 100):
             _os.makedirs(f"{d}/{i}"); open(f"{d}/{i}/cmdline", "wb").write(c.replace(" ", "\0").encode() + b"\0")

@@ -1,0 +1,10 @@
+# Lint settings (https://docs.astral.sh/ruff/). `make lint` and CI run `ruff check`.
+# The rule set is the one this code base is clean for: real bugs (pyflakes F, syntax E9), tidy imports (E401), and a few cheap correctness rules.
+target-version = "py311"
+line-length = 200
+
+[lint]
+select = ["F", "E9", "E401", "B007", "SIM115", "SIM223", "SIM114", "C416", "C420", "RET502", "RET503", "UP034"]
+
+[lint.per-file-ignores]
+"tests/*" = ["SIM115"]       # quick one-line file writes in tests

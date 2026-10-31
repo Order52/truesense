@@ -6,7 +6,8 @@ can use the device at the same time. Replies are "ok key=value ..." or "err mess
 
 TRUESENSE_SIM=1 swaps the device for an in-memory firmware simulator (same protocol): used by the unit tests and for trying the tools without hardware.
 """
-import os, threading
+import os
+import threading
 
 DEV = os.environ.get("TRUESENSE_DEVICE", "/dev/truesense")
 

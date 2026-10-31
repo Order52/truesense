@@ -3,7 +3,9 @@
 
 Everything is optional; a missing file or key falls back to the default. `write_user()` updates the user's file (used by `truesense keys set ...` etc.).
 """
-import copy, os, tomllib
+import copy
+import os
+import tomllib
 
 SYSTEM_PATH = "/etc/truesense/config.toml"
 USER_PATH = os.path.expanduser("~/.config/truesense/config.toml")

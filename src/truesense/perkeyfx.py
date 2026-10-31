@@ -5,7 +5,8 @@ The settings live in the user state ("perkey_fx": mode, speed, keys, base colour
 5 frames a second while an animation is on, then puts the base colours back when you stop it. Each frame is a full upload (the keyboard takes about 190 ms), so the
 animations are smooth for slow effects, not for fast ones.
 """
-import math, random, time
+import math
+import time
 from . import keyboard, keymap, userstate
 from .device import HwError
 

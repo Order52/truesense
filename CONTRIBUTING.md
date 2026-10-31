@@ -23,7 +23,7 @@ python3 tools/screenshots.py    # regenerate docs/images (needs python-pyqt6)
 - New setting: kernel/device, `backend.py`, daemon handler if it needs privilege or persistence, CLI verb, window control, a unit test, a smoke-test command, a line in USAGE and STATUS.
 - New profile kind: follow `curves.py` / `smartprofiles.py` (built-ins read-only incl. `native`, copy to edit, validate everything).
 - Kernel module: `make module-test` builds it for every installed kernel with warnings on; keep it warning-free.
-- Run `make check` before you push.
+- Run `make check` before you push (it runs the tests, `make lint` and the shell syntax checks). `make lint` uses [ruff](https://docs.astral.sh/ruff/) with the rules in `ruff.toml`; install it with `pip install ruff` (it is skipped when missing, CI always runs it).
 
 ## Reporting
 Use the issue templates. Include `truesense doctor --json`.

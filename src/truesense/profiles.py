@@ -14,7 +14,9 @@ Files are plain TOML in ~/.config/truesense/profiles/ (yours) and <prefix>/share
   [audio]    output = "speakers" | "headphones"   voice_headset = "conference"   voice_array = "off"   mic_muted = false   dts_mode = "movie"
 Applying a profile never changes the GPU mode (that needs a reboot) and never touches undervolt.
 """
-import glob, os, tomllib
+import glob
+import os
+import tomllib
 from . import audio, backend as hw, config, ipc, keyboard, userstate
 from .device import HwError
 

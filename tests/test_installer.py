@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: MIT
 """Installer logic: distribution detection and package naming, using fake os-release files (no root, nothing installed)."""
-import os, subprocess, tempfile, unittest
+import os
+import subprocess
+import tempfile
+import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CASES = {

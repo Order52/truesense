@@ -4,7 +4,8 @@
 A design is plain data: {"base": "rrggbb", "keys": {"w": "ff6600", "arrows": "00aaff"}, "cells": {"12": "ffffff"}}; keys and groups use the names of `keyboard list-keys`.
 Designs live in ~/.config/truesense/designs/NAME.json (yours win over the built-in ones of the same name). No code is loaded, so a design file cannot do anything but colour keys.
 """
-import json, os
+import json
+import os
 from . import keymap
 from .device import HwError
 

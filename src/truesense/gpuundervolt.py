@@ -6,7 +6,11 @@ clock is how an undervolt is done here: the GPU reaches its cap at a lower volta
 Built-in profiles are read-only (copy one to make your own); applying always needs confirmation; "apply at boot" is opt-in and crash-guarded (see daemon).
 Values are conservative starting points for the RTX 4060 Laptop, NOT validated on every unit.
 """
-import ctypes, ctypes.util, json, os, re
+import ctypes
+import ctypes.util
+import json
+import os
+import re
 from .device import HwError
 
 DIR = os.path.expanduser("~/.config/truesense/gpu-undervolt")

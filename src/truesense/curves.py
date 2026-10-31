@@ -5,7 +5,9 @@ A curve is {"cpu": [[temp, pct], ...], "gpu": [...], "hysteresis": °C, "down_ra
 Between points the duty is interpolated; 0 % means "let the firmware run the fans" (they stop when cool). Duty may only rise with temperature.
 Built-in curves are below; yours live in ~/.config/truesense/curves/NAME.json. The curve in use is kept by the daemon (so it works before login).
 """
-import json, os, re
+import json
+import os
+import re
 from .device import HwError
 
 DIR = os.path.expanduser("~/.config/truesense/curves")

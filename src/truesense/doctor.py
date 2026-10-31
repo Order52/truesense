@@ -3,7 +3,12 @@
 
 Every check returns (status, detail, fix) with status in OK / WARN / FAIL / INFO.
 """
-import glob, json, os, re, subprocess, sys
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
 from . import util
 from . import __version__, config, device, ipc
 
@@ -143,7 +148,7 @@ def c_service_version():
 
 
 def c_window():
-    try: import PyQt6.QtWidgets  # noqa: F401
+    try: import PyQt6.QtWidgets  # noqa: F401   # noqa: F401  (a probe: can Qt really be loaded?)
     except ImportError: return INFO, "the window (truesense gui) needs python-pyqt6; everything works from the command line without it", "sudo pacman -S python-pyqt6"
     return OK, "python-pyqt6 found (truesense gui)", ""
 

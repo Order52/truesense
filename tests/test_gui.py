@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
-import os, time, unittest
+import os
+import time
+import unittest
 from truesense import userstate
 
 try:
@@ -227,7 +229,7 @@ class TestWindowLogic(unittest.TestCase):
             w.light_tabs.set_index(t); w.light_stack.setCurrentIndex(t); self.app.processEvents(); self.app.processEvents(); heights.append(w.light_stack.minimumSizeHint().height())
         self.assertGreater(heights[1], heights[2] + 300, "the short Rear bar tab is not as tall as the Per-key tab"); self.assertLess(heights[2], 500)
         w.light_stack.setCurrentIndex(2); self.app.processEvents()
-        rows = [r for r in w.light_stack.widget(2).findChildren(gui.Row)]; self.assertTrue(rows)
+        rows = list(w.light_stack.widget(2).findChildren(gui.Row)); self.assertTrue(rows)
         for r in rows: self.assertEqual(r.sizePolicy().verticalPolicy(), QSizePolicy.Policy.Fixed, "a row never soaks up spare height")
         biggest = max(r.height() for r in rows); self.assertLess(biggest, 90, f"no row is stretched (tallest row {biggest} px)")
         self.assertEqual(w.windowTitle(), "TrueSense - Lighting"); w.go("settings"); self.assertEqual(w.windowTitle(), "TrueSense - Settings"); w.nav_back(); self.assertEqual(w.windowTitle(), "TrueSense - Lighting")
@@ -238,8 +240,7 @@ class TestWindowLogic(unittest.TestCase):
         self.assertIsNot(a, gui.icon_pixmap("fan", "#58a6ff", 20)); self.assertFalse(a.isNull())
 
     def test_idle_refresh_asks_the_hardware_for_little(self):
-        import threading
-        w = gui.Window(); w.show(); self.app.processEvents(); calls = []; main = threading.main_thread()
+        w = gui.Window(); w.show(); self.app.processEvents(); calls = []
         names = ("get_mode", "fan_state", "rear_get", "get_kb_timeout", "get_battery_limit", "get_calibration", "get_usb_charge", "get_overdrive", "get_boot_sound", "get_gpu_mode", "on_ac")
         real = {n: getattr(gui.hw, n) for n in names}; real_ipc = gui.ipc.call; real_kb = gui.keyboard.get_brightness
         for n in names: setattr(gui.hw, n, (lambda n=n, f=real[n]: (lambda *a, **k: (calls.append(n), f(*a, **k))[1]))())
@@ -265,6 +266,36 @@ class TestWindowLogic(unittest.TestCase):
             self.assertTrue(self._wait(lambda: "°C" in w.stat_cpu.text()), "and the labels still update")
         finally: gui.hw.sensors = real
         w.close()
+
+    def test_automatic_refreshes_skip_the_hardware_when_the_data_is_fresh(self):
+        w = gui.Window(); w.show(); self.app.processEvents(); scopes = []; real = w.full_refresh
+        w.full_refresh = lambda scope=None: (scopes.append(scope), real(scope))[1]
+        try:
+            self.assertTrue(self._wait(lambda: not w.refreshing)); scopes.clear()
+            w.last_full = time.monotonic(); w.refresh_if_stale(); self.assertEqual(scopes, [], "a full read just ran: coming back to the window or opening a page does not repeat it")
+            w.go("battery"); w.go("home"); self.app.processEvents(); self.assertEqual(scopes, [], "switching pages quickly does not re-read everything each time")
+            w.last_full = time.monotonic() - 60; w.refresh_if_stale(); self.assertEqual(scopes, [None], "stale data is read again")
+            self.assertTrue(self._wait(lambda: not w.refreshing)); scopes.clear(); w.refresh_if_stale(scope="audio"); self.assertEqual(scopes, ["audio"], "the audio page is always read when it opens")
+            self.assertTrue(self._wait(lambda: not w.refreshing)); scopes.clear(); w.last_full = time.monotonic(); w.do(lambda: None, "ok"); self.assertTrue(self._wait(lambda: scopes)); self.assertEqual(scopes[0], None, "after you change something the window always re-reads")
+        finally: w.full_refresh = real
+        w.close()
+
+    def test_every_control_has_a_name_for_screen_readers(self):
+        from PyQt6.QtWidgets import QAbstractButton, QAbstractSpinBox, QComboBox, QLineEdit, QSlider, QWidget
+        from PyQt6.QtCore import Qt
+        w = gui.Window(); w.show(); self.app.processEvents(); unnamed = []
+        for name, i in gui.PAGES.items():
+            w.go(name)
+            if name == "lighting":
+                for t in range(4): w.light_tabs.set_index(t); w.light_stack.setCurrentIndex(t)
+            self.app.processEvents()
+            for c in w.pages.widget(i).widget().findChildren(QWidget):
+                if not isinstance(c, (QAbstractButton, QComboBox, QLineEdit, QSlider, QAbstractSpinBox)) or c.isHidden() or c.focusPolicy() == Qt.FocusPolicy.NoFocus: continue
+                if isinstance(c, QLineEdit) and isinstance(c.parentWidget(), QAbstractSpinBox): continue                  # the spin box itself carries the name
+                if not (c.accessibleName() or (isinstance(c, QAbstractButton) and c.text())): unnamed.append(f"{name}: {type(c).__name__} {c.toolTip()[:30]}")
+        self.assertEqual(unnamed, [], "controls a screen reader would announce without a name")
+        w.go("settings"); lab = [r for r in w.pages.widget(gui.PAGES["settings"]).widget().findChildren(gui.Row) if r.widgets and isinstance(r.widgets[0], QComboBox)][0]
+        self.assertIs(lab.label.buddy(), lab.widgets[0], "clicking a row's name focuses its drop-down"); w.close()
 
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
@@ -304,7 +335,6 @@ class TestWindowLogic(unittest.TestCase):
         w.close()
 
     def test_update_banner_settings_and_failure_handling(self):
-        from truesense import update
         w = gui.Window(); w.show(); self.app.processEvents()
         w._upd_show({"current": "0.3.0", "latest": "0.4.0", "available": True, "error": None, "info": {"tag": "v0.4.0", "version": "0.4.0", "url": "https://example.invalid/r"}})
         self.assertTrue(w.banner.isVisible()); self.assertFalse(w.upd_btn.isHidden()); self.assertIn("0.4.0", w.upd_lbl.text()); self.assertIn("0.4.0", w.banner_lbl.text())

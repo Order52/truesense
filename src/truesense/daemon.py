@@ -5,7 +5,14 @@ Safety: fans go back to firmware Auto and clocks are uncapped on ANY exit (SIGTE
 a missing/failing device never kills the daemon (it keeps waiting and retrying). Measured fan response (manual %, both fans):
 20 % ~1700 rpm, 30 2160, 40 2850, 50 3460, 60 4070, 70 4600, 80 5100, 100 6050. Firmware Auto is the only way to reach 0 rpm, so when calm control goes back to it.
 """
-import glob, os, pwd, signal, socket, subprocess, threading, time
+import glob
+import os
+import pwd
+import signal
+import socket
+import subprocess
+import threading
+import time
 from . import backend as hw, config, cpu, curves, gamerules, gpuundervolt, powermgr, ipc, looks, smartprofiles, undervolt, osd, state as statemod, touchpad
 
 RUN = os.environ.get("TRUESENSE_RUN", "/run/truesense")

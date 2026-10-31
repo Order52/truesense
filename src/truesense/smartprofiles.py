@@ -4,7 +4,9 @@
 A profile is a dict of the [smart] settings. Built-in profiles are read-only (copy one to make your own); yours live in
 ~/.config/truesense/smart/NAME.json. The profile in use is kept by the daemon, so it works before anyone logs in.
 """
-import json, os, re
+import json
+import os
+import re
 from .device import HwError
 
 DIR = os.path.expanduser("~/.config/truesense/smart")
