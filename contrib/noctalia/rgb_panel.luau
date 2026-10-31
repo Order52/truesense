@@ -5,9 +5,17 @@ local KB = { { "static", "Static" }, { "breathing", "Breathe" }, { "wave", "Wave
 local REAR = { { "static", "Static" }, { "breathing", "Breathe" }, { "neon", "Neon" }, { "wave", "Wave" }, { "twinkling", "Twinkle" } }
 local GROUPS = { { "all", "All keys" }, { "wasd", "WASD" }, { "arrows", "Arrows" }, { "fkeys", "F1-F12" }, { "numrow", "1-0" },
   { "letters", "Letters" }, { "numpad", "Numpad" }, { "esc", "Esc" }, { "space", "Space" }, { "enter", "Enter" }, { "predator", "PREDATOR" }, { "lshift", "Shift" } }
+local KEYROWS = {
+  { { "esc", "Esc" }, { "f1", "F1" }, { "f2", "F2" }, { "f3", "F3" }, { "f4", "F4" }, { "f5", "F5" }, { "f6", "F6" }, { "f7", "F7" }, { "f8", "F8" }, { "f9", "F9" }, { "f10", "F10" }, { "f11", "F11" }, { "f12", "F12" } },
+  { { "1", "1" }, { "2", "2" }, { "3", "3" }, { "4", "4" }, { "5", "5" }, { "6", "6" }, { "7", "7" }, { "8", "8" }, { "9", "9" }, { "0", "0" }, { "backspace", "Bksp" } },
+  { { "tab", "Tab" }, { "q", "Q" }, { "w", "W" }, { "e", "E" }, { "r", "R" }, { "t", "T" }, { "y", "Y" }, { "u", "U" }, { "i", "I" }, { "o", "O" }, { "p", "P" } },
+  { { "caps", "Caps" }, { "a", "A" }, { "s", "S" }, { "d", "D" }, { "f", "F" }, { "g", "G" }, { "h", "H" }, { "j", "J" }, { "k", "K" }, { "l", "L" }, { "enter", "Enter" } },
+  { { "lshift", "Shift" }, { "z", "Z" }, { "x", "X" }, { "c", "C" }, { "v", "V" }, { "b", "B" }, { "n", "N" }, { "m", "M" }, { "rshift", "Shift" } },
+  { { "ctrl", "Ctrl" }, { "win", "Win" }, { "lalt", "Alt" }, { "space", "Space" }, { "ralt", "Alt" }, { "left", "←" }, { "up", "↑" }, { "down", "↓" }, { "right", "→" } },
+}
 local ZONES = { { "all", "All" }, { "left", "Left" }, { "middle", "Middle" }, { "right", "Right" } }
 local SW = { "#FF0000", "#FF6A00", "#FFD000", "#00FF55", "#00FFD0", "#00AAFF", "#3A3AFF", "#B400FF", "#FF00AA", "#FFFFFF" }
-local st = { tab = "kb", hex = "00AAFF", level = 25, kgroup = 2, khex = "FF0000",
+local st = { tab = "kb", hex = "00AAFF", level = 25, target = "wasd", khex = "FF0000",
              rear = "static", rhex = "00AEC7", rlevel = 100, speed = 3, zone = 1, z = { "00AEC7", "00AEC7", "00AEC7" } }
 
 local function run(cmd) noctalia.runAsync(cmd) end
@@ -72,15 +80,21 @@ function render()
   elseif st.tab == "keys" then
     body = {
       tabs(),
-      cap("1. Pick keys   2. Pick a colour: only those keys change, the rest stay as they are"),
-      chips(GROUPS, "onGroup", st.kgroup),
-      ui.colorPicker({ value = "#" .. st.khex, swatches = SW, onChange = "onPaintLive", onChangeEnd = "onPaint" }),
-      ui.row({ gap = 4 }, {
-        ui.button({ text = "Paint " .. GROUPS[st.kgroup][2], flexGrow = 1, controlSize = "sm", variant = "default", onClick = "onPaintNow" }),
-        ui.button({ text = "Black (off)", flexGrow = 1, controlSize = "sm", variant = "ghost", onClick = "onPaintBlack" }),
-      }),
-      cap("Single keys: truesense keyboard paint q=ff0000 f5=00ff00   (names: truesense keyboard list-keys)"),
+      cap("Choose a key or a group, then pick a colour. Only that choice changes; the rest stay as they are."),
+      ui.label({ text = "Selected: " .. st.target, fontSize = 14, color = "primary" }),
     }
+    for _, r in ipairs(KEYROWS) do
+      local row = {}
+      for _, k in ipairs(r) do row[#row + 1] = ui.button({ text = k[2], controlSize = "sm", flexGrow = 1, variant = (st.target == k[1]) and "default" or "ghost", onClick = "onKey_" .. k[1] }) end
+      body[#body + 1] = ui.row({ gap = 2 }, row)
+    end
+    body[#body + 1] = cap("Groups")
+    body[#body + 1] = chips(GROUPS, "onGroup", nil)
+    body[#body + 1] = ui.colorPicker({ value = "#" .. st.khex, swatches = SW, onChange = "onPaintLive", onChangeEnd = "onPaint" })
+    body[#body + 1] = ui.row({ gap = 4 }, {
+      ui.button({ text = "Paint " .. st.target, flexGrow = 1, controlSize = "sm", variant = "default", onClick = "onPaintNow" }),
+      ui.button({ text = "Black (off)", flexGrow = 1, controlSize = "sm", variant = "ghost", onClick = "onPaintBlack" }),
+    })
   else
     body = {
       tabs(),
@@ -121,13 +135,77 @@ function onKbLevel(v) v = tonumber(v); if v then st.level = math.floor(v); live(
 function onKbLevelEnd(v) st.level = math.floor(tonumber(v) or st.level); live("kblevel", function() return "truesense keyboard brightness " .. st.level end); render() end
 
 -- Per key
-local function paint(hex) run("truesense keyboard paint " .. GROUPS[st.kgroup][1] .. "=" .. hex) end
-local function group(i) st.kgroup = i; render() end
+local function paint(hex) run("truesense keyboard paint " .. st.target .. "=" .. hex) end
+local function group(i) st.target = GROUPS[i][1]; render() end
 function onGroup1() group(1) end function onGroup2() group(2) end function onGroup3() group(3) end function onGroup4() group(4) end
 function onGroup5() group(5) end function onGroup6() group(6) end function onGroup7() group(7) end function onGroup8() group(8) end
 function onGroup9() group(9) end function onGroup10() group(10) end function onGroup11() group(11) end function onGroup12() group(12) end
-function onPaintLive(v) st.khex = clean(v); live("paint", function() return "truesense keyboard paint " .. GROUPS[st.kgroup][1] .. "=" .. st.khex end) end
-function onPaint(v) st.khex = clean(v); live("paint", function() return "truesense keyboard paint " .. GROUPS[st.kgroup][1] .. "=" .. st.khex end) end
+function onKey_esc() st.target = "esc"; render() end
+function onKey_f1() st.target = "f1"; render() end
+function onKey_f2() st.target = "f2"; render() end
+function onKey_f3() st.target = "f3"; render() end
+function onKey_f4() st.target = "f4"; render() end
+function onKey_f5() st.target = "f5"; render() end
+function onKey_f6() st.target = "f6"; render() end
+function onKey_f7() st.target = "f7"; render() end
+function onKey_f8() st.target = "f8"; render() end
+function onKey_f9() st.target = "f9"; render() end
+function onKey_f10() st.target = "f10"; render() end
+function onKey_f11() st.target = "f11"; render() end
+function onKey_f12() st.target = "f12"; render() end
+function onKey_1() st.target = "1"; render() end
+function onKey_2() st.target = "2"; render() end
+function onKey_3() st.target = "3"; render() end
+function onKey_4() st.target = "4"; render() end
+function onKey_5() st.target = "5"; render() end
+function onKey_6() st.target = "6"; render() end
+function onKey_7() st.target = "7"; render() end
+function onKey_8() st.target = "8"; render() end
+function onKey_9() st.target = "9"; render() end
+function onKey_0() st.target = "0"; render() end
+function onKey_backspace() st.target = "backspace"; render() end
+function onKey_tab() st.target = "tab"; render() end
+function onKey_q() st.target = "q"; render() end
+function onKey_w() st.target = "w"; render() end
+function onKey_e() st.target = "e"; render() end
+function onKey_r() st.target = "r"; render() end
+function onKey_t() st.target = "t"; render() end
+function onKey_y() st.target = "y"; render() end
+function onKey_u() st.target = "u"; render() end
+function onKey_i() st.target = "i"; render() end
+function onKey_o() st.target = "o"; render() end
+function onKey_p() st.target = "p"; render() end
+function onKey_caps() st.target = "caps"; render() end
+function onKey_a() st.target = "a"; render() end
+function onKey_s() st.target = "s"; render() end
+function onKey_d() st.target = "d"; render() end
+function onKey_f() st.target = "f"; render() end
+function onKey_g() st.target = "g"; render() end
+function onKey_h() st.target = "h"; render() end
+function onKey_j() st.target = "j"; render() end
+function onKey_k() st.target = "k"; render() end
+function onKey_l() st.target = "l"; render() end
+function onKey_enter() st.target = "enter"; render() end
+function onKey_lshift() st.target = "lshift"; render() end
+function onKey_z() st.target = "z"; render() end
+function onKey_x() st.target = "x"; render() end
+function onKey_c() st.target = "c"; render() end
+function onKey_v() st.target = "v"; render() end
+function onKey_b() st.target = "b"; render() end
+function onKey_n() st.target = "n"; render() end
+function onKey_m() st.target = "m"; render() end
+function onKey_rshift() st.target = "rshift"; render() end
+function onKey_ctrl() st.target = "ctrl"; render() end
+function onKey_win() st.target = "win"; render() end
+function onKey_lalt() st.target = "lalt"; render() end
+function onKey_space() st.target = "space"; render() end
+function onKey_ralt() st.target = "ralt"; render() end
+function onKey_left() st.target = "left"; render() end
+function onKey_up() st.target = "up"; render() end
+function onKey_down() st.target = "down"; render() end
+function onKey_right() st.target = "right"; render() end
+function onPaintLive(v) st.khex = clean(v); live("paint", function() return "truesense keyboard paint " .. st.target .. "=" .. st.khex end) end
+function onPaint(v) st.khex = clean(v); live("paint", function() return "truesense keyboard paint " .. st.target .. "=" .. st.khex end) end
 function onPaintNow() paint(st.khex) end
 function onPaintBlack() paint("000000") end
 

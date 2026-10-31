@@ -130,6 +130,7 @@ def set_brightness(level):
     if not 0 <= level <= MAX_BRIGHT: raise HwError(f"brightness 0..{MAX_BRIGHT}")
     s = last()
     if s.get("mode") == "effect" and s.get("name") in EFFECTS and s["name"] != "off":
+        _send([_pkt(0x08, 0x02, 0x33, 0x05, level, 0x08, 0x01)])        # the keyboard's own brightness level first (some effects, e.g. spot, follow it) ...
         return set_effect(s["name"], s.get("color", "ffffff"), s.get("speed", 5), level, s.get("direction", 0))
     if s.get("mode") == "operating": return set_operating_mode(s.get("color", "00aec7"), brightness=level)
     _send([_pkt(0x08, 0x02, 0x33, 0x05, level, 0x08, 0x01)])
@@ -181,3 +182,10 @@ def paint(items, brightness=None):
         for c in keymap.cells_for(key): cells[c] = rgb
     per_key(cells, brightness)
     return len(items)
+
+
+def paint_cells(changes, brightness=None):
+    """Colour individual cells ({cell: 'rrggbb'}) and keep every other key as it is."""
+    cells = current_cells()
+    for c, col in changes.items(): cells[int(c)] = hexc(col)
+    per_key(cells, brightness)

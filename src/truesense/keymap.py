@@ -15,6 +15,8 @@ NAMES = {}            # name -> [cells]
 for i, v in _D["cells"].items():
     i = int(i); n = OVERRIDE.get(i) or _norm(v.get("label"))
     if n: NAMES.setdefault(n, []).append(i)
+for _a, _b in (("enter", "return"), ("win", "windows")):          # friendlier names
+    if _b in NAMES: NAMES.setdefault(_a, NAMES[_b])
 ALL = list(range(126))                                       # cells the Windows app lit (0..125)
 GROUPS = {
     "wasd": [c for n in "wasd" for c in NAMES.get(n, [])],
