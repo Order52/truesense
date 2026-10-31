@@ -30,6 +30,7 @@ DEFAULTS = {
     "startup": {"profile": "", "keyboard": "last", "rear": "last"},   # applied at login: last | default | none | profile:NAME (keyboard) | off (rear)
     "keyboard": {"operating_follow": False, "operating_colors": {}},
     "audio": {"jack": "auto", "notify": True, "headset_mode": "conference", "array_mode": "conference"},
+    "update": {"auto_check": False, "check_hours": 24, "repo": "Order52/truesense"},        # automatic checks are off until you switch them on
     "osd": {"style": "native"},                      # native | noctalia | none  (env TRUESENSE_OSD overrides)
     "compat": {"predator_widgets": False},           # also write /tmp/predator-state and honour ~/.cache/predator-fan-mode (old status-bar widgets)
 }
@@ -73,6 +74,7 @@ def validate(cfg):
         if v not in modes: out.append(f"[native] {k} must be one of {', '.join(modes)}")
     if not isinstance(s["keyboard"], str) or not (s["keyboard"] in ("last", "default", "none", "off") or s["keyboard"].startswith(("profile:", "look:"))): out.append("[startup] keyboard must be last, default, none, off, profile:NAME or look:NAME")
     if not isinstance(s["rear"], str) or not (s["rear"] in ("last", "default", "none", "off") or s["rear"].startswith("look:")): out.append("[startup] rear must be last, default, none, off or look:NAME")
+    if not isinstance(cfg["update"]["check_hours"], int) or not 1 <= cfg["update"]["check_hours"] <= 168: out.append("[update] check_hours must be 1..168")
     if cfg["osd"]["style"] not in ("native", "noctalia", "none"): out.append("[osd] style must be native, noctalia or none")
     return out
 

@@ -8,9 +8,9 @@ echo "== removing TrueSense"
 [ -e /dev/truesense ] && echo set_fan_auto > /dev/truesense 2>/dev/null
 systemctl disable --now truesense.service truesense-health.timer truesense-health.service >/dev/null 2>&1
 rm -f /usr/share/applications/truesense.desktop /usr/local/bin/truesense-fast
-systemctl --global disable truesense-keys.service truesense-audio.service truesense-startup.service >/dev/null 2>&1
-ur systemctl --user disable --now truesense-keys.service truesense-audio.service truesense-startup.service >/dev/null 2>&1
-rm -f /etc/systemd/system/truesense*.service /etc/systemd/system/truesense-health.timer /etc/systemd/user/truesense-*.service
+systemctl --global disable truesense-update.timer truesense-keys.service truesense-audio.service truesense-startup.service >/dev/null 2>&1
+ur systemctl --user disable --now truesense-keys.service truesense-audio.service truesense-startup.service truesense-update.timer >/dev/null 2>&1
+rm -f /etc/systemd/system/truesense*.service /etc/systemd/system/truesense-health.timer /etc/systemd/user/truesense-*.service /etc/systemd/user/truesense-update.timer
 rm -f "$PREFIX/bin/truesense"; rm -rf "$PREFIX/lib/truesense" "$PREFIX/share/truesense"
 rm -f /usr/share/bash-completion/completions/truesense /usr/share/zsh/site-functions/_truesense /usr/share/fish/vendor_completions.d/truesense.fish
 modprobe -r truesense_wmi 2>/dev/null

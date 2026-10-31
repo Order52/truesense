@@ -18,6 +18,7 @@ TrueSense changes how a real laptop runs: fans, power, voltages, battery. This p
 | Battery | only the firmware's own 80 % limit is switched; "charge to 100 % once" can only start on AC with the limit on and always brings the limit back (unplug, 5 minutes full, or 24 hours) |
 | GPU mode | firmware setting that applies after a reboot; confirmed first; pick the old mode again before rebooting to cancel |
 | Firmware | no flashing, no boot-logo writes, no embedded-controller access outside documented WMI calls; the kernel module whitelists every command and validates every value |
+| Updates | checking sends one request for the public release number; installing downloads only a **version tag** of the configured repository over HTTPS, refuses unsafe archive paths, confirms the version inside matches the tag, and then runs that release's installer as root **only when you press Update** (password prompt). The repository is taken from the root-owned system config, never from your user config. It is the same trust as `curl | sudo bash`: releases are not signed yet, so update only from a repository you trust |
 | Access | the service socket checks the caller's user id (root and the configured user only); the service runs with systemd sandboxing |
 
 ## What can still go wrong

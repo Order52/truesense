@@ -11,7 +11,9 @@ for a in "$@"; do case "$a" in
   --module-only) MODULE_ONLY=1;; --with-audio) AUDIO=1;; --no-services) SERVICES=0;; --force) FORCE=1;; --prefix=*) PREFIX=${a#*=};;
   -h|--help) sed -n '2,8p' "$0"; exit 0;; *) echo "unknown option: $a" >&2; exit 2;; esac; done
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo:  sudo $0 $*"; exit 1; }
-ROOT=$(realpath "$(dirname "$0")/.."); U=${SUDO_USER:-}; [ -n "$U" ] && [ "$U" != root ] || { echo "run with sudo from your normal user (SUDO_USER is empty)"; exit 1; }
+ROOT=$(realpath "$(dirname "$0")/.."); U=${SUDO_USER:-}
+[ -n "$U" ] || { [ -n "${PKEXEC_UID:-}" ] && U=$(getent passwd "$PKEXEC_UID" | cut -d: -f1); }          # started through pkexec (the window's updater)
+[ -n "$U" ] && [ "$U" != root ] || { echo "run with sudo from your normal user (SUDO_USER is empty)"; exit 1; }
 UID_=$(id -u "$U"); HOME_U=$(getent passwd "$U" | cut -d: -f6)
 mkdir -p /var/log; exec > >(tee -a /var/log/truesense-install.log) 2>&1
 trap 'echo "!! install failed at line $LINENO (log: /var/log/truesense-install.log). Nothing is half-enabled: fix the problem and re-run." >&2' ERR
@@ -68,14 +70,15 @@ step "services"
 for u in truesense.service truesense-health.service truesense-health.timer; do sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@MODPROBE@|$(command -v modprobe)|g" "$ROOT/packaging/$u" > /etc/systemd/system/$u; done
 install -m755 "$ROOT/tools/truesense-fast" "$PREFIX/bin/truesense-fast"
 install -d /usr/share/applications; sed "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/truesense.desktop" > /usr/share/applications/truesense.desktop
-for u in truesense-keys.service truesense-audio.service truesense-startup.service; do sed -e "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/$u" > /etc/systemd/user/$u; done
+for u in truesense-keys.service truesense-audio.service truesense-startup.service truesense-update.service truesense-update.timer; do sed -e "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/$u" > /etc/systemd/user/$u; done
 systemctl daemon-reload; ur systemctl --user daemon-reload || true
 if [ "$SERVICES" = 1 ]; then
   systemctl enable truesense.service truesense-health.timer >/dev/null 2>&1
   systemctl restart truesense.service            # `enable --now` would NOT restart a running service, so upgrades would keep the old code
   systemctl start truesense-health.timer
-  systemctl --global enable truesense-keys.service truesense-audio.service truesense-startup.service >/dev/null 2>&1
+  systemctl --global enable truesense-keys.service truesense-audio.service truesense-startup.service truesense-update.timer >/dev/null 2>&1
   ur systemctl --user restart truesense-keys.service truesense-audio.service truesense-startup.service || say "(user services start at your next login)"
+  ur systemctl --user enable --now truesense-update.timer >/dev/null 2>&1 || true
   sleep 2
   if [ -r /var/lib/truesense/migrated_voice ]; then      # the user already had Purified Voice filters: recreate them under the new names, same modes
     hs=$(sed -n 's/^headset=//p' /var/lib/truesense/migrated_voice); ar=$(sed -n 's/^array=//p' /var/lib/truesense/migrated_voice)

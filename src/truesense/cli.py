@@ -1,6 +1,6 @@
 """truesense: command line for the Acer Predator Helios 16 (PH16-71).   truesense <area> <verb> ...   (every setting has on / off / toggle / status; --json for scripts)
 
-Areas: status sensors power fan battery display boot gpu rear keyboard look startup audio keys profile cpu touchpad service config doctor selftest completion gui
+Areas: status sensors power fan battery display boot gpu rear keyboard look update startup audio keys profile cpu touchpad service config doctor selftest completion gui
 """
 import argparse, json, os, subprocess, sys
 from . import __version__
@@ -94,6 +94,12 @@ def build():
     q = rs.add_parser("set"); q.add_argument("effect", choices=list(hw.REAR_MODES)); q.add_argument("--color", default="ffffff"); q.add_argument("--speed", type=int, default=3)
     q.add_argument("--brightness", type=int, default=100); q.add_argument("--direction", type=int, default=1, choices=[0, 1])
     q.add_argument("--zones", help="static only: one colour, or three (left,middle,right), e.g. ff0000,00ff00,0000ff")
+    # update
+    p = sub.add_parser("update", help="check for a newer TrueSense and install it"); us = p.add_subparsers(dest="verb")
+    q = us.add_parser("check", help="ask GitHub for the newest release"); q.add_argument("--force", action="store_true", help="ignore the daily cache")
+    q = us.add_parser("apply", help="download the newest release and run its installer (asks for administrator rights)"); q.add_argument("--yes", action="store_true", help="do not ask first"); q.add_argument("--version", help="install this version instead of the newest, e.g. 0.3.1")
+    q = us.add_parser("auto", help="check for updates by itself once a day (a desktop notification, nothing is installed)"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
+    us.add_parser("auto-run", help=argparse.SUPPRESS)
     # look (saved lighting looks)
     p = sub.add_parser("look", help="saved lighting looks (keyboard effect/brightness/colours + rear light)"); ls = p.add_subparsers(dest="verb")
     ls.add_parser("list"); q = ls.add_parser("save", help="save what is on the lights now"); q.add_argument("name")
@@ -325,6 +331,31 @@ def h_rear(a):
     if v == "status": emit(hw.rear_get())
     elif v == "set": emit(hw.rear_set(a.effect, a.color, a.speed, a.brightness, a.direction, a.zones.split(",") if a.zones else None))
     else: emit(actions.run("rear:" + v))
+
+
+def h_update(a):
+    from . import config, osd, update
+    v = a.verb or "check"
+    def line(r): return (f"TrueSense {r['current']}: update {r['latest']} is available   (truesense update apply)" if r["available"] else f"TrueSense {r['current']} is up to date" + (f" (newest {r['latest']})" if r["latest"] else "")) + (f"   [{r['error']}]" if r["error"] else "")
+    if v == "check": r = update.check(force=a.force); emit(r, line(r))
+    elif v == "apply":
+        r = update.check(force=True)
+        if r["error"] and not r["info"]: raise HwError(r["error"])
+        tag = ("v" + a.version.lstrip("v")) if a.version else r["info"]["tag"]
+        if not a.version and not r["available"]: emit(r, f"TrueSense {r['current']} is already the newest version"); return
+        if not a.yes:
+            print(f"Install TrueSense {tag.lstrip('v')} (you have {r['current']})?\nThis downloads the release from github.com/{update.repo()} and runs its installer as root (the service restarts; fans return to the firmware meanwhile).")
+            if input("Continue? [y/N] ").strip().lower() not in ("y", "yes"): raise HwError("cancelled")
+        res = update.apply(tag, gui=False); emit(res, f"updated to {res['version']} (download sha256 {res['sha256'][:16]}…); restart the window and the key service if they are open" if res["returncode"] == 0 else f"the installer exited with code {res['returncode']} (see /var/log/truesense-install.log)")
+        if res["returncode"]: raise HwError(f"installer exit code {res['returncode']}")
+    elif v == "auto":
+        cur = lambda: bool(config.load()["update"]["auto_check"])
+        tri(a.action, cur, lambda x: (config.write_user({"update": {"auto_check": x}}), x)[1], "check for updates once a day")
+    elif v == "auto-run":                                                 # run by the daily user timer: a notification when something new appears, once per version
+        if not config.load()["update"]["auto_check"]: return
+        r = update.check()
+        if r["available"] and update._load_cache().get("notified") != r["latest"]:
+            osd.show(f"TrueSense {r['latest']} is available (truesense update apply, or Settings in the window)", "update", config.load()); c = update._load_cache(); c["notified"] = r["latest"]; update._save_cache(c)
 
 
 def h_look(a):

@@ -152,3 +152,14 @@ class TestWindowLogic(unittest.TestCase):
         self.assertEqual((w.kb_level.value(), w.fan_pct.value(), w.fan_cpu.value()), before, "the wheel must not move a slider"); self.assertEqual(w.kb_fx.currentIndex(), idx, "nor a drop-down")
         w.pl1.setValue(65); self.app.sendEvent(w.pl1, wheel(w.pl1, 240)); self.assertEqual(w.pl1.value(), 65, "nor a number box")
         w.close()
+
+    def test_update_banner_settings_and_failure_handling(self):
+        from truesense import update
+        w = gui.Window(); w.show(); self.app.processEvents()
+        w._upd_show({"current": "0.3.0", "latest": "0.4.0", "available": True, "error": None, "info": {"tag": "v0.4.0", "version": "0.4.0", "url": "https://example.invalid/r"}})
+        self.assertTrue(w.banner.isVisible()); self.assertFalse(w.upd_btn.isHidden()); self.assertIn("0.4.0", w.upd_lbl.text()); self.assertIn("0.4.0", w.banner_lbl.text())
+        w._upd_show({"current": "0.3.0", "latest": "0.3.0", "available": False, "error": None, "info": {"tag": "v0.3.0", "version": "0.3.0", "url": ""}})
+        self.assertFalse(w.banner.isVisible()); self.assertTrue(w.upd_btn.isHidden()); self.assertIn("newest version", w.upd_lbl.text())
+        w._upd_show({"current": "0.3.0", "latest": None, "available": False, "error": "could not reach GitHub: no network", "info": None}); self.assertIn("could not reach GitHub", w.upd_lbl.text())
+        w._upd_show({"done": {"ok": False, "error": "polkit authorisation was cancelled"}}); self.assertIn("did not finish", w.upd_lbl.text()); self.assertTrue(w.upd_btn.isEnabled())
+        self.assertFalse(w.auto_upd.isChecked(), "automatic update checks are off until you switch them on"); w.close()

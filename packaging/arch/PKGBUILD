@@ -2,7 +2,7 @@
 # Acer Predator Helios 16 (PH16-71): fans, power modes, battery, GPU mode, lighting, Fn keys, audio helpers.
 # Build from a checkout:  cd packaging/arch && makepkg -si
 pkgname=truesense
-pkgver=0.3.0
+pkgver=0.3.1
 pkgrel=1
 pkgdesc='PredatorSense for Linux: Acer Predator Helios 16 PH16-71 (fans, power modes, battery, lighting, PREDATOR key, audio)'
 arch=('any')
@@ -31,7 +31,7 @@ WRAP
     for f in truesense.service truesense-health.service truesense-health.timer; do
         sed -e 's|@PREFIX@|/usr|g' -e 's|@MODPROBE@|/usr/bin/modprobe|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/$f"
     done
-    for f in truesense-keys.service truesense-audio.service truesense-startup.service; do
+    for f in truesense-keys.service truesense-audio.service truesense-startup.service truesense-update.service truesense-update.timer; do
         sed 's|@PREFIX@|/usr|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/$f"
     done
     sed 's|@PREFIX@|/usr|g' "$_src/packaging/truesense.desktop" | install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/truesense.desktop"

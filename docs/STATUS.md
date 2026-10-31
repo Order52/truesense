@@ -53,6 +53,8 @@ Labels: **VERIFIED** = set, read back (or measured, or seen by the owner) and re
 | Window (Qt 6), Noctalia widgets | PARTIAL | every page rendered and the logic tested headlessly; not every control was clicked on the real laptop |
 | Arch package (PKGBUILD) | WRITTEN | not built with `makepkg` during testing |
 | Secure Boot module signing | UNTESTED | DKMS signs with its own key; Secure Boot was off |
+| Update check (GitHub), download and verification | VERIFIED | against the real repository (tag `v0.3.0` downloaded and checked, nothing installed) |
+| Update install through the window (password prompt) and the daily notification | SIMULATED | the flow is tested with a fake download and installer; a real update through `pkexec` has not been run yet |
 | `.deb`, OpenRGB plugin, tray icon, D-Bus API | NOT BUILT | |
 
 When a SIMULATED or UNTESTED item gets verified on hardware, this table is updated; please report what you see (an issue with `truesense doctor --json`).

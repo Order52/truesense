@@ -355,6 +355,51 @@ class TestDaemonLogic(Base):
         b.st.set("pl_user", None); self.drive(b, 10, 45, 45, 2); self.assertEqual(b.interval, 2.0); self.assertFalse(b.gpu_started, "the GPU sampler is only started when a smart feature needs it")
         h["set"](key="auto_mode", value="smart"); self.drive(b, 3, 45, 45, 2); self.assertEqual(b.interval, 1.0); self.assertTrue(b.gpu_started)
 
+    def test_update_checks_compare_versions_cache_and_ignore_user_repo(self):
+        import tempfile, urllib.error
+        from truesense import update, __version__
+        update.CACHE = tempfile.mkdtemp() + "/update.json"
+        self.assertEqual(update.parse("v1.2.3"), (1, 2, 3)); self.assertIsNone(update.parse("main")); self.assertGreater(update.parse("v0.10.0"), update.parse("v0.9.9"))
+        calls = []
+        def fake_latest(r=None): calls.append(1); return {"version": "9.9.9", "tag": "v9.9.9", "url": "u", "notes": ""}
+        real = update.latest; update.latest = fake_latest
+        try:
+            r = update.check(force=True); self.assertTrue(r["available"]); self.assertEqual((r["current"], r["latest"]), (__version__, "9.9.9"))
+            update.check(); update.check(); self.assertEqual(len(calls), 1, "a fresh cache is used instead of asking GitHub again")
+            def offline(r=None): raise urllib.error.URLError("no network")
+            update.latest = offline; r = update.check(force=True)
+            self.assertIn("could not reach GitHub", r["error"]); self.assertEqual(r["latest"], "9.9.9", "the last known answer survives being offline")
+            update.latest = lambda r=None: {"version": __version__, "tag": "v" + __version__, "url": "", "notes": ""}; self.assertFalse(update.check(force=True)["available"])
+        finally: update.latest = real
+        tmp = tempfile.mkdtemp(); user = tmp + "/user.toml"
+        with open(user, "w") as f: f.write('[update]\nrepo = "evil/repo"\n')
+        self.assertEqual(update.repo(), "Order52/truesense", "the repository never comes from the user config")
+
+    def test_update_download_is_checked_before_anything_runs_as_root(self):
+        import io, tarfile, tempfile, urllib.request
+        from truesense import update
+        def tarball(files, root="truesense-9.9.9"):
+            buf = io.BytesIO()
+            with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+                for name, data in files.items():
+                    ti = tarfile.TarInfo(f"{root}/{name}" if root else name); ti.size = len(data); ti.mode = 0o644; tf.addfile(ti, io.BytesIO(data))
+            return buf.getvalue()
+        def opener_for(blob):
+            return lambda req, timeout=30: io.BytesIO(blob)
+        good = {"tools/install.sh": b"#!/bin/sh\n", "src/truesense/__init__.py": b'__version__ = "9.9.9"\n', "kernel/truesense-wmi/truesense_wmi.c": b"//"}
+        root, sha = update.download("v9.9.9", "o/r", opener=opener_for(tarball(good))); self.assertTrue(os.access(root + "/tools/install.sh", os.X_OK)); self.assertEqual(len(sha), 64)
+        shutil = __import__("shutil"); shutil.rmtree(os.path.dirname(os.path.dirname(root)))
+        for bad, why in ((dict(good, **{"src/truesense/__init__.py": b'__version__ = "9.9.8"\n'}), "wrong version inside"), ({k: v for k, v in good.items() if k != "tools/install.sh"}, "not a release"),
+                         ({"../evil.sh": b"x", **good}, "path escape")):
+            with self.assertRaises(device.HwError, msg=why): update.download("v9.9.9", "o/r", opener=opener_for(tarball(bad)))
+        with self.assertRaises(device.HwError): update.download("main", "o/r", opener=opener_for(b""))                     # only version tags
+        ran = []; real = update.check
+        update.check = lambda force=False, hours=None: {"current": "0.0.1", "latest": "9.9.9", "available": True, "checked_at": 0, "error": None, "info": {"tag": "v9.9.9", "version": "9.9.9"}}
+        try:
+            res = update.apply("v9.9.9", gui=False, run=lambda cmd: (ran.append(cmd), type("R", (), {"returncode": 0})())[1], fetch=lambda tag: update.download(tag, "o/r", opener=opener_for(tarball(good))))
+        finally: update.check = real
+        self.assertEqual(res["returncode"], 0); self.assertTrue(ran and ran[0][-1].endswith("tools/install.sh")); self.assertIn(ran[0][0], ("sudo", "pkexec", ran[0][0]))
+
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run
         device.SIM.run = lambda c: "err no such device\n"

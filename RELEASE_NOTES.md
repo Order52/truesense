@@ -1,5 +1,12 @@
 # Release notes
 
+## 0.3.1 (2026-10-31): updates
+
+* **Update check and one-click update**: Settings, Updates (and `truesense update check|apply|auto`). A banner on Home appears when a newer release exists; Update downloads the tagged release, verifies it and runs its installer with administrator rights (graphical password prompt, or sudo in a terminal), then offers to restart the window.
+* **Automatic checks** (off until you switch them on): a daily user timer asks GitHub for the newest release number and shows a desktop notification once per version. Nothing is installed without you.
+* Safe by construction: only version tags, HTTPS, unsafe archive paths refused, the version inside must match the tag, and the repository comes from the root-owned system config, never from your user config.
+* The installer also works when started through `pkexec`, and starts the startup service in the current session.
+
 ## 0.3.0 (2026-10-31): production release
 
 Tested on one machine, the **Acer Predator Helios 16 PH16-71** (BIOS V1.18, CachyOS, kernels 7.3.0-4 and 6.18 LTS). [docs/STATUS.md](docs/STATUS.md) says exactly what was verified on hardware and what is only covered by simulator tests. **The kernel module changed (fans-off), so the DKMS version is 0.3.0: re-run `sudo tools/install.sh`.**

@@ -2,8 +2,8 @@
 
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
-import os, shlex, sys, threading, time
-from . import actions, audio, backend as hw, config, control, cpu, curves, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, perkeyfx, profiles, smartprofiles, undervolt, userstate
+import os, shlex, subprocess, sys, threading, time
+from . import actions, audio, backend as hw, config, control, cpu, curves, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, perkeyfx, profiles, smartprofiles, undervolt, update, userstate
 from .device import HwError
 
 try:
@@ -14,6 +14,8 @@ try:
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QShortcut, QKeySequence
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
                                  QPushButton, QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
+    from PyQt6.QtGui import QDesktopServices
+    from PyQt6.QtCore import QUrl
 except ImportError as _e:
     Qt = None; _IMPORT_ERROR = _e
 
@@ -117,6 +119,7 @@ QPushButton#tilebtn { background: #202328; border: 1px solid #1f2733; border-rad
 QPushButton#tilebtn:hover { background: #272b32; }
 QPushButton#tilebtn:checked { background: #243247; color: #58a6ff; border: 1px solid #58a6ff; font-weight: 700; }
 QPushButton#quiet { background: transparent; border: 1px solid #2e3239; padding: 5px 12px; }
+QFrame#banner { background: #1c2b3f; border: 1px solid #2f5d8f; border-radius: 12px; }
 QPushButton#primary { background: #58a6ff; color: #031418; border: none; font-weight: 700; }
 QPushButton#primary:hover { background: #4aeaff; }
 QComboBox { background: #1b1d22; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; min-height: 20px; }
@@ -201,6 +204,7 @@ class Bus(QObject if Qt else object):
     uv = pyqtSignal(dict) if Qt else None
     batt = pyqtSignal(dict) if Qt else None
     report = pyqtSignal(str) if Qt else None
+    upd = pyqtSignal(dict) if Qt else None
     refreshed = pyqtSignal(dict) if Qt else None
 
 
@@ -492,20 +496,21 @@ class Window(QMainWindow if Qt else object):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
         self.wheel_guard = WheelGuard(self); QApplication.instance().installEventFilter(self.wheel_guard)
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.refreshed.connect(self._apply); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
         self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else (self.battery_refresh() if i == PAGES["battery"] else None))
         QShortcut(QKeySequence("Escape"), self, activated=lambda: self.pages.setCurrentIndex(0) if self.pages.currentIndex() else None); QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
+        if self.cfg["update"]["auto_check"]: QTimer.singleShot(6000, lambda: self.check_updates(False))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(1000); self.full_refresh(); self.tick()
 
     # ---- plumbing --------------------------------------------------------------------------------------------------------------------
     def closeEvent(self, e):
         """Stop the timer and cut the worker threads off from the widgets: a late result must never land in a window that is going away."""
         self.closing = True; self.timer.stop(); QApplication.instance().removeEventFilter(self.wheel_guard)
-        for sig in (self.bus.message, self.bus.refreshed, self.bus.boot_text, self.bus.uv, self.bus.batt, self.bus.report):
+        for sig in (self.bus.message, self.bus.refreshed, self.bus.boot_text, self.bus.uv, self.bus.batt, self.bus.report, self.bus.upd):
             try: sig.disconnect()
             except TypeError: pass
         super().closeEvent(e)
@@ -606,6 +611,8 @@ class Window(QMainWindow if Qt else object):
     # ---- Home: modes, GPU, fans, then where to go ---------------------------------------------------------------------------------------
     def p_home(self):
         lay = self.page("TrueSense", back=False)
+        self.banner = QFrame(); self.banner.setObjectName("banner"); bl = QHBoxLayout(self.banner); bl.setContentsMargins(14, 10, 10, 10); self.banner_lbl = QLabel(""); self.banner_lbl.setWordWrap(True); bl.addWidget(self.banner_lbl, 1)
+        bl.addWidget(self.btn("Update", self.update_now, True)); bl.addWidget(self.btn("Later", lambda: self.banner.setVisible(False))); lay.addWidget(self.banner); self.banner.setVisible(False)
         v = self.card(lay, "Performance Mode", "performance", True); self.stat_cpu = v.right
         try: self.modes = hw.supported_modes()
         except Exception: self.modes = list(hw.MODES)
@@ -976,12 +983,69 @@ class Window(QMainWindow if Qt else object):
         lay = self.page("Settings"); v = self.card(lay, "Start up")
         self.autostart = self.switch(v, "Open this window at login", self.set_autostart, "Writes ~/.config/autostart/truesense.desktop. Hyprland needs `exec-once = truesense gui` (or uwsm) to run autostart entries.")
         self.autostart.setChecked(os.path.exists(AUTOSTART)); v.addWidget(self.hint("Lighting at boot and login is set in Lighting, Profiles. The PREDATOR key has its own page."))
-        v = self.card(lay, "About")
+        v = self.card(lay, "Updates")
         from . import __version__
+        self.upd_lbl = self.hint("Not checked yet."); self.upd_btn = self.btn("Update…", self.update_now, True); self.upd_btn.setVisible(False); self.notes_btn = self.btn("What's new", self.open_notes); self.notes_btn.setVisible(False)
+        self.line(v, f"Installed: version {__version__}", self.btn("Check now", lambda: self.check_updates(True)), self.notes_btn, self.upd_btn); v.addWidget(self.upd_lbl)
+        self.auto_upd = self.switch(v, "Check for updates automatically", self.set_auto_update, "Once a day it asks GitHub for the newest release number (nothing else is sent) and shows a notification; nothing is installed without you pressing Update.")
+        self.auto_upd.setChecked(bool(self.cfg["update"]["auto_check"]))
+        v = self.card(lay, "About")
         self.line(v, "TrueSense", QLabel(f"version {__version__}")); self.line(v, "System check", self.btn("Run check…", self.run_doctor)); self.line(v, "Support", self.btn("Copy report", self.copy_report))
         v = self.card(lay, "Reset")
         self.line(v, "Everything back to defaults", self.btn("Reset all…", self.reset_all)); v.addWidget(self.hint("Back to how a fresh install behaves, like PredatorSense on Windows: Native auto mode control, firmware fans, power limits left to the firmware, lighting stock, undervolt off, PREDATOR key `default`. Your saved profiles are kept."))
         lay.addStretch()
+
+    # ---- updates -------------------------------------------------------------------------------------------------------------------
+    def set_auto_update(self, on):
+        self.do(lambda: config.write_user({"update": {"auto_check": on}}), "Automatic update checks: " + ("on" if on else "off"), refresh=False)
+        if on: self.check_updates(False)
+
+    def check_updates(self, force):
+        self.upd_lbl.setText("Checking…")
+        def work():
+            try: r = update.check(force=force)
+            except Exception as e: r = {"current": "", "latest": None, "available": False, "error": str(e), "info": None}
+            try: self.bus.upd.emit(r)
+            except RuntimeError: pass
+        threading.Thread(target=work, daemon=True).start()
+
+    def _upd_show(self, r):
+        if r.get("done"): self._upd_done(r["done"]); return
+        self.upd_info = r; av = bool(r.get("available")); info = r.get("info") or {}
+        self.upd_btn.setVisible(av); self.notes_btn.setVisible(bool(info.get("url")))
+        if av: txt = f"TrueSense {r['latest']} is available (you have {r['current']})."
+        elif r.get("latest"): txt = f"You have the newest version ({r['current']})."
+        else: txt = "Could not find the newest version."
+        if r.get("error"): txt += f"  {r['error']}"
+        self.upd_lbl.setText(txt); self.banner.setVisible(av); self.banner_lbl.setText(f"TrueSense {r.get('latest')} is available." if av else "")
+
+    def open_notes(self):
+        url = (getattr(self, "upd_info", {}).get("info") or {}).get("url")
+        if url: QDesktopServices.openUrl(QUrl(url))
+
+    def update_now(self):
+        r = getattr(self, "upd_info", None)
+        if not r or not r.get("available"): self.check_updates(True); return
+        box = QMessageBox(QMessageBox.Icon.Question, "Update TrueSense", f"Update TrueSense from {r['current']} to {r['latest']}?\n\nThis downloads the release from GitHub and runs its installer with administrator rights: "
+                          "you will be asked for your password. The service restarts for a moment (the fans go back to the firmware meanwhile).", QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, self)
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel); box.button(QMessageBox.StandardButton.Apply).setText("Update")
+        if box.exec() != QMessageBox.StandardButton.Apply: return
+        self.upd_btn.setEnabled(False); self.upd_lbl.setText("Downloading and installing… (enter your password when asked)")
+        def work():
+            try: res = update.apply(r["info"]["tag"], gui=True); out = {"ok": res["returncode"] == 0, "version": res["version"], "code": res["returncode"]}
+            except Exception as e: out = {"ok": False, "error": str(e)}
+            try: self.bus.upd.emit({"done": out, **r})
+            except RuntimeError: pass
+        threading.Thread(target=work, daemon=True).start()
+
+    def _upd_done(self, out):
+        self.upd_btn.setEnabled(True)
+        if out.get("ok"):
+            self.upd_lbl.setText(f"Updated to {out['version']}.")
+            box = QMessageBox(QMessageBox.Icon.Information, "Updated", f"TrueSense {out['version']} is installed.\n\nRestart the window to use it.", QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel, self)
+            box.button(QMessageBox.StandardButton.Ok).setText("Restart the window"); box.button(QMessageBox.StandardButton.Cancel).setText("Later")
+            if box.exec() == QMessageBox.StandardButton.Ok: subprocess.Popen(["sh", "-c", "sleep 1; truesense gui"], start_new_session=True); self.close()
+        else: self.upd_lbl.setText("The update did not finish: " + (out.get("error") or f"the installer exited with code {out.get('code')} (see /var/log/truesense-install.log)")); self.say("Error: the update did not finish")
 
     def run_doctor(self):
         def work():

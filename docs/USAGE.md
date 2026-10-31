@@ -64,6 +64,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `cpu info` | power limits and lock state |
 | `cpu undervolt get\|list\|show NAME\|use NAME --confirm\|reset\|copy NAME [NEW]\|save NAME --core MV --cache MV\|delete NAME\|boot NAME\|off --confirm` | undervolt profiles (`stock`, `truesense`, `mild`, `balanced`, `aggressive`; built-ins are read-only): nothing applies without `--confirm`; past the safety line (core -60 mV / cache -50 mV) it is a caution, beyond the danger line (-90 / -70) you also need `--force`; a reboot returns to stock, and "at boot" is guarded (skipped and switched off if the previous boot did not stay up 10 minutes). The offsets are conservative starting points, not validated on every unit |
 | `touchpad on\|off\|toggle` | touchpad inhibit |
+| `update check [--force]`, `update apply [--yes] [--version X]`, `update auto on\|off` | look for a newer release on GitHub and install it (downloads the tagged release, checks it, runs its installer with administrator rights). Automatic checks are **off** until you switch them on (`update auto on` or Settings); then once a day a notification appears when something new is out. The repository comes only from the system config |
 | `service status\|restart\|logs`, `config show\|validate\|path`, `completion bash\|zsh\|fish`, `gui` | housekeeping |
 
 ## The window
