@@ -245,7 +245,7 @@ class CurveEditor(QWidget if Qt else object):
     T0, T1 = 30, 100
 
     def __init__(self):
-        super().__init__(); self.setFixedSize(432, 250); self.setMouseTracking(True); self.curve = curves.load("truesense"); self.side = "cpu"; self.drag = None; self.marks = {"cpu": None, "gpu": None}
+        super().__init__(); self.setFixedSize(432, 250); self.setMouseTracking(True); self.curve = curves.load("truesense"); self.side = "cpu"; self.drag = None; self.locked = False; self.marks = {"cpu": None, "gpu": None}
 
     def set_curve(self, c): self.curve = c; self.update()
     def pts(self): return self.curve[self.side]
@@ -262,7 +262,7 @@ class CurveEditor(QWidget if Qt else object):
             pts = self.curve[side]; on = side == self.side; path = [self._xy(self.T0, pts[0][1])] + [self._xy(t_, d) for t_, d in pts] + [self._xy(self.T1, pts[-1][1])]
             p.setPen(QPen(QColor(col), 2.4 if on else 1.4)); [p.drawLine(int(a[0]), int(a[1]), int(b[0]), int(b[1])) for a, b in zip(path, path[1:])]
             if on:
-                for t_, d in pts: x, y = self._xy(t_, d); p.setBrush(QColor("#ffffff")); p.setPen(QPen(QColor(col), 2)); p.drawEllipse(QRectF(x - 5, y - 5, 10, 10))
+                for t_, d in pts: x, y = self._xy(t_, d); p.setBrush(QColor("#5b6270" if self.locked else "#ffffff")); p.setPen(QPen(QColor(col), 2)); p.drawEllipse(QRectF(x - 5, y - 5, 10, 10))
             m = self.marks.get(side)
             if m: x, _ = self._xy(m, 0); _, y0 = self._xy(0, 100); p.setPen(QPen(QColor(col), 1, Qt.PenStyle.DashLine)); p.drawLine(int(x), int(y0), int(x), self.height() - 30)
         p.end()
@@ -274,12 +274,13 @@ class CurveEditor(QWidget if Qt else object):
         return None
 
     def mousePressEvent(self, e):
+        if self.locked: return
         i = self._hit(e.position())
         if e.button() == Qt.MouseButton.RightButton and i is not None and len(self.pts()) > 2: self.pts().pop(i); self.update(); self.changed.emit(); return
         self.drag = i
 
     def mouseMoveEvent(self, e):
-        if self.drag is None or not (e.buttons() & Qt.MouseButton.LeftButton): return
+        if self.locked or self.drag is None or not (e.buttons() & Qt.MouseButton.LeftButton): return
         pts = self.pts(); t_, d = self._tp(e.position().x(), e.position().y()); i = self.drag
         lo = pts[i - 1][0] + 1 if i > 0 else self.T0; hi = pts[i + 1][0] - 1 if i < len(pts) - 1 else self.T1 + 10
         d = 0 if d < 12 else max(20, min(100, int(5 * round(d / 5)))); t_ = int(max(lo, min(hi, round(t_))))
@@ -290,7 +291,7 @@ class CurveEditor(QWidget if Qt else object):
         if self.drag is not None: self.drag = None; self.changed.emit()
 
     def mouseDoubleClickEvent(self, e):
-        if self._hit(e.position()) is not None: return
+        if self.locked or self._hit(e.position()) is not None: return
         t_, d = self._tp(e.position().x(), e.position().y()); t_ = int(round(t_)); pts = self.pts()
         if any(abs(t_ - q[0]) < 2 for q in pts) or len(pts) >= 12: return
         d = max(20, min(100, int(5 * round(curves.interp(pts, t_) / 5)))) if curves.interp(pts, t_) >= 12 else 0; pts.append([t_, d]); pts.sort(); self.update(); self.changed.emit()
@@ -624,8 +625,10 @@ class Window(QMainWindow if Qt else object):
         self.c_rate = self.slider(v, "Slow-down speed (% per second)", 1, 10, 1, lambda x: None, suffix=" %/s")
         v = self.card(lay, "Curves")
         self.curve_list = QComboBox(); self.curve_list.setMinimumWidth(150); self.curve_list.activated.connect(lambda i: self.load_curve_in_editor(self.curve_list.currentText()))
-        self.line(v, "Load", self.curve_list, self.btn("Use this curve", self.curve_use, True)); self.curve_name = QLineEdit(); self.curve_name.setPlaceholderText("name"); self.curve_name.setMinimumWidth(150)
-        self.line(v, "Save as", self.curve_name, self.btn("Save", self.curve_save), self.btn("Delete", self.curve_delete)); self.curve_msg = self.hint(""); v.addWidget(self.curve_msg)
+        self.copy_btn = self.btn("Copy to edit", self.curve_copy)
+        self.line(v, "Load", self.curve_list, self.copy_btn, self.btn("Use this curve", self.curve_use, True)); self.curve_name = QLineEdit(); self.curve_name.setPlaceholderText("name"); self.curve_name.setMinimumWidth(150)
+        self.curve_save_btn = self.btn("Save", self.curve_save); self.del_btn = self.btn("Delete", self.curve_delete)
+        self.line(v, "Save as", self.curve_name, self.curve_save_btn, self.del_btn); self.curve_msg = self.hint(""); v.addWidget(self.curve_msg)
         self.reload_curves(); lay.addStretch()
 
     def reload_curves(self, select=None):
@@ -636,7 +639,10 @@ class Window(QMainWindow if Qt else object):
     def load_curve_in_editor(self, name):
         try: c = curves.load(name)
         except Exception as e: self.say(f"Error: {e}"); return
-        self.editor.set_curve(c); self.loading = True
+        locked = name in curves.BUILTIN; self.editor.locked = locked; self.editor.set_curve(c); self.loading = True
+        for s_ in (self.c_pre, self.c_hys, self.c_rate): s_.setEnabled(not locked)
+        self.copy_btn.setVisible(locked); self.del_btn.setEnabled(not locked); self.curve_save_btn.setEnabled(not locked)
+        self.curve_msg.setText("Built-in curves can't be edited. Press Copy to edit to make your own version." if locked else "")
         for s_, k in ((self.c_pre, "predict"), (self.c_hys, "hysteresis"), (self.c_rate, "down_rate")): s_.setValue(int(round(c[k])))
         self.loading = False
 
@@ -655,6 +661,14 @@ class Window(QMainWindow if Qt else object):
         try: c = self.editor_curve(); curves.save(name, c)
         except Exception as e: self.curve_msg.setText(str(e)); self.say(f"Error: {e}"); return
         self.curve_msg.setText(f"Saved '{name}'. Press Use this curve to run it."); self.reload_curves(name); self.say(f"Saved fan curve '{name}'")
+
+    def curve_copy(self):
+        """A built-in curve is read-only; copying it makes an editable one under a free name."""
+        src = self.curve_list.currentText(); base = (self.curve_name.text().strip() or src + "-copy"); name, n = base, 2
+        while name in curves.names(): name = f"{base}-{n}"; n += 1
+        try: curves.save(name, curves.load(src))
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_curves(name); self.curve_msg.setText(f"Copied to '{name}'. Drag the points to change it, then Save and Use this curve."); self.say(f"Copied '{src}' to '{name}'")
 
     def curve_delete(self):
         name = self.curve_list.currentText()

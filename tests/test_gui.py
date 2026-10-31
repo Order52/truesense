@@ -46,3 +46,16 @@ class TestWindowLogic(unittest.TestCase):
         w.rear_fx.btns[1].click(); time.sleep(0.6); self.app.processEvents()      # pick Breathing
         r = hw.rear_get(); self.assertEqual(r["mode"], "breathing"); self.assertGreater(r["brightness"], 0)
         w.close()
+
+    def test_builtin_curves_are_read_only_until_copied(self):
+        from truesense import curves
+        w = gui.Window(); w.load_curve_in_editor("truesense")
+        self.assertTrue(w.editor.locked); self.assertFalse(w.c_pre.isEnabled()); self.assertFalse(w.curve_save_btn.isEnabled()); self.assertFalse(w.del_btn.isEnabled())
+        before = [list(p) for p in w.editor.curve["cpu"]]; w.editor.drag = 2
+        from PyQt6.QtCore import QPointF, Qt
+        from PyQt6.QtGui import QMouseEvent
+        w.editor.mouseMoveEvent(QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(200, 60), Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+        self.assertEqual(w.editor.curve["cpu"], before)
+        w.curve_list.setCurrentIndex(w.curve_list.findText("truesense")); w.curve_copy()
+        self.assertIn("truesense-copy", curves.names()); self.assertFalse(w.editor.locked); self.assertTrue(w.c_pre.isEnabled())
+        curves.delete("truesense-copy"); w.close()

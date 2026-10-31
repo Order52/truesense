@@ -65,8 +65,8 @@ def build():
     p = sub.add_parser("fan", help="fans: firmware auto, max, manual %%, smart curve"); fs = p.add_subparsers(dest="verb")
     fs.add_parser("status"); fs.add_parser("auto", help="firmware control (0 rpm when cool)"); fs.add_parser("max")
     q = fs.add_parser("set", help="manual duty, 20..100 %%"); q.add_argument("cpu", type=int); q.add_argument("gpu", type=int, nargs="?")
-    q = fs.add_parser("curve", help="smart-fan curves: list | current | show NAME | use NAME | save NAME --cpu PTS --gpu PTS | delete NAME"); q.add_argument("action", nargs="?", default="current", choices=["list", "current", "show", "use", "save", "delete"])
-    q.add_argument("name", nargs="?"); q.add_argument("--cpu", help="CPU points, e.g. 52:0,60:35,70:55,80:75,89:100 (temperature:percent, 0 = firmware auto)"); q.add_argument("--gpu", help="GPU points")
+    q = fs.add_parser("curve", help="smart-fan curves: list | current | show NAME | use NAME | copy NAME [NEW] | save NAME --cpu PTS --gpu PTS | delete NAME  (built-in curves are read-only: copy them to edit)"); q.add_argument("action", nargs="?", default="current", choices=["list", "current", "show", "use", "save", "delete", "copy"])
+    q.add_argument("name", nargs="?"); q.add_argument("new", nargs="?", help="copy: the new name"); q.add_argument("--cpu", help="CPU points, e.g. 52:0,60:35,70:55,80:75,89:100 (temperature:percent, 0 = firmware auto)"); q.add_argument("--gpu", help="GPU points")
     for k_, d_ in (("hysteresis", None), ("down-rate", None), ("predict", None), ("couple", None), ("battery-shift", None)): q.add_argument("--" + k_, type=float, default=d_)
     q.add_argument("--from", dest="base", help="start from this curve and change only what you give")
     q = fs.add_parser("smart", help="the daemon's smart curve"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
@@ -222,6 +222,9 @@ def h_fan(a):
                 if v_ is not None: c[k_] = v_
             if "cpu" not in c or "gpu" not in c: raise HwError("give --cpu and --gpu points (or --from an existing curve)")
             saved = curves.save(a.name, c); emit(saved, f"saved fan curve '{a.name}' (use it: truesense fan curve use {a.name})")
+        elif act == "copy":
+            if not a.name: raise HwError("copy which curve? (truesense fan curve list)")
+            new = a.new or a.name + "-copy"; curves.save(new, curves.load(a.name)); emit(new, f"copied '{a.name}' to '{new}' (edit it: truesense fan curve save {new} --cpu ...)")
         elif act == "delete": curves.delete(a.name or ""); emit(a.name, f"deleted fan curve '{a.name}'")
     elif v == "smart": tri(a.action, lambda: ipc.call("state")["settings"]["smart_fan"], lambda x: daemon_set("smart_fan", x)["smart_fan"], "smart fan curve")
 
