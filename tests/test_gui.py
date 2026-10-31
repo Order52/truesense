@@ -149,6 +149,21 @@ class TestWindowLogic(unittest.TestCase):
         for _ in range(40): w.nav_back()
         self.assertEqual(w.pages.currentIndex(), 0); w.close()
 
+    def test_picture_shows_a_preview_and_says_what_happened(self):
+        import tempfile
+        from PyQt6.QtWidgets import QFileDialog
+        try: from PIL import Image
+        except ImportError: self.skipTest("Pillow not installed")
+        w = gui.Window(); w.go("keys"); orig = QFileDialog.getOpenFileName
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "red.png"); Image.new("RGB", (44, 12), (255, 0, 0)).save(p)
+            QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (p, ""))
+            try:
+                w.image_apply(); self.assertGreater(w.img_prev.height(), 0); self.assertIn("red.png", w.img_msg.text()); self.assertEqual(w.board.cells[5], "ff0000"); self.assertFalse(w.img_prev.pixmap().isNull())
+                QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (os.path.join(d, "nope.png"), "")); w.image_apply(); self.assertIn("NOT painted", w.img_msg.text()); self.assertEqual(w.img_prev.height(), 0)
+            finally: QFileDialog.getOpenFileName = orig
+        w.close()
+
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
         w = gui.Window(); w.go("keys"); names = [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]; self.assertIn("gaming", names)

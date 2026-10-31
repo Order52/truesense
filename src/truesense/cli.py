@@ -436,7 +436,7 @@ def h_keyboard(a):
         else: done("saved to " + designs.save(a.name, kb.current_cells()))
     elif v == "image":
         from . import designs
-        kb.per_key(designs.image_cells(a.file), a.brightness); done("image painted")
+        kb.per_key(designs.image_cells(a.file), a.brightness); done(f"painted {os.path.basename(a.file)} across the keys (scaled to 22 x 6 keys); look at the keyboard, and `truesense keyboard status` shows the stored colours")
     elif v == "layout": emit({"keys": {n: [{"cell": c, "col": c // 6, "row": c % 6} for c in cs] for n, cs in km.NAMES.items()}, "groups": sorted(km.GROUPS)})
     elif v == "fill": kb.per_key(km.to_list(km.canvas(km.hexcolor(a.color))), a.brightness); done()
     elif v == "gradient": kb.per_key(km.to_list(km.gradient(km.hexcolor(a.from_color), km.hexcolor(a.to_color))), a.brightness); done()

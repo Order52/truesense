@@ -12,7 +12,7 @@ try:
     from PyQt6.QtNetwork import QLocalServer, QLocalSocket
     from PyQt6.QtSvg import QSvgRenderer
     from PyQt6.QtCore import QByteArray, QSize
-    from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QShortcut, QKeySequence
+    from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QImage, QShortcut, QKeySequence
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
                                  QPushButton, QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
     from PyQt6.QtGui import QDesktopServices
@@ -26,7 +26,7 @@ _P = {
     "eco": "M6 18c0-8 5-13 13-13 0 8-5 13-13 13zM6 18l8-8",
     "quiet": "M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z",
     "balanced": "M12 4v16M6 20h12M5 8h14M5 8l-3 7a3 3 0 0 0 6 0zM19 8l-3 7a3 3 0 0 0 6 0z",
-    "performance": "M4 17a8 8 0 1 1 16 0M12 17l4-6M7 17h.01M17 17h.01",
+    "performance": "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 13.2l3.6-4.4M12 6.6v1.1M6.6 12h1.1M17.4 12h-1.1M8.4 8.4l.8.8M15.6 8.4l-.8.8",
     "turbo": "M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z",
     "smart": "M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z",
     "auto": "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z",
@@ -874,6 +874,7 @@ class Window(QMainWindow if Qt else object):
         self.ds_cb = QComboBox(); self.ds_cb.setMinimumWidth(170); self.reload_designs()
         self.line(v, "Design", self.ds_cb, self.btn("Apply", self.design_apply, True)); self.ds_name = QLineEdit(); self.ds_name.setPlaceholderText("name, e.g. my-design"); self.ds_name.setMinimumWidth(130)
         self.line(v, "Save the keys as a design", self.ds_name, self.btn("Save", self.design_save)); self.line(v, "Picture", self.btn("Choose a picture…", self.image_apply))
+        self.img_prev = QLabel(); self.img_prev.setFixedHeight(0); self.img_prev.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(self.img_prev); self.img_msg = self.hint("No picture used yet. After you choose one, this shows what was sent: your picture squeezed onto the 22 x 6 keys, and the keyboard drawing above changes to match."); v.addWidget(self.img_msg)
         v = self.card(lay, "Whole keyboard")
         self.pk_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("pkb", lambda: keyboard.set_brightness(x)))
         self.line(v, "Fill and presets", self.btn("Fill all", self.fill_all), self.btn("Rainbow", self.rainbow_all))
@@ -978,8 +979,16 @@ class Window(QMainWindow if Qt else object):
     def image_apply(self):
         path, _ = QFileDialog.getOpenFileName(self, "Choose a picture", os.path.expanduser("~"), "Pictures (*.png *.jpg *.jpeg *.webp *.bmp *.gif)")
         if not path: return
-        try: self.commit(self._hexes(designs.image_cells(path))); self.say("Picture painted on the keys")
-        except Exception as e: self.say(f"Error: {e}")
+        name = os.path.basename(path)
+        try: cells = designs.image_cells(path)
+        except Exception as e:
+            self.img_prev.setFixedHeight(0); self.img_msg.setText(f"NOT painted: {e}"); self.say(f"Error: {e}"); return
+        self.commit(self._hexes(cells))                                      # the keyboard drawing above changes and the keys are sent
+        img = QImage(22, 6, QImage.Format.Format_RGB32); img.fill(0)
+        for c in range(126): img.setPixel(c // 6, c % 6, (cells[c][0] << 16) | (cells[c][1] << 8) | cells[c][2] | 0xFF000000)
+        self.img_prev.setPixmap(QPixmap.fromImage(img.scaled(330, 90, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation))); self.img_prev.setFixedHeight(96)
+        self.img_msg.setText(f"Sent '{name}' to the keyboard: scaled to 22 x 6 keys (preview above, each block is one key). If the keys do not match, check the status bar for an error; the keyboard drawing in this tab shows what the keys were told.")
+        self.say(f"Picture '{name}' painted on the keys")
 
     def save_perkey_look(self):
         name = self.pk_name.text().strip()
