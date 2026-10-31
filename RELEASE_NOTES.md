@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.3.11 (2026-10-31): faster start-up, accessible controls, lint in CI
 
 **Faster**
 - Opening the window now does one full hardware refresh instead of two (20 calls / 235 ms in the first 3 s instead of 33 calls / 467 ms), and switching pages or coming back to the window no longer re-reads everything when the data is less than 5 s old. Anything you change still refreshes at once.
