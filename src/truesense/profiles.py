@@ -68,6 +68,10 @@ def capture(description=""):
     try: smart = bool(ipc.call("state")["settings"]["smart_fan"])
     except HwError: smart = False
     d["fan"] = {"mode": "smart" if smart else fan["mode"]}
+    try: d["fan"]["curve"] = ipc.call("fan_curve", action="get")["name"]
+    except HwError: pass
+    try: d["power"]["auto"] = ipc.call("state")["settings"].get("auto_mode", "off")
+    except HwError: pass
     if d["fan"]["mode"] == "manual": d["fan"].update(cpu=fan["duty_register_pct"]["cpu"], gpu=fan["duty_register_pct"]["gpu"])
     r = hw.rear_get(); d["rear"] = {"on": r["brightness"] > 0}
     if r["brightness"] > 0 and r["mode"] in hw.REAR_MODES: d["rear"].update(effect=r["mode"], color=r["color"], speed=r["speed"], brightness=r["brightness"])
@@ -104,6 +108,9 @@ def apply(name, cfg=None):
     if "auto" in p: step("power auto", lambda: ipc.call("set", key="auto_mode", value=p["auto"]))
     if "mode" in p: step("power", lambda: actions.run(f"power:{p['mode']}", cfg))
     f = d.get("fan", {})
+    if "curve" in f:
+        from . import curves
+        step("fan curve", lambda: ipc.call("fan_curve", action="use", name=f["curve"], data=None if f["curve"] in curves.BUILTIN else curves.load(f["curve"])))
     if f.get("mode") == "manual": step("fan", lambda: _fan_manual(int(f["cpu"]), int(f["gpu"])))
     elif "mode" in f: step("fan", lambda: actions.run(f"fan:{f['mode']}", cfg))
     k = d.get("keyboard", {})
