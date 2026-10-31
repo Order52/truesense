@@ -1,10 +1,10 @@
 <p align="center"><img src="docs/images/logo.png" width="128" alt="TrueSense logo"></p>
 
-<h1 align="center">TrueSense</h1>
+<h1 align="center">TrueSense for the Acer Predator Helios 16 (PH16-71)</h1>
 
 <p align="center">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-MIT-blue"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-0.3.3-58a6ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.3.4-58a6ff">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Linux%206.6%2B-lightgrey">
   <img alt="Hardware" src="https://img.shields.io/badge/hardware-Acer%20Predator%20PH16--71-19e3ff">
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776ab">
