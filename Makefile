@@ -3,7 +3,7 @@
 test:            ## unit tests against the firmware simulator (no hardware needed)
 	python3 -m unittest discover -s tests -t . -v
 check: test      ## tests + shell syntax of every script
-	@for f in tools/*.sh packaging/health.sh; do bash -n $$f && echo "ok  $$f"; done
+	@for f in tools/*.sh tools/truesense-fast packaging/health.sh; do bash -n $$f && echo "ok  $$f"; done
 install:         ## one command: kernel module (DKMS), daemon, user services, completions
 	sudo tools/install.sh
 uninstall:

@@ -15,8 +15,8 @@ An action is `name` or `name:argument`. Each returns a short message (shown on s
   look:<name> | auto:<off|native|smart> | auto-next                           lighting looks (truesense look), the mode control
   exec:<shell command>      runs as you, detached      |      notify:<text>
 """
-import os, shlex, subprocess
-from . import audio, backend as hw, config, control, ipc, keyboard, keyprofiles, osd, profiles, touchpad, userstate
+import os, subprocess
+from . import audio, backend as hw, config, control, ipc, keyboard, keyprofiles, profiles, touchpad, userstate
 from .device import HwError
 
 KB_EFFECTS = ["static", "breathing", "wave", "snake", "ripple", "neon", "raindrop", "lightning", "spot", "star", "fireball", "snow", "heartbeat"]

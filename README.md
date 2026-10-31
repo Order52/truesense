@@ -1,74 +1,107 @@
 # TrueSense
 
-**PredatorSense for Linux, for one laptop: the Acer Predator Helios 16 (PH16-71).**
-Power modes, fans, battery and charging, GPU mode, the rear light bar, per-key keyboard RGB, the PREDATOR key and Fn keys, and the audio extras (headset mic, AI noise reduction, Acer DTS sound). It is a root daemon, one small kernel module, a command line that does everything, and an optional window.
+**PredatorSense for Linux, for the Acer Predator Helios 16 (PH16-71).**
+Power modes, fans, GPU mode, battery, the rear light bar, per-key keyboard RGB, the PREDATOR key, audio extras, and CPU/GPU undervolting: one kernel module, one root service, one command line that does everything, and a small optional window.
 
-> **Read this first.** Built and tested on a single PH16-71 (BIOS V1.18). It talks to the firmware through ACPI-WMI and the keyboard controller. The module refuses to load on other models unless you force it, and forcing it on other hardware is at your own risk. Not affiliated with or endorsed by Acer.
+<p align="center">
+  <img src="docs/images/home.png" width="31%" alt="Home: performance mode, GPU mode, fans">
+  <img src="docs/images/per-key.png" width="31%" alt="Per-key colours on a picture of the real keyboard">
+  <img src="docs/images/fan-curves.png" width="31%" alt="Fan curve editor">
+</p>
 
-## Install (one command)
+> **Hardware warning.** TrueSense was built and tested on one machine: **Acer Predator Helios 16 PH16-71, BIOS V1.18** (i7-13700HX, RTX 4060 Laptop, ALC245 audio, keyboard `04F2:0117`). It talks to the firmware (ACPI-WMI) and the keyboard controller. The kernel module refuses to load on other models unless forced, and forcing it on other hardware is at your own risk. Not affiliated with or endorsed by Acer. Read [docs/SAFETY.md](docs/SAFETY.md) before you touch voltages or turn fans off.
+
+## Contents
+[Install](#install) · [A first look](#a-first-look) · [Features](#features) · [Safe by default](#safe-by-default) · [Command line](#command-line) · [How it works](#how-it-works) · [Status](#status) · [Documentation](#documentation) · [Credits and licence](#credits-and-licence)
+
+## Install
+
+One command from a clone (it is safe to re-run; it upgrades):
 
 ```
 git clone https://github.com/Order52/truesense && cd truesense && sudo tools/install.sh
-truesense doctor        # checks everything and says what to fix
+truesense doctor          # checks everything and says how to fix what is wrong
+truesense gui             # the window (needs python-pyqt6)
 ```
 
-Or, without cloning: `curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash` (read it first; set `TRUESENSE_SHA256` to pin the download).
+Or without cloning (read the script first; set `TRUESENSE_SHA256` to pin the download): `curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash`.
 
-The installer is safe to re-run (it upgrades). It removes older helper drivers from earlier versions of this project (backing them up first), builds the DKMS module for every installed kernel (so kernel updates keep working), installs the daemon and user services, a udev rule, and a health timer that repairs a stalled daemon or missing module. `sudo tools/uninstall.sh [--purge]` removes it all. On Arch: `cd packaging/arch && makepkg -si`.
+What the installer does: removes older helper drivers from earlier versions of this project (backing them up), builds the DKMS module for every installed kernel (so kernel updates keep working), installs the service, the user services, a udev rule, completions, a launcher and a health timer, then runs `truesense doctor`. `sudo tools/uninstall.sh [--purge]` removes everything. On Arch there is also a `PKGBUILD` (`cd packaging/arch && makepkg -si`).
 
-Needs: Linux 6.6+, `dkms` and matching kernel headers, Python 3.11+, systemd. For audio features: PipeWire and the RNNoise plugin (`--with-audio` installs it on Arch). The window needs `python-pyqt6` (Qt 6; native on Wayland and X11).
+**Needs:** Linux 6.6 or newer, `dkms` and the headers of your kernel, Python 3.11+, systemd. Optional: `python-pyqt6` (window), PipeWire and the RNNoise plugin (microphone noise reduction), `socat` (instant status-bar buttons), `nvidia-utils`.
 
-## What it does
+## A first look
+
+A fresh install behaves like PredatorSense on Windows: the fans are on the firmware's own control, the power mode follows the power source, and nothing of ours touches clocks or power limits until you choose a smart feature. Every kind of profile has a built-in, read-only **`native`** entry that is exactly that default; copy a profile to make your own.
+
+| | |
+|---|---|
+| <img src="docs/images/home.png" width="240" alt="Home"><br>**Home**: power mode with Manual / Native / Smart control, GPU mode, fans | <img src="docs/images/per-key.png" width="240" alt="Per-key"><br>**Per-key colours** on the real keyboard layout, with gradients, undo and software animations |
+| <img src="docs/images/fan-curves.png" width="240" alt="Fan curves"><br>**Fan curves**: drag the points; the built-in curves are read-only | <img src="docs/images/smart-auto.png" width="240" alt="Smart auto"><br>**Smart auto profiles**: how it picks the mode from load, heat and battery |
+| <img src="docs/images/predator-key.png" width="240" alt="PREDATOR key"><br>**PREDATOR key**: an action per gesture, run your own script with a file picker | <img src="docs/images/undervolt-cpu.png" width="240" alt="Undervolt"><br>**Undervolt** (CPU and GPU) with safety zones, power limits, guarded boot apply |
+| <img src="docs/images/lighting-profiles.png" width="240" alt="Lighting profiles"><br>**Lighting profiles**, applied at boot by the service | <img src="docs/images/audio.png" width="240" alt="Audio"><br>**Audio**: output, 3.5 mm jack, Purified Voice noise reduction, DTS |
+
+More pictures: [docs/images](docs/images). They are regenerated by `python3 tools/screenshots.py` against the built-in simulator, so they show no personal data.
+
+## Features
+
+- **Power**: Eco, Quiet, Balanced, Performance, Turbo. **Mode control**: Manual, **Native auto** (Balanced on power, Eco on battery, like PredatorSense) or **Smart auto** (Performance when you game, Turbo when that is sustained and cool enough, a back-off if it overheats, Eco on battery) with editable profiles. A mode you pick yourself ends by itself when the situation changes.
+- **Fans**: firmware Auto (native), Smart curve (built-in and your own curves, drag-to-edit), Max, Manual with one slider or separate CPU and GPU sliders, and Off with a warning and a temperature watchdog.
+- **GPU mode** (Optimus, NVIDIA only, Auto), **battery** (80 % limit, charge to 100 % once, calibration, USB charging while off), **LCD overdrive**, **boot sound**.
+- **Lighting**: keyboard effects (13) with colour, speed and brightness; per-key RGB on a picture of the real keyboard (select, palette, gradient, rainbow, undo, animations); the rear light bar's three parts; saved lighting profiles applied at boot and after suspend.
+- **PREDATOR key**: tap, double, triple, long press and Fn+Esc, each bound to any action, including your own script. Profiles for the bindings.
+- **Undervolt**: CPU (core and cache) and GPU (clock curve and cap) profiles, power limits, safety zones, typed confirmation beyond the danger line, reset to stock, and a crash-guarded apply at boot.
+- **Audio**: speakers and headphones switching, the 3.5 mm jack mode, headset microphone boost, Purified Voice style AI noise reduction, Acer DTS through AcerUltraX.
+- **Automation and tools**: a root service with a watchdog, the Fn-key service, a doctor, a self-test, shell completions, JSON output everywhere, Noctalia bar widgets, a fast path for status bars.
+
+## Safe by default
+
+- Every write is **read, write, read back**; fans return to the firmware on exit, crash or service stop; the kernel module validates every value and hands the fans back when it unloads.
+- **Voltages never apply without confirmation**, a reboot always returns to stock, beyond the *danger line* you must type `APPLY` (window) or pass `--force` (CLI), and the apply-at-boot option disables itself if the previous boot did not stay up 10 minutes.
+- **Fans off** only starts when cool and the service gives the fans back to the firmware if it gets warm.
+- No firmware flashing, no boot-logo writes, no EC access outside the documented WMI calls.
+- The control socket checks the caller's user id; the service is sandboxed by systemd.
+
+Details, limits and how to recover from a bad setting: [docs/SAFETY.md](docs/SAFETY.md).
+
+## Command line
 
 ```
-truesense status                         everything at a glance
-truesense power set turbo                eco quiet balanced performance turbo (also: next, prev, auto on|off, hold, release)
-truesense fan smart on                   smart curve; also: fan auto | fan max | fan set 60  (manual 20-100 %)
-truesense battery limit on               80 % charge limit; also: calibration, usb-charge 0|10|20|30
-truesense display overdrive toggle       LCD overdrive;  boot sound toggle;  gpu set nvidia  (reboot to apply)
-truesense rear set wave --color 00ffcc   rear light bar; also on|off|toggle
-truesense keyboard effect wave           13 built-in effects; fill, gradient, rainbow, keys "wasd=ff0000", profile save|load
-truesense audio output toggle            speakers <-> headphones while the jack is plugged in
-truesense audio voice headset personal   Purified Voice style noise reduction per microphone
-truesense keys set double output-toggle  make the PREDATOR key do what you want (tap / double / triple / long)
-truesense profile apply gaming           a saved bundle of power, fans, lighting, battery, audio
-truesense gui                            the optional window
+truesense status                          everything at a glance
+truesense power set turbo                 eco quiet balanced performance turbo
+truesense power auto smart                off | native | smart
+truesense fan curve use quiet             fan curves; copy a built-in to edit it
+truesense fan set 60 80                   manual duty: CPU 60 %, GPU 80 %
+truesense battery full start              charge to 100 % once
+truesense keyboard effect wave --speed 4  per-key: keyboard paint w=ff0000 arrows=00ff00
+truesense look save my-lights             a lighting profile; truesense startup boot my-lights
+truesense keys profile use gaming         PREDATOR key profiles
+truesense cpu undervolt list              use NAME --confirm | reset | boot NAME --confirm
+truesense doctor                          check the whole stack
 ```
 
-Every area takes `on|off|toggle|status` where that makes sense, and `--json` anywhere for scripts. Shell completion for bash, zsh and fish is installed. Full reference: [docs/USAGE.md](docs/USAGE.md).
+Every area takes `on|off|toggle|status` where that makes sense, and `--json` anywhere. The full reference is [docs/USAGE.md](docs/USAGE.md).
 
-## How it is built
+## How it works
 
 ```
 firmware (ACPI-WMI) <- truesense_wmi (DKMS kernel module, /dev/truesense)
-                         ^
-        truesense daemon (root, systemd, watchdog) <- JSON socket -> CLI, window, key service, status bars
-        smart fan curve, thermal governor, automatic power profile, saved state
-        user services: truesense-keys (PREDATOR/Fn keys), truesense-audio (headset/mic switching)
+                              ^
+      truesense service (root, systemd, watchdog)  <- JSON socket ->  CLI, window, key service, status bars
+      fans, power modes, smart auto, power limits, undervolt, boot lighting, saved state
+      user services: truesense-keys (PREDATOR/Fn keys, key animations), truesense-audio, truesense-startup
 ```
 
-* The kernel module is a single, small, DMI-guarded driver using only the stable WMI API. Fans go back to firmware Auto whenever it unloads.
-* The daemon never leaves the fans stuck: on stop, crash or exit the firmware takes them back, and systemd restarts it. A health timer rebuilds the module after a kernel update.
-* Everything is testable without hardware: `TRUESENSE_SIM=1` swaps in a simulator, and `make test` runs the suite.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The simulator (`TRUESENSE_SIM=1`) runs everything without hardware and `make test` runs the test suite.
 
 ## Status
 
-Every claim below was checked on the real laptop with a read-back, a measurement, or the owner's own eyes. Details and the things that do **not** work are in [docs/STATUS.md](docs/STATUS.md).
+Verified on the real laptop, partly verified, and not yet verified features are listed honestly in [docs/STATUS.md](docs/STATUS.md). Short version: the firmware settings, fans, lighting, keys and audio were verified on hardware; Smart auto, fan-off, charge-to-full-once, undervolt writes and the key animations are covered by simulator tests but have **not** been exercised on the real laptop yet.
 
-| Area | Status |
-|---|---|
-| Power modes, fans (Auto/Max/manual, RPM, temperatures), smart fan daemon, automatic profile | verified |
-| Overdrive, boot sound, 80 % limit, USB charging while off, backlight timeout | verified |
-| Rear light bar (5 effects); keyboard per-key RGB and 13 effects | verified |
-| PREDATOR key tap / double / long, Fn+F10 | verified |
-| Speakers <-> headphones switching; headset mic; AI noise reduction; Acer DTS via AcerUltraX | verified |
-| GPU mode (MUX) | write and read-back verified; effect after reboot untested |
-| Undervolt | read only; writing was never attempted |
-| Battery calibration, Secure Boot signing | untested |
-| F8 mic-mute LED, NVIDIA power limit, live GPU switching | not working / not built |
+## Documentation
 
-Known limits: a headset already plugged in at boot is not detected until you replug it (kernel quirk). **Never write the codec's `reconfig` file** on this laptop; it deadlocked the kernel.
+[USAGE](docs/USAGE.md) · [SAFETY](docs/SAFETY.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) · [STATUS](docs/STATUS.md) · [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [Release notes](RELEASE_NOTES.md) · hardware research in [docs/research](docs/research) and [docs/hardware-data](docs/hardware-data)
 
 ## Credits and licence
 
-GPL-2.0-only. Firmware interface knowledge comes from reading the public [Linuwu-Sense](https://github.com/0x7375646F/Linuwu-Sense) driver and observing this laptop's own behaviour; Acer sound uses [AcerUltraX](https://github.com/fawaz7/AcerUltraX); noise reduction uses [RNNoise](https://github.com/xiph/rnnoise). No Acer, DTS or Realtek files are included.
+GPL-2.0-only (see [LICENSE](LICENSE)). The firmware interface was learned from the public [Linuwu-Sense](https://github.com/0x7375646F/Linuwu-Sense) driver and from observing this laptop; Acer DTS sound uses [AcerUltraX](https://github.com/fawaz7/AcerUltraX); noise reduction uses [RNNoise](https://github.com/xiph/rnnoise); the window's layout was inspired by [G-Helper](https://github.com/seerge/g-helper) and [PreySense](https://github.com/hammadzaigham/PreySense). No Acer, DTS or Realtek files are included. "PredatorSense" and "Predator" are trademarks of Acer Inc.; they are used only to describe compatibility.

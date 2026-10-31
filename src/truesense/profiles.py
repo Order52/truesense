@@ -14,7 +14,7 @@ Files are plain TOML in ~/.config/truesense/profiles/ (yours) and <prefix>/share
 Applying a profile never changes the GPU mode (that needs a reboot) and never touches undervolt.
 """
 import glob, os, tomllib
-from . import audio, backend as hw, config, ipc, keyboard, keyprofiles, userstate
+from . import audio, backend as hw, config, ipc, keyboard, userstate
 from .device import HwError
 
 USER_DIR = os.path.expanduser("~/.config/truesense/profiles")

@@ -109,8 +109,29 @@ def c_daemon():
     return OK, f"running; smart_fan={'on' if s['smart_fan'] else 'off'}, auto_profile={'on' if s['auto_profile'] else 'off'}, activity={live.get('activity', '?')}", ""
 
 
+def c_service_version():
+    """The running service must know every command the app and CLI use; after an upgrade it has to be restarted (the installer does that)."""
+    if not active("truesense.service"): return INFO, "service not running", ""
+    try: ipc.call("fan_curve", action="get"); ipc.call("battery_full", action="get")
+    except device.HwError as e:
+        if "unknown command" in str(e): return WARN, "the running service is older than the installed app", "sudo systemctl restart truesense   (or re-run sudo tools/install.sh)"
+        return WARN, f"service did not answer a version probe: {e}", ""
+    return OK, f"service and app are the same version ({__version__})", ""
+
+
+def c_window():
+    try: import PyQt6.QtWidgets  # noqa: F401
+    except ImportError: return INFO, "the window (truesense gui) needs python-pyqt6; everything works from the command line without it", "sudo pacman -S python-pyqt6"
+    return OK, "python-pyqt6 found (truesense gui)", ""
+
+
+def c_bars():
+    import shutil
+    return (OK, "socat found: status-bar buttons use the fast path (truesense-fast)", "") if shutil.which("socat") else (INFO, "socat not found: status-bar buttons fall back to the slower command line", "sudo pacman -S socat")
+
+
 def c_user_services():
-    res = {u: active(u, True) for u in ("truesense-keys.service", "truesense-audio.service")}
+    res = {u: active(u, True) for u in ("truesense-keys.service", "truesense-audio.service", "truesense-startup.service")}
     bad = [u for u, a in res.items() if not a]
     return (OK if not bad else WARN), ", ".join(f"{u.split('.')[0]}={'active' if a else 'inactive'}" for u, a in res.items()), "systemctl --user enable --now " + " ".join(bad) if bad else ""
 
@@ -159,8 +180,8 @@ def c_fans():
 
 
 CHECKS = [("Model", c_model), ("Python", c_python), ("Kernel", c_kernel), ("Kernel headers", c_headers), ("DKMS", c_dkms), ("Kernel module", c_module), ("Device", c_device),
-          ("Conflicts", c_conflicts), ("Daemon", c_daemon), ("User services", c_user_services), ("udev / keyboard", c_udev), ("Config", c_config), ("Secure Boot", c_secure_boot),
-          ("Audio", c_audio), ("Fans", c_fans)]
+          ("Conflicts", c_conflicts), ("Daemon", c_daemon), ("Service version", c_service_version), ("User services", c_user_services), ("udev / keyboard", c_udev), ("Config", c_config), ("Secure Boot", c_secure_boot),
+          ("Audio", c_audio), ("Fans", c_fans), ("Window", c_window), ("Status bars", c_bars)]
 
 
 def run(as_json=False, out=sys.stdout):

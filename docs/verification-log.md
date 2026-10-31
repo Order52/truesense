@@ -1,3 +1,5 @@
+> Historical evidence log from the development builds. Commands appear under the project's earlier name (`rps` = today's `truesense`). The current verified / simulated / untested table is [STATUS.md](STATUS.md).
+
 # Verification log (chronological, raw)
 
 This is the unedited working log kept while the project was built and tested on one laptop. Some rows are **superseded by later rows** (for example an item marked "NOT DONE" that was fixed afterwards). For the current state read [STATUS.md](STATUS.md).

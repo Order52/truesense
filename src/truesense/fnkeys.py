@@ -4,10 +4,9 @@ The keyboard's vendor HID interface (usage page 0x88, report id 4) sends: 04 80 
 Gestures on the PREDATOR key: tap / double / triple (within [keys] multi_ms) and long (held [keys] long_ms; fires while still held, so it feels instant).
 Each gesture runs a configurable action (see actions.py). Fn+F11/F12 brightness is done by the keyboard firmware and deliberately ignored.
 """
-import glob, os, select, threading, time
+import glob, os, threading, time
 from . import util
 from . import actions, config, osd
-from .device import HwError
 
 CODES = {b"\x80\xff": "fn_f10", b"\x8a\xff": "fn_esc", b"\x81\xff": "predator_down", b"\x00\x00": "release"}
 

@@ -360,7 +360,7 @@ def h_startup(a):
 
 
 def h_keyboard(a):
-    from . import actions, backend as hw, config, keyboard as kb, keymap as km, keyprofiles, userstate, ipc
+    from . import actions, backend as hw, config, keyboard as kb, keymap as km, keyprofiles, ipc
     v = a.verb or "status"
     def done(msg="sent"): emit(msg)
     if v == "status": emit({"look": kb.last(), "brightness": kb.get_brightness(), "max": kb.MAX_BRIGHT, "backlight_timeout": hw.get_kb_timeout(), "lighting_profiles": keyprofiles.names()})

@@ -3,7 +3,7 @@
 Acer's Purified Voice runs a proprietary Realtek model that cannot run on Linux. This builds an open equivalent: one PipeWire filter chain per input
 (headset mic, mic array) with RNNoise voice-activity gating. Modes: off | conference (gentle) | personal (strict; can clip very soft words).
 """
-import contextlib, fcntl, os, re, shutil, subprocess, time
+import fcntl, os, re, shutil, subprocess, time
 from . import util
 from . import config, osd
 from .device import HwError

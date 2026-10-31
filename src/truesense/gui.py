@@ -12,8 +12,8 @@ try:
     from PyQt6.QtSvg import QSvgRenderer
     from PyQt6.QtCore import QByteArray, QSize
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QShortcut, QKeySequence
-    from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
+    from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+                                 QPushButton, QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
 except ImportError as _e:
     Qt = None; _IMPORT_ERROR = _e
 
@@ -110,7 +110,7 @@ QPushButton { background: #171d26; border: 1px solid #222b37; border-radius: 10p
 QPushButton:hover { background: #1d2530; border-color: #2c3847; }
 QPushButton:pressed { background: #10252b; }
 QWidget#segwrap { background: #202328; border: 1px solid #2e3239; border-radius: 10px; }
-QPushButton#seg { background: transparent; border: none; border-radius: 8px; padding: 7px 14px; margin: 0; color: #8b929c; }
+QPushButton#seg { background: transparent; border: none; border-radius: 8px; padding: 7px 10px; margin: 0; color: #8b929c; }
 QPushButton#seg:hover { color: #dfe5ee; }
 QPushButton#seg:checked { background: #363c46; color: #ffffff; font-weight: 700; }
 QPushButton#tilebtn { background: #202328; border: 1px solid #1f2733; border-radius: 12px; padding: 8px 4px; color: #aab3c0; font-size: 13px; }
@@ -615,7 +615,7 @@ class Window(QMainWindow if Qt else object):
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
         TIPS = {"eco": "Lowest power and heat; for battery and light work", "quiet": "Low fan noise; reduced speed", "balanced": "PredatorSense's default: everyday use", "performance": "More power for demanding work and games", "turbo": "Maximum power; loud fans and high heat"}
         for b_, m_ in zip(self.power.btns, order): b_.setToolTip(TIPS.get(m_, ""))
-        self.auto = Segmented(["Manual", "Native auto", "Smart auto"]); self.auto.picked.connect(self.auto_picked); self.line(v, "Mode control", self.auto)
+        self.auto = Segmented(["Manual", "Native", "Smart"]); self.auto.picked.connect(self.auto_picked); self.line(v, "Mode control", self.auto)
         self.auto_hint = self.hint(AUTO_HINT["off"]); v.addWidget(self.auto_hint)
         self.smart_box = QWidget(); sb = QVBoxLayout(self.smart_box); sb.setContentsMargins(0, 0, 0, 0); sb.setSpacing(8)
         self.smart_cb = QComboBox(); self.smart_cb.setMinimumWidth(150); self.smart_cb.activated.connect(self.smart_picked)
@@ -1522,6 +1522,9 @@ class Window(QMainWindow if Qt else object):
         finally: self.loading = False
 
 
+_WINDOW = [None]
+
+
 def _icon():
     """A small drawn app icon (no image files to ship): a cyan ring with a T."""
     pm = QPixmap(128, 128); pm.fill(Qt.GlobalColor.transparent); p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -1534,13 +1537,22 @@ def main(page=None):
         print(f"The window needs python-pyqt6 ({_IMPORT_ERROR}).  Arch: sudo pacman -S python-pyqt6.  Everything works from the command line without it.")
         return 1
     __import__("os").environ.setdefault("QT_LOGGING_RULES", "qt.qpa.wayland.textinput=false")
+    def hook(kind, value, tb):
+        """PyQt aborts the program on an uncaught exception inside a slot; log it and keep the window alive instead."""
+        import traceback
+        traceback.print_exception(kind, value, tb, file=sys.stderr)
+        w_ = _WINDOW[0]
+        if w_ is not None:
+            try: w_.say(f"Error: {value}")
+            except Exception: pass
+    sys.excepthook = hook; threading.excepthook = lambda a: hook(a.exc_type, a.exc_value, a.exc_traceback)
     app = QApplication(sys.argv[:1]); app.setApplicationName("TrueSense"); app.setWindowIcon(_icon()); app.setDesktopFileName("truesense"); app.setStyle("Fusion"); app.setStyleSheet(STYLE)
     name = "truesense-gui-" + str(__import__("os").getuid())
     probe = QLocalSocket(); probe.connectToServer(name)
     if probe.waitForConnected(150):                                   # already open: bring that window forward instead of starting a second one
         probe.write((page or "home").encode()); probe.flush(); probe.waitForBytesWritten(300); return 0
     QLocalServer.removeServer(name); server = QLocalServer(); server.listen(name)
-    w = Window(); w.show()
+    w = Window(); _WINDOW[0] = w; w.show()
     if page in PAGES or page == "keys": w.go(page)
     def handoff():
         c = server.nextPendingConnection()

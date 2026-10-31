@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # One-line installer:  curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
 # Downloads a tagged release, optionally checks a pinned SHA-256, and runs tools/install.sh.
-#   TRUESENSE_VERSION=0.2.0   which release (default: the one this script was published with)
+#   TRUESENSE_VERSION=0.3.0   which release (default: the one this script was published with)
 #   TRUESENSE_SHA256=...      refuse to install unless the tarball matches
 # Prefer to read first: git clone https://github.com/Order52/truesense && less truesense/tools/install.sh
 set -euo pipefail
-VERSION="${TRUESENSE_VERSION:-0.2.0}"
+VERSION="${TRUESENSE_VERSION:-0.3.0}"
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo: curl -fsSL <url> | sudo bash" >&2; exit 1; }
 for c in curl tar sha256sum; do command -v "$c" >/dev/null || { echo "missing: $c" >&2; exit 1; }; done
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT

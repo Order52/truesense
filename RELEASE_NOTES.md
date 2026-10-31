@@ -1,91 +1,35 @@
 # Release notes
 
-## 0.2.0 (2026-10-31): TrueSense
+## 0.3.0 (2026-10-31): production release
 
-The project is now **TrueSense**: one kernel module, one daemon, one CLI, an optional window. Tested only on the **Acer Predator Helios 16 PH16-71** (BIOS V1.18, CachyOS, kernel 7.3.0-4 and 6.18 LTS, PipeWire 1.6). See [docs/STATUS.md](docs/STATUS.md).
+Tested on one machine, the **Acer Predator Helios 16 PH16-71** (BIOS V1.18, CachyOS, kernels 7.3.0-4 and 6.18 LTS). [docs/STATUS.md](docs/STATUS.md) says exactly what was verified on hardware and what is only covered by simulator tests. **The kernel module changed (fans-off), so the DKMS version is 0.3.0: re-run `sudo tools/install.sh`.**
 
-### Added in this release (later)
-* **`native` profile everywhere** (fan control, Smart auto, PREDATOR key, CPU and GPU undervolt, lighting look): read-only, the factory default, behaving like PredatorSense on Windows.
-* **Fans off** with a warning, a start-temperature limit and a watchdog that returns the fans to the firmware when it gets warm; **Charge to 100 % once** with automatic return to the 80 % limit.
-* Smart system: the GPU sampler only runs when a smart feature needs it, and the service paces itself (every 2 s when idle or hands-off). Window: tooltips, Esc to go back, Ctrl+Q, system check and report, focus rings.
-* **Fresh installs behave like PredatorSense on Windows**: firmware fan control, Native auto mode control, and nothing of ours touching clocks or power limits until you pick a smart feature (switching it off hands the firmware's values back).
-* **Per-key animations** (pulse, wave, colour cycle, twinkle) on chosen keys, drawn in software by the key service; per-key colours now live in Lighting as a tab.
-* Fixed a crash risk when closing the window while a background refresh was finishing.
-* **CPU power limits moved to the Undervolt page** and fixed: the service used to overwrite your PL1/PL2 every few seconds; it now keeps them until you go back to automatic. Safety zones (safe, past the safety line, beyond the danger line) with warnings for CPU limits, CPU undervolt and GPU undervolt; beyond the danger line you must type APPLY (window) or pass `--force` (CLI).
-* Headset mic boost fixed (it read the channel count instead of the value). The self-test now covers it and the mic mute.
-* Per-key colour picture follows the real PH16-71 keyboard layout.
-* **GPU undervolt** (NVML clock-curve offset + clock cap) with read-only built-in profiles, the same confirmation and crash-guarded boot apply as the CPU undervolt.
-* **Auto takes over by itself**: a mode you pick now ends when the situation changes (plug, load starts or stops, heat, low battery) or after 10 minutes, and choosing Native/Smart auto applies immediately.
-* **PREDATOR key profiles and a real editor**: pick an action per gesture (including running a script chosen with a file picker), built-in profiles `default`, `gaming`, `work`, `lights` (read-only, copy to edit), live reload in the key service.
-* **Undervolt profiles** with a page of their own: read-only built-ins including `truesense`, explicit confirmation before applying, optional apply-at-boot with a crash guard.
-* Settings no longer repeats the startup and lighting-profile options.
-* **Smart auto profiles** (built in: `truesense`, `battery-first`, `performance-first`, `silent`; read-only, copy to edit) with an editor in the window; the window shows why Smart auto chose a mode and lets you resume auto after a manual pick.
-* **Native auto and Smart auto** power modes (`truesense power auto native|smart`), and curve-based **smart fan** with built-in curves, your own curves (`truesense fan curve ...`) and a draggable curve editor in the window.
-* **Lighting looks** (`truesense look`) and a **boot look**: the daemon applies a chosen look when the laptop starts, before login, and again after resume from suspend. Window: Lighting, Profiles.
-* Keyboard 30-second timeout now also clears the keyboard controller's own flag; per-key paint and picker; rear light three-zone colours; effect speed.
+### Highlights
+* **A fresh install behaves like PredatorSense on Windows.** Fans on the firmware's own control, Native auto power mode, nothing of ours touching clocks or power limits until you choose a smart feature. Every profile kind has a read-only `native` entry that is that default.
+* **One window** (`truesense gui`, Qt 6): a compact home page and clean pages for Lighting (keyboard, per-key on the real layout, rear bar, profiles), fan curves, Smart auto profiles, the PREDATOR key, undervolt (CPU and GPU), battery, audio and settings. Live updates, follows changes made elsewhere, the wheel never changes a setting by accident.
+* **Smart auto** (heat, load and battery aware, with profiles) and **Native auto**; a mode you pick ends by itself when the situation changes.
+* **Fans**: Smart curves (built-in, your own, drag-to-edit), manual with separate CPU/GPU sliders, and Off with a temperature watchdog.
+* **Undervolt** for CPU and GPU with profiles, safety zones and typed confirmation beyond the danger line, power limits the service keeps, and a crash-guarded apply at boot.
+* **PREDATOR key editor** with profiles, any action, and your own scripts through a file picker. Lighting profiles applied by the service at boot and after suspend. Per-key animations.
+
+### Added since 0.2.0
+Everything above, plus: `truesense doctor` checks for the service version, the window and status-bar support; `truesense battery full`; `truesense look`; `truesense keys profile`; `truesense power smart`; `truesense fan curve`; `truesense cpu undervolt` / `gpu undervolt`; the system check and report in Settings; `tools/screenshots.py`; CI; SAFETY, ARCHITECTURE and TROUBLESHOOTING documents.
 
 ### Changed
-* **One kernel module** `truesense_wmi` replaces `acer_rear_wmi` and the separate Linuwu-Sense dependency. DMI-guarded, stable WMI API only, per-open reply buffers (fixes a shared-buffer race), a global command mutex, fans back to firmware Auto when unloaded. Builds warning-free on two kernels; DKMS rebuilds on every kernel update.
-* **Installer** removes the old drivers and files (backed up to `/var/backups/truesense`), blocks conflicting modules, keeps your Purified Voice modes and lighting profiles, runs `doctor` at the end. `tools/uninstall.sh [--purge]` reverses it.
-* **CLI redesign**: 23 areas, `on|off|toggle|status` wherever a switch exists, `--json` anywhere, shell completion for bash, zsh and fish.
-* **Daemon** talks over a UNIX socket (peer-credential checked), keeps its settings across reboots, survives a missing device, is `Type=notify` with a watchdog and `Restart=always`, and publishes live state for status bars (now including fan RPM and the automatic-profile flag).
-
-### Added
-* `truesense doctor` (15 checks, exit code for scripts) and a health timer.
-* **Customisable PREDATOR key**: tap, double, triple and long press, plus Fn+Esc, each bound to any action (power modes, fans, profiles, output switch, mic, lighting, `exec:`...). Validated when set.
-* **Profiles**: save and apply bundles of power, fans, lighting, battery and audio. Four ship by default.
-* Fn+F10 touchpad toggle through the same action system.
-* Audio: default microphone follows the active Purified Voice input; per-input modes; headset-mic boost; jack status.
-* **Optional window** (`truesense gui`, Qt 6 via PyQt6) and Noctalia bar widgets in `contrib/noctalia`.
-* A hardware simulator (`TRUESENSE_SIM=1`) and 28 unit tests including a smoke run of 119 CLI commands.
+* The service no longer rewrites your power limits every few seconds; it keeps yours until you go back to automatic, and hands the firmware's values back when you switch smart features off.
+* The GPU sampler (`nvidia-smi`) starts only when a smart feature needs it; the service paces itself at 2 s when idle.
+* The keyboard's own 30-second timer (a separate controller flag, on by default) is now controlled; the old setting only changed the firmware flag.
+* Defaults: smart fan off, Native auto on, hold time for a manual pick 10 minutes.
 
 ### Fixed
-* The simulator was more lenient than the kernel (accepted values the firmware refuses); it now mirrors every validation.
-* The microphone watcher only reacted to jack events; it now reacts to filter and mode changes.
-* `keyboard profile` crashed in one code path; the doctor mis-reported services when run under `sudo`.
-* A forced-reboot lesson recorded: never write the codec `reconfig` file on this laptop.
+* Headset mic boost read the channel count instead of the value (every change looked like 2 and failed).
+* Slider drags applied an older value instead of the newest; refreshes could move a slider while dragged; the window could crash when closed during a refresh; an uncaught error in a window slot aborted the program (now it is logged and shown).
+* Tests used to talk to the real service and write the real user state; they are now fully isolated. Several tests depended on the real charger, CPU temperature or `/tmp`; they no longer do.
+* Releases after a mode pick, per-key brightness dropping an effect to static, rear-effect changes turning the bar off, Fn+F10/F11/F12 counted as PREDATOR taps, doctor false warnings under `sudo`.
 
-### Still not working or untested
-F8 mic-mute LED, headset detection when plugged in at boot (replug), NVIDIA power limit, undervolt write, battery calibration cycle, GPU mode effect after reboot, Secure Boot signing, `.deb`.
+### Known limits
+Not yet verified on the real laptop: fans-off, undervolt writes (CPU and GPU), Smart auto in real use, charge-to-100 %-once, key animations. F8 mic LED, headset-at-boot detection, NVIDIA power limit: see STATUS.
 
-## 0.1.0 (2026-10-31): first release
+## 0.2.0 and 0.1.0
 
-First working version for the **Acer Predator Helios 16 PH16-71** (BIOS V1.18; tested on CachyOS, kernel 7.3.0-4, PipeWire 1.6, WirePlumber 0.5.18, Secure Boot off). Everything below was checked on that one machine. See [docs/STATUS.md](docs/STATUS.md) for the evidence and for what does not work.
-
-### Added
-* **CLI** `truesense` (and `./rps` from a checkout): status, sensors, power mode, fans, firmware settings, GPU mode, rear light, keyboard lighting, audio output, Purified Voice, CPU limits, selftest.
-* **Kernel helper** `acer_rear_wmi` (DKMS, `/dev/acer-rear`): whitelisted, validated ACPI-WMI commands for power mode, fans, sensors, GPU mode, boot sound, overdrive and the rear light. Returns the fans to firmware Auto when unloaded.
-* **Daemon** `truesense.service`: smart-fan ladder with hysteresis and prediction, thermal governor, power limits, automatic power profile (AC/battery/load), health timer that restarts it and rebuilds DKMS after kernel updates.
-* **Keys** `truesense-keys.service`: Fn+F10 touchpad toggle (no root, via udev rule), PREDATOR key tap / hold / double tap with configurable actions, Fn+Esc hook. Finds the keyboard's HID interface by itself.
-* **Lighting**: rear light bar (5 effects); keyboard per-key RGB (fill, gradient, rainbow, per-key, named groups, saved profiles), 13 built-in effects, brightness read-back, and an opt-in operating-mode colour that follows the power mode.
-* **Audio**: speakers <-> headphones switching while the aux jack is plugged in (instant notification); Purified Voice equivalent using RNNoise on PipeWire (conference and personal modes, per-input filters, automatic headset/array switching with a notification); integration notes for AcerUltraX (Acer DTS sound).
-* **Safety**: read -> write -> read back -> restore on every firmware setting; manual fan duty limited to 20-100 %; undervolt refuses without `--confirm`; no firmware flashing.
-* **Selftest**: `truesense selftest` (15 checks).
-* **Packaging**: `tools/install.sh`, an Arch `PKGBUILD`, systemd units, a udev rule.
-
-### Verified highlights
-* Fans: one write holds; 60 % ~ 4070 rpm, 100 % ~ 6050 rpm. Under a 24-thread AVX load the daemon had both fans at 100/90 % within 10 s, the governor lowered the clock cap in steps, and the CPU held 88-90 C.
-* Per-key lighting: all 126 cells correct; 13 built-in keyboard effects and all 5 rear-bar effects seen working.
-* Purified Voice personal mode: speech level -1.9 dB, quiet floor -24.7 dB. Headset <-> array filter switching on plug events.
-* Survives reboots: modules load, services start, device renumbering (`hidraw2` -> `hidraw3`, `event14` -> `event21`) handled.
-
-### Bugs found and fixed while building this
-* RPM was read with a 12-bit mask; the field is 13 bits (readings above 4095 wrapped).
-* Per-key lighting upload was shifted by 7 cells: `hidraw` drops the first byte of a write on a device without report IDs, so frames must be written as 65 bytes.
-* Setters false-failed about 1 time in 15 because the firmware briefly answers -1 right after a write; read-backs now retry for one second.
-* Purified Voice filters were destroyed on every headset plug event (`node.dont-fallback`); they now survive and re-link.
-* A removed "sticky output" option never did anything (WirePlumber already had that property off).
-
-### Known issues
-* A headset already plugged in at boot is not detected until you unplug and replug it. Do **not** try to fix this through the codec `reconfig` file: it deadlocked the kernel on the test laptop.
-* The F8 mic-mute LED does not follow the mic state (not a codec GPIO).
-* Purified Voice `personal` mode can clip very soft speech.
-* `auto-cpufreq`, if installed, also writes clock caps, so the governor's cap is not a hard guarantee.
-* NVIDIA power limit cannot be changed on this GPU (driver refuses).
-
-### Not included / not tested
-* Not built: `.deb`, a daemon socket / D-Bus API, a tray or GUI, an OpenRGB plugin, live GPU switching.
-* Not tested: Secure Boot signing, an undervolt write (read-only checked), GPU mode taking effect after a reboot, a full battery-calibration cycle, any other model or BIOS version.
-
-### Upgrade notes
-First release. Re-running `sudo tools/install.sh` upgrades in place and restarts the daemon. The user services (`truesense-keys`, `truesense-audio`) restart for the invoking user; other logged-in users restart theirs on next login.
+Earlier versions were development releases of this project (first the `rpredatorsense` tool, then the rename to TrueSense with one kernel module). Their contents are all part of 0.3.0 above; see the git history for the details.

@@ -1,65 +1,58 @@
 # Status: what works, what does not (Acer Predator Helios 16 PH16-71)
 
-Tested on one machine: **Acer Predator Helios 16 PH16-71, BIOS V1.18, i7-13700HX, RTX 4060 Laptop (dGPU/MUX mode), CachyOS, kernel 7.3.0-4, PipeWire 1.6, WirePlumber 0.5.18, Secure Boot disabled.**
-Other models or BIOS versions are untested; see the warnings in the README before trying them.
+Tested on one machine: **Acer Predator Helios 16 PH16-71, BIOS V1.18, i7-13700HX, RTX 4060 Laptop (dGPU/MUX mode), CachyOS, kernels 7.3.0-4 and 6.18 LTS, PipeWire 1.6, WirePlumber 0.5, Secure Boot off.** Other models or BIOS versions are untested.
 
-Meaning of the labels: **VERIFIED** = set, read back (or measured / seen by the owner) and restored on this laptop. **PARTIAL** = works with a stated limit. **NOT WORKING / NOT BUILT** = listed so nobody wastes time. The raw chronological evidence is in [verification-log.md](verification-log.md).
+Labels: **VERIFIED** = set, read back (or measured, or seen by the owner) and restored on this laptop. **SIMULATED** = the logic is covered by tests against the built-in simulator but has **not** been exercised on the real laptop yet. **PARTIAL** = works with a stated limit. **UNTESTED** = written, never run on hardware. **NOT WORKING / NOT BUILT** = listed so nobody wastes time. The raw chronological evidence is in [verification-log.md](verification-log.md).
 
-## Firmware, power and cooling
+## Power, cooling, battery
 | Feature | Status | Notes |
 |---|---|---|
-| Power modes quiet / balanced / performance / turbo / eco | VERIFIED | all five set and read back; platform_profile agrees |
-| Temperatures and fan RPM (firmware) | VERIFIED | the RPM field is 13 bits wide |
-| Fans: Auto, Max, manual % per fan | VERIFIED | a single write holds; 60 % about 4070 rpm, 70 % about 4580, 100 % about 6050, Max about 6050; manual duty limited to 20-100 % |
-| Smart-fan daemon (fan ladder, thermal governor, auto power profile) | VERIFIED | idle -> firmware Auto; 24-thread AVX load -> fans 100/90 within 10 s, governor lowers the clock cap in steps, CPU held 88-90 C; returns to idle afterwards. `auto-cpufreq`, if installed, also writes the clock caps, so the cap is not a hard guarantee |
-| LCD overdrive, boot animation/sound, battery 80 % limit, USB power-off charge level, keyboard backlight timeout | VERIFIED | set, read back, restored. Read-backs retry for 1 s because the firmware can answer -1 right after a write |
-| Battery calibration | PARTIAL | the flag toggles and reads back; a real calibration cycle (hours) was not run |
-| GPU mode (MUX: optimus / nvidia / auto) | PARTIAL | read and write verified (restored immediately); the effect after a reboot was not tested; live switching (supergfxctl / envycontrol) not implemented |
-| CPU PL1/PL2 (RAPL) | VERIFIED | write, read back, restore (needs root); out-of-range values refused; lock bit clear on this unit |
-| Undervolt (MSR 0x150) | PARTIAL | read only: core and cache planes report 0 mV. Writing an offset was **not attempted**; the tool refuses without `--confirm` and limits to -120 mV |
-| NVIDIA power limit (`nvidia-smi -pl`) | NOT POSSIBLE | the driver reports it is not supported on this GPU |
-| Custom boot logo | NOT SUPPORTED | firmware write; refused on purpose |
+| Power modes eco / quiet / balanced / performance / turbo | VERIFIED | all five set and read back |
+| Temperatures and fan RPM | VERIFIED | the RPM field is 13 bits wide |
+| Fans: Auto, Max, manual % (one or separate CPU/GPU) | VERIFIED | one write holds; duty 20 to 100 % |
+| Smart fan (earlier ladder version) | VERIFIED | under a 24-thread load the fans reached 100/90 % within 10 s and the CPU held 88 to 90 °C |
+| Smart fan (current curve version, built-in and custom curves) | SIMULATED | same safety rules; the curve engine itself has not been run under real load |
+| Fans off (0 %) with watchdog | UNTESTED | the kernel module accepts "both 0" only since 0.3.0; how the firmware reacts to a 0 % command is unknown |
+| Native auto (Balanced on power, Eco on battery) | SIMULATED | modelled on PredatorSense from the captures; not compared side by side with Windows |
+| Smart auto and its profiles | SIMULATED | escalation, Turbo timing, thermal back-off, battery rules, resume-by-itself: all in tests |
+| CPU power limits (kept by the service) | PARTIAL | write, read-back and restore verified earlier (root); the "service keeps them" logic is SIMULATED |
+| 80 % battery limit, USB charging while off, calibration flag, LCD overdrive, boot sound, keyboard timeout | VERIFIED | set, read back, restored. The keyboard's own 30 s timer is a separate controller flag, now handled |
+| Charge to 100 % once | SIMULATED | only the firmware's 80 % / 100 % exist; no other threshold is possible |
+| GPU mode (MUX) | PARTIAL | read and write verified (restored immediately); the effect after a reboot was not tested; no live switching |
+| CPU undervolt (MSR 0x150) | PARTIAL | reading is verified (0 mV); **writing was never tried**; the BIOS may lock it. Guarded: confirmation, safety zones, rollback |
+| GPU undervolt (NVML offset and clock cap) | PARTIAL | reading the offset range is verified (the driver supports it); **writing was never tried**; the GPU already had +200 MHz set outside TrueSense when first read |
+| Undervolt at boot (crash guard) | SIMULATED | |
+| NVIDIA power limit | NOT POSSIBLE | the driver reports it is not supported on this GPU |
 
 ## Lighting
 | Feature | Status | Notes |
 |---|---|---|
-| Rear light bar: static, breathing, neon, wave, twinkling | VERIFIED | all five seen working; colour, speed, brightness read back |
-| Keyboard per-key RGB (fill, gradient, rainbow, per-key, named groups, saved profiles) | VERIFIED | all 126 cells correct after fixing the hidraw report-id framing (writes must be 65 bytes: a leading 0 plus 64) |
-| Keyboard built-in effects | VERIFIED | static, breathing, wave, snake, ripple, raindrop, star, heartbeat, neon (needs brightness 50), lightning, spot, fireball, snow |
-| Keyboard OPERATING MODE (colour follows the power mode) | PARTIAL | the keyboard shows one static colour by itself and does **not** track the power mode; re-sending the colour on each mode change works (green / blue / cyan confirmed). Colours are this project's defaults, not Acer's. Daemon hook is opt-in (`[keyboard] operating_follow`) and was not exercised live |
-| Fn+F11 / Fn+F12 keyboard brightness | VERIFIED (firmware) | the keyboard firmware does it cleanly by itself; the key service deliberately ignores these keys |
+| Rear light bar: 5 effects, three parts (static) | VERIFIED / PARTIAL | effects seen working; the three-part static colours are accepted by the firmware (the order left, middle, right is confirmed for the left part only) |
+| Keyboard: 13 effects, colour, speed, brightness | VERIFIED | brightness and speed read back or seen; speed range may be wider than the UI offers |
+| Per-key RGB (select, palette, gradient, rainbow, undo) | VERIFIED | all cells correct; the picture follows the real layout |
+| Per-key animations (software) | SIMULATED | drawn by the key service at about 5 frames a second |
+| Lighting profiles, boot and resume lighting | SIMULATED | applied by the service at start and after suspend |
+| Fn+F11 / Fn+F12 brightness | VERIFIED | done by the keyboard; the key service ignores these keys |
 
-## Keys and buttons
+## Keys, audio
 | Feature | Status | Notes |
 |---|---|---|
-| Fn+F10 touchpad toggle | VERIFIED | works without root (udev rule); reads back the real state |
-| PREDATOR key: tap / hold / double tap | VERIFIED | defaults: step power mode (held 30 min against the auto profile), toggle fans Max, switch speakers/headphones; configurable |
-| Fn+Esc | PARTIAL | sends a vendor report `04 8a ff` (plus KEY_KPPLUSMINUS); no default action; configurable |
-| Fn+arrow keys | CAPTURED | each sends only KEY_KPPLUSMINUS, indistinguishable from each other; nothing else to bind |
-| Mic mute toggle | VERIFIED | via PipeWire |
-| F8 mic-mute LED | NOT WORKING | not a codec GPIO (GPIO0-2 tested); the kernel's LED hook never fires on this SOF setup. Probably driven by the keyboard controller or EC; the mechanism is unknown |
-
-## Audio
-| Feature | Status | Notes |
-|---|---|---|
-| Headset microphone on the 3.5 mm jack | PARTIAL | works once the headset is plugged in while running (mainline kernel quirk for 1025:166c). **A headset already plugged in at boot is not detected until you unplug and replug it.** Do not try to fix this with the codec `reconfig` interface: it deadlocked the kernel on this laptop |
-| Purified Voice equivalent (RNNoise via PipeWire) | VERIFIED | conference and personal modes measured: speech level -1.9 dB, quiet floor -24 dB. Personal mode sometimes clips very soft words |
-| Purified Voice automatic switching + notification | VERIFIED | headset filter when a headset is plugged in, mic-array filter otherwise |
-| Purified Voice for speakers/headphones output | PARTIAL | wiring confirmed; attenuation not measured; off by default (it also gates music) |
-| Acer DTS sound via AcerUltraX | VERIFIED (measured) | external project; offline render of one test signal through all modes on both speakers and headphones shows clear, mode-dependent processing. Whether it sounds better is subjective |
-| Speakers <-> headphones while the aux jack is plugged in | VERIFIED | speakers and headphones share one playback PCM, so only one exists at a time; the tool flips the card profile and shows an instant notification. Flipping only the codec switches does not work |
+| PREDATOR key tap / double / long, Fn+F10 | VERIFIED | |
+| Key bindings editor, profiles, scripts, live reload | SIMULATED | the editing logic is tested; reload by the running service not yet watched live |
+| F8 mic-mute LED | NOT WORKING | not a codec GPIO; the mechanism is unknown |
+| Speakers / headphones switching, jack mode, headset mic boost, mic mute | VERIFIED | |
+| Headset microphone | PARTIAL | detected after a replug; a headset already plugged in at boot is not detected until you replug it (kernel quirk). **Never write the codec `reconfig` file** |
+| Purified Voice style noise reduction (RNNoise) | VERIFIED | measured |
+| Acer DTS through AcerUltraX | VERIFIED | measured |
 
 ## System
 | Item | Status | Notes |
 |---|---|---|
-| Install / uninstall script, DKMS module, systemd units, udev rule | VERIFIED | survives reboots: modules load, services start, devices renumbering handled |
-| `truesense selftest`, `truesense doctor` | doctor: all checks pass on the test laptop | selftest covers firmware settings, daemon, key service, keyboard read-back, audio, Purified Voice config; both are in the unit suite via the simulator (28 tests, 119 CLI commands) |
-| Single kernel module `truesense_wmi` (replaces earlier helper drivers), DKMS for two kernels | VERIFIED | built clean on 7.3.0-4-cachyos and 6.18.55-2-cachyos-lts; 18/18 kernel-side validation checks; 4 concurrent clients, 0 errors |
-| Daemon IPC, saved profiles, key actions | VERIFIED | on hardware; unit-tested in the simulator |
-| Optional window (`truesense gui`) | PARTIAL | opens and shows live values on the test laptop; individual controls have not each been clicked on hardware |
-| Noctalia bar widgets (`contrib/noctalia`) | PARTIAL | power-mode and fan widgets show live state and respond to IPC; the RGB widget and the panels were not exercised interactively |
-| Arch package (PKGBUILD) | WRITTEN | updated for 0.2.0; not built with makepkg during testing |
-| Secure Boot module signing | UNTESTED | DKMS signs with its own key; Secure Boot was off on the test machine |
+| Installer, uninstaller, DKMS for two kernels, systemd units, udev rule, doctor, self-test | VERIFIED | survives reboots; kernel updates rebuild the module |
+| One-line install (`get.sh`) | PARTIAL | downloads the tagged release |
+| Window (Qt 6), Noctalia widgets | PARTIAL | every page rendered and the logic tested headlessly; not every control was clicked on the real laptop |
+| Arch package (PKGBUILD) | WRITTEN | not built with `makepkg` during testing |
+| Secure Boot module signing | UNTESTED | DKMS signs with its own key; Secure Boot was off |
+| `.deb`, OpenRGB plugin, tray icon, D-Bus API | NOT BUILT | |
 
-## Not built
-`.deb` package, a D-Bus API (the daemon has a UNIX-socket API), a tray icon, an OpenRGB plugin, live GPU switching, automatic restore of per-key lighting after a firmware reset.
+When a SIMULATED or UNTESTED item gets verified on hardware, this table is updated; please report what you see (an issue with `truesense doctor --json`).
