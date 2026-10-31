@@ -268,7 +268,7 @@ class Brain:
         def set_(key, value):
             if key not in ("smart_fan", "auto_profile", "operating_follow"): raise hw.HwError(f"unknown setting {key!r}")
             if not isinstance(value, bool): raise hw.HwError("value must be true or false")
-            self.st.set(key, value)
+            self.st.set(key, value); self.log(f"setting {key} = {value}", 20)
             if key == "smart_fan" and not value: self.written = None
             return self.st.snapshot()
 
