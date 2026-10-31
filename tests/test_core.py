@@ -148,6 +148,19 @@ class TestDaemonLogic(Base):
         device.SIM.mode = 6; b.cur_mode = "eco"; b.busy_hold = 20; h["hold"](minutes=30); self.drive(b, 35, 70, 60, 90); self.assertEqual(device.SIM.mode, 6)
         h["hold"](minutes=None); self.drive(b, 35, 70, 60, 90); self.assertEqual(device.SIM.mode, 5)
 
+    def test_boot_look_is_stored_and_applied(self):
+        import tempfile
+        from truesense import looks, keyboard
+        looks.BOOT_FILE = tempfile.mkdtemp() + "/boot-look.json"
+        b = self.make(); h = b.handlers(); self.assertIsNone(h["boot_look"](action="get"))
+        look = {"keyboard": {"mode": "effect", "name": "wave", "color": "00ff00", "speed": 4, "brightness": 20, "direction": 0}, "rear": {"mode": "breathing", "color": "ff0000", "speed": 2, "brightness": 80, "direction": 1}}
+        h["boot_look"](action="set", look=look); self.assertEqual(h["boot_look"](action="get")["keyboard"]["name"], "wave")
+        with self.assertRaises(device.HwError): h["boot_look"](action="set", look={})
+        keyboard.SIM["packets"].clear(); b.apply_boot_look("test"); time.sleep(0.5)
+        self.assertTrue(keyboard.SIM["packets"], "the boot look should have reached the keyboard")
+        self.assertEqual(device.SIM.rear[1], 1)                                  # breathing
+        h["boot_look"](action="clear"); self.assertIsNone(h["boot_look"](action="get"))
+
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run
         device.SIM.run = lambda c: "err no such device\n"

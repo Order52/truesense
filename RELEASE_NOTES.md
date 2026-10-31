@@ -4,6 +4,10 @@
 
 The project is now **TrueSense**: one kernel module, one daemon, one CLI, an optional window. Tested only on the **Acer Predator Helios 16 PH16-71** (BIOS V1.18, CachyOS, kernel 7.3.0-4 and 6.18 LTS, PipeWire 1.6). See [docs/STATUS.md](docs/STATUS.md).
 
+### Added in this release (later)
+* **Lighting looks** (`truesense look`) and a **boot look**: the daemon applies a chosen look when the laptop starts, before login, and again after resume from suspend. Window: Lighting, Profiles.
+* Keyboard 30-second timeout now also clears the keyboard controller's own flag; per-key paint and picker; rear light three-zone colours; effect speed.
+
 ### Changed
 * **One kernel module** `truesense_wmi` replaces `acer_rear_wmi` and the separate Linuwu-Sense dependency. DMI-guarded, stable WMI API only, per-open reply buffers (fixes a shared-buffer race), a global command mutex, fans back to firmware Auto when unloaded. Builds warning-free on two kernels; DKMS rebuilds on every kernel update.
 * **Installer** removes the old drivers and files (backed up to `/var/backups/truesense`), blocks conflicting modules, keeps your Purified Voice modes and lighting profiles, runs `doctor` at the end. `tools/uninstall.sh [--purge]` reverses it.

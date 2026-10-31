@@ -2,8 +2,8 @@
 
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
-import sys, threading
-from . import actions, audio, backend as hw, config, control, ipc, keyboard, keymap, profiles, userstate
+import os, sys, threading
+from . import actions, audio, backend as hw, config, control, ipc, keyboard, keymap, looks, profiles, userstate
 from .device import HwError
 
 try:
@@ -148,6 +148,7 @@ JACK_HINT = {"auto": "Uses what the codec detects when you plug something in.",
              "headset": "Always use the headset microphone, even if the codec has not detected it (try this if it is missing after boot)."}
 
 
+AUTOSTART = os.path.expanduser("~/.config/autostart/truesense.desktop")
 PAGES = {"home": 0, "lighting": 1, "keys": 2, "battery": 3, "audio": 4, "settings": 5}
 
 
@@ -172,6 +173,7 @@ class Segmented(QWidget if Qt else object):
 
 class Bus(QObject if Qt else object):
     message = pyqtSignal(str) if Qt else None
+    boot_text = pyqtSignal(str) if Qt else None
     refreshed = pyqtSignal(dict) if Qt else None
 
 
@@ -237,7 +239,7 @@ class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.refreshed.connect(self._apply); self.busy = {}; self.loading = False
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.loading = False
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings): build()
@@ -351,7 +353,7 @@ class Window(QMainWindow if Qt else object):
     # ---- Lighting: keyboard and rear bar on one page, one at a time ------------------------------------------------------------------------
     def p_lighting(self):
         lay = self.page("Lighting")
-        self.light_tabs = Segmented(["Keyboard", "Rear light bar"], tiles=True, icons=["keyboard", "bar"]); lay.addWidget(self.light_tabs); stack = QStackedWidget(); lay.addWidget(stack)
+        self.light_tabs = Segmented(["Keyboard", "Rear bar", "Profiles"], tiles=True, icons=["keyboard", "bar", "palette"]); lay.addWidget(self.light_tabs); stack = QStackedWidget(); lay.addWidget(stack)
         self.light_tabs.picked.connect(stack.setCurrentIndex); self.light_tabs.set_index(0)
         kb = QWidget(); v = QVBoxLayout(kb); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
         self.kb_on = self.switch(v, "Backlight", lambda x: self.do(lambda: actions.run("keyboard:on" if x else "keyboard:off"), lambda r: r, refresh=False)); self.sep(v)
@@ -368,7 +370,48 @@ class Window(QMainWindow if Qt else object):
         for b in self.zc + [self.rear_color]: b.changed.connect(lambda h_: self.rear_apply())
         self.sep(v); self.line(v, "Static: left, middle, right", *self.zc); self.line(v, "Colour (other effects)", self.rear_color)
         self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply(), suffix=" %"); v.addStretch(); stack.addWidget(rr)
-        lay.addStretch()
+        stack.addWidget(self.looks_tab()); lay.addStretch()
+
+    def looks_tab(self):
+        """Saved looks (a named keyboard effect/brightness/colours plus rear light) and what is applied at boot."""
+        w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
+        v.addWidget(self.hint("Set the keyboard and rear light the way you like (effect, speed, brightness), then save it as a look."))
+        self.look_cb = QComboBox(); self.look_cb.setMinimumWidth(150)
+        self.line(v, "Saved looks", self.look_cb, self.btn("Apply", self.look_apply, True), self.btn("Delete", self.look_delete))
+        self.look_name = QLineEdit(); self.look_name.setPlaceholderText("name, e.g. wave-dim"); self.look_name.setMinimumWidth(150)
+        self.line(v, "Save what is on now", self.look_name, self.btn("Save", self.look_save)); self.sep(v)
+        self.boot_cb = QComboBox(); self.boot_cb.setMinimumWidth(150)
+        self.line(v, "Use at boot", self.boot_cb, self.btn("Set", self.boot_set), self.btn("Clear", lambda: self.do(lambda: ipc.call("boot_look", action="clear"), "Nothing is applied at boot now", refresh=False)))
+        self.boot_lbl = self.hint("…"); v.addWidget(self.boot_lbl)
+        v.addWidget(self.hint("Applied by the TrueSense service when the laptop starts (before you log in) and again after every resume from suspend."))
+        self.reload_looks(); v.addStretch(); return w
+
+    def reload_looks(self):
+        ns = looks.names(); self.look_cb.clear(); self.look_cb.addItems(ns or ["(none saved)"])
+        self.boot_cb.clear(); self.boot_cb.addItem("What is on now", "__current__"); [self.boot_cb.addItem(n, n) for n in ns]
+        def work():
+            try: cur = ipc.call("boot_look", action="get"); txt = ("At boot: " + looks.describe(cur)) if cur else "At boot: nothing is applied"
+            except Exception as e: txt = "At boot: needs the updated service (re-run the installer)" if "unknown command" in str(e) else f"At boot: unknown ({e})"
+            self.bus.boot_text.emit(txt)
+        threading.Thread(target=work, daemon=True).start()
+
+    def look_save(self):
+        name = self.look_name.text().strip()
+        def go(): looks.save(name); return name
+        self.do(go, lambda n: f"Saved look '{n}'", refresh=False); QTimer.singleShot(400, self.reload_looks)
+
+    def look_apply(self):
+        n = self.look_cb.currentText()
+        self.do(lambda: looks.apply(looks.load(n)), lambda r: f"Look '{n}': " + ", ".join(r), refresh=False)
+
+    def look_delete(self):
+        n = self.look_cb.currentText(); self.do(lambda: looks.delete(n), f"Deleted look '{n}'", refresh=False); QTimer.singleShot(400, self.reload_looks)
+
+    def boot_set(self):
+        sel = self.boot_cb.currentData()
+        def go():
+            look = looks.capture() if sel == "__current__" else looks.load(sel); ipc.call("boot_look", action="set", look=look); return looks.describe(look)
+        self.do(go, lambda d: f"At boot: {d}", refresh=False); QTimer.singleShot(500, self.reload_looks)
 
     def rear_apply(self):
         def go():
@@ -443,7 +486,10 @@ class Window(QMainWindow if Qt else object):
             e = QLineEdit(self.cfg["keys"][g]); e.setMinimumWidth(170); self.line(v, label, e, self.btn("Save", lambda g=g, e=e: self.save_key(g, e)), self.btn("Test", lambda e=e: self.do(lambda: actions.run(e.text()) or "ok", lambda r: str(r))))
             self.key_edits[g] = e
         self.line(v, "Apply saved changes", self.btn("Restart keys", lambda: self.do(lambda: __import__("subprocess").run(["systemctl", "--user", "restart", "truesense-keys"], check=False), "Key service restarted")))
-        v = self.card(lay, "At login"); v.addWidget(self.hint("Lighting is saved on every change. Choose what comes back."))
+        v = self.card(lay, "Start up")
+        self.autostart = self.switch(v, "Open this window at login", self.set_autostart, "Writes ~/.config/autostart/truesense.desktop. Hyprland needs `exec-once = truesense gui` (or uwsm) to run autostart entries.")
+        self.autostart.setChecked(os.path.exists(AUTOSTART)); self.sep(v)
+        v = self.card(lay, "At login"); v.addWidget(self.hint("Lighting is saved on every change. Choose what comes back. For a named look at boot, see Lighting, Profiles."))
         s = self.cfg["startup"]; keys = [k for k, _ in START]
         for key, title in (("keyboard", "Keyboard"), ("rear", "Rear light")):
             sg = Segmented([l for _, l in START]); sg.set_index(keys.index(s[key]) if s[key] in keys else 0)
@@ -455,6 +501,16 @@ class Window(QMainWindow if Qt else object):
         for s_, val in ((self.pl1, 65), (self.pl2, 80)): s_.setRange(25, 120); s_.setDecimals(0); s_.setSuffix(" W"); s_.setValue(val)
         self.line(v, "PL1 / PL2 (25 to 120 W)", self.pl1, self.pl2, self.btn("Apply", lambda: self.do(lambda: ipc.call("cpu_limits", pl1=self.pl1.value(), pl2=self.pl2.value()), "CPU limits applied", refresh=False)))
         lay.addStretch()
+
+    def set_autostart(self, on):
+        def go():
+            if on:
+                os.makedirs(os.path.dirname(AUTOSTART), exist_ok=True)
+                with open(AUTOSTART, "w") as f: f.write("[Desktop Entry]\nType=Application\nName=TrueSense\nExec=truesense gui\nX-GNOME-Autostart-enabled=true\n")
+            else:
+                try: os.remove(AUTOSTART)
+                except FileNotFoundError: pass
+        self.do(go, "Window opens at login" if on else "Window does not open at login", refresh=False)
 
     def save_key(self, g, e):
         err = actions.validate(e.text())

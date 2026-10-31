@@ -62,8 +62,8 @@ def validate(cfg):
     if not 25 <= c["pl_normal_w"] <= 120 or not 25 <= c["pl_gaming_w"] <= 120: out.append("[cpu] power limits must be 25..120 W")
     if cfg["audio"]["jack"] not in ("auto", "headphones", "headset"): out.append("[audio] jack must be auto, headphones or headset")
     s = cfg["startup"]
-    if not isinstance(s["keyboard"], str) or not (s["keyboard"] in ("last", "default", "none", "off") or s["keyboard"].startswith("profile:")): out.append("[startup] keyboard must be last, default, none, off or profile:NAME")
-    if s["rear"] not in ("last", "default", "none", "off"): out.append("[startup] rear must be last, default, none or off")
+    if not isinstance(s["keyboard"], str) or not (s["keyboard"] in ("last", "default", "none", "off") or s["keyboard"].startswith(("profile:", "look:"))): out.append("[startup] keyboard must be last, default, none, off, profile:NAME or look:NAME")
+    if not isinstance(s["rear"], str) or not (s["rear"] in ("last", "default", "none", "off") or s["rear"].startswith("look:")): out.append("[startup] rear must be last, default, none, off or look:NAME")
     if cfg["osd"]["style"] not in ("native", "noctalia", "none"): out.append("[osd] style must be native, noctalia or none")
     return out
 

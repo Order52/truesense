@@ -5,7 +5,7 @@ a missing/failing device never kills the daemon (it keeps waiting and retrying).
 20 % ~1700 rpm, 30 2160, 40 2850, 50 3460, 60 4070, 70 4600, 80 5100, 100 6050. Firmware Auto is the only way to reach 0 rpm, so when calm control goes back to it.
 """
 import glob, os, pwd, signal, socket, subprocess, sys, threading, time
-from . import backend as hw, config, cpu, ipc, osd, state as statemod, touchpad
+from . import backend as hw, config, cpu, ipc, looks, osd, state as statemod, touchpad
 
 RUN = os.environ.get("TRUESENSE_RUN", "/run/truesense")
 RAPL = "/sys/class/powercap/intel-rapl:0/"
@@ -57,7 +57,7 @@ class Brain:
         self.activity = "idle"; self.last_target = None; self.last_ac = None; self.cur_mode = None
         self.cap = self.p["cap_max_khz"]; self.cap_changed = 0
         self.cpus = sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_max_freq"))
-        self.hw_ok = True; self._last_err = 0.0; self.live = {}; self.lock = threading.RLock()
+        self.hw_ok = True; self._last_err = 0.0; self.live = {}; self.lock = threading.RLock(); self.last_clock = None
         self.find_hwmon()
         threading.Thread(target=self.gpu_stream, daemon=True).start()
 
@@ -224,7 +224,24 @@ class Brain:
             except OSError: pass
 
     # ---- main step -----------------------------------------------------------------------------------------------------------------------
+    def apply_boot_look(self, why):
+        """Put the look chosen for boot on the lights (the keyboard may enumerate a little after we start, so retry for ~20 s)."""
+        def work():
+            look = looks.read_boot()
+            if not look: return
+            for attempt in range(20):
+                try:
+                    with self.lock: done = looks.apply(look)
+                    print(f"boot look ({why}): " + "; ".join(done), flush=True); return
+                except (hw.HwError, OSError) as e:
+                    if attempt == 19: print(f"boot look ({why}) failed: {e}", flush=True)
+                    time.sleep(1)
+        threading.Thread(target=work, daemon=True, name="boot-look").start()
+
     def step(self):
+        wall, mono = time.time(), time.monotonic()
+        if self.last_clock and (wall - self.last_clock[0]) - (mono - self.last_clock[1]) > 5: self.apply_boot_look("resume from suspend")     # wall clock ran, monotonic did not
+        self.last_clock = (wall, mono)
         with self.lock: self._step()
 
     def _step(self):
@@ -298,6 +315,14 @@ class Brain:
                 if hold_minutes: self.st.set("profile_hold_until", time.time() + float(hold_minutes) * 60)
                 return new
 
+        def boot_look(action="get", look=None):
+            if action == "get": return looks.read_boot()
+            if action == "clear": looks.write_boot(None); return None
+            if action == "set":
+                if not isinstance(look, dict) or not (look.get("keyboard") or look.get("rear")): raise hw.HwError("a look needs keyboard and/or rear settings")
+                return looks.write_boot(look)
+            raise hw.HwError("boot_look: get | set | clear")
+
         def hold(minutes=None):
             if minutes is None: self.st.set("profile_hold_until", 0); return 0
             self.st.set("profile_hold_until", time.time() + float(minutes) * 60); return float(minutes)
@@ -309,7 +334,7 @@ class Brain:
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "power": power, "hold": hold, "cpu_limits": limits, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
 
 
 def main():
@@ -324,6 +349,7 @@ def main():
     uids = [brain.pw.pw_uid] if brain.pw else []
     server = ipc.Server(brain.handlers(), uids); server.start()
     signal.signal(signal.SIGTERM, brain.shutdown); signal.signal(signal.SIGINT, brain.shutdown)
+    brain.apply_boot_look("boot")
     sd_notify("READY=1"); nxt = time.monotonic()
     try:
         while True:

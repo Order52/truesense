@@ -1,6 +1,6 @@
 """truesense: command line for the Acer Predator Helios 16 (PH16-71).   truesense <area> <verb> ...   (every setting has on / off / toggle / status; --json for scripts)
 
-Areas: status sensors power fan battery display boot gpu rear keyboard startup audio keys profile cpu touchpad service config doctor selftest completion gui
+Areas: status sensors power fan battery display boot gpu rear keyboard look startup audio keys profile cpu touchpad service config doctor selftest completion gui
 """
 import argparse, json, os, subprocess, sys
 from . import __version__
@@ -82,9 +82,14 @@ def build():
     q = rs.add_parser("set"); q.add_argument("effect", choices=list(hw.REAR_MODES)); q.add_argument("--color", default="ffffff"); q.add_argument("--speed", type=int, default=3)
     q.add_argument("--brightness", type=int, default=100); q.add_argument("--direction", type=int, default=1, choices=[0, 1])
     q.add_argument("--zones", help="static only: one colour, or three (left,middle,right), e.g. ff0000,00ff00,0000ff")
+    # look (saved lighting looks)
+    p = sub.add_parser("look", help="saved lighting looks (keyboard effect/brightness/colours + rear light)"); ls = p.add_subparsers(dest="verb")
+    ls.add_parser("list"); q = ls.add_parser("save", help="save what is on the lights now"); q.add_argument("name")
+    for v_ in ("apply", "show", "delete"): q = ls.add_parser(v_); q.add_argument("name")
     # startup
     p = sub.add_parser("startup", help="what the lights and profile do at login"); ss = p.add_subparsers(dest="verb")
     ss.add_parser("show"); ss.add_parser("apply", help="do it now (the user service does this at login)")
+    q = ss.add_parser("boot", help="the look applied at BOOT (before login) and after suspend: NAME | current | clear (no argument: show)"); q.add_argument("what", nargs="?")
     q = ss.add_parser("set"); q.add_argument("target", choices=["keyboard", "rear", "profile"]); q.add_argument("value", help="keyboard: last|default|none|off|profile:NAME   rear: last|default|none|off   profile: a profile name or none")
     # keyboard
     p = sub.add_parser("keyboard", help="keyboard lighting"); ks = p.add_subparsers(dest="verb")
@@ -224,15 +229,33 @@ def h_rear(a):
     else: emit(actions.run("rear:" + v))
 
 
+def h_look(a):
+    from . import looks
+    v = a.verb or "list"
+    if v == "list": r = looks.names(); emit(r, "\n".join(r) or "(no saved looks; `truesense look save NAME`)")
+    elif v == "save": l = looks.save(a.name); emit(l, f"saved look '{a.name}': {looks.describe(l)}")
+    elif v == "show": l = looks.load(a.name); emit(l, f"{a.name}: {looks.describe(l)}")
+    elif v == "apply": r = looks.apply(looks.load(a.name)); emit(r, "\n".join(r))
+    elif v == "delete": looks.delete(a.name); emit(a.name, f"deleted look '{a.name}'")
+
+
 def h_startup(a):
-    from . import config, startup, profiles, keyprofiles
+    from . import config, startup, profiles, keyprofiles, looks
     v = a.verb or "show"
-    if v == "show": emit(config.load()["startup"])
+    if v == "boot":
+        cur = ipc.call("boot_look", action="get")
+        if a.what is None: emit(cur, ("at boot and after suspend: " + looks.describe(cur)) if cur else "no look is applied at boot")
+        elif a.what == "clear": ipc.call("boot_look", action="clear"); emit(None, "nothing is applied at boot any more")
+        else:
+            look = looks.capture() if a.what == "current" else looks.load(a.what)
+            ipc.call("boot_look", action="set", look=look); emit(look, f"at boot and after suspend: {looks.describe(look)}")
+    elif v == "show": emit(config.load()["startup"])
     elif v == "apply": r = startup.apply(); emit(r, "\n".join(r))
     elif v == "set":
         val = "" if (a.target == "profile" and a.value == "none") else a.value
         if a.target == "profile" and val and val not in profiles.names(): raise HwError(f"no profile {val!r}: {', '.join(profiles.names())}")
         if a.target == "keyboard" and val.startswith("profile:") and not keyprofiles.exists(val[8:]): raise HwError(f"no lighting profile {val[8:]!r}: {', '.join(keyprofiles.names())}")
+        if val.startswith("look:") and val[5:] not in looks.names(): raise HwError(f"no look {val[5:]!r}: {', '.join(looks.names())}")
         cfg = config.load(); cfg["startup"][a.target] = val; bad = [p for p in config.validate(cfg) if "[startup]" in p]
         if bad: raise HwError(bad[0])
         config.write_user({"startup": {a.target: val}}); emit(val, f"at login, {a.target}: {val or 'none'}")
