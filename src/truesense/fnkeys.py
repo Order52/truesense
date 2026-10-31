@@ -67,6 +67,13 @@ def run(cfg=None):
     if not node: raise SystemExit("Fn-key HID interface (usage page 0x88) not found")
     print("listening on", node, {g: k[g] for g in ("tap", "double", "triple", "long", "fn_esc")}, flush=True)
 
+    def fire(spec, label):
+        try:
+            msg = actions.run(spec, cfg); print(label, "->", spec, "->", msg or "ok", flush=True)
+            if msg: osd.show(msg, "power", cfg)
+        except Exception as e:
+            print(label, "->", spec, "FAILED:", e, flush=True); osd.show(f"TrueSense: {e}", "power", cfg)
+
     def do(gesture):
         spec = k[gesture]
         try:
@@ -83,5 +90,5 @@ def run(cfg=None):
             ev = CODES.get(bytes(r[1:3]))
             if ev == "predator_down": g.press()
             elif ev == "release": g.release()
-            elif ev == "fn_f10": do_touch = "touchpad-toggle"; threading.Thread(target=lambda: print("fn+f10 ->", actions.run(do_touch, cfg), flush=True), daemon=True).start()
+            elif ev == "fn_f10": threading.Thread(target=lambda: fire("touchpad-toggle", "fn_f10"), daemon=True).start()
             elif ev == "fn_esc": do("fn_esc")

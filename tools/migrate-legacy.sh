@@ -51,6 +51,8 @@ if [ -n "$U" ]; then
     tar -czf "/var/backups/truesense/legacy-userfiles-$(date +%Y%m%d-%H%M%S).tar.gz" "$PWD_"/rps-* 2>/dev/null; rm -f "$PWD_"/rps-pv-*.conf "$PWD_"/rps-purified-voice-*.conf
     say "old Purified Voice filters removed (modes kept: $(tr '\n' ' ' < /var/lib/truesense/migrated_voice))"
   fi
+  OLDSTATE=""; for f in "$H"/.cache/predator-fan-mode "$H"/.cache/predator-auto-off "$H"/.cache/predator-profile-hold "$H"/.cache/predator-log "$H"/.cache/rpredatorsense-kb; do [ -e "$f" ] && OLDSTATE="$OLDSTATE $f"; done
+  [ -n "$OLDSTATE" ] && { tar -czf "/var/backups/truesense/legacy-state-$(date +%Y%m%d-%H%M%S).tar.gz" $OLDSTATE 2>/dev/null; rm -f $OLDSTATE; say "old state files cleared from ~/.cache"; }
   if [ -d "$H/.config/rpredatorsense/profiles" ]; then
     install -d -o "$U" -g "$(id -gn "$U")" "$H/.config/truesense/lighting"
     cp -n "$H"/.config/rpredatorsense/profiles/*.json "$H/.config/truesense/lighting/" 2>/dev/null; chown -R "$U": "$H/.config/truesense" 2>/dev/null
