@@ -85,6 +85,28 @@ def capture(description=""):
     return d
 
 
+def describe(d):
+    """What a profile will change, in plain words (one line per area)."""
+    out = []; p = d.get("power", {}); f = d.get("fan", {}); k = d.get("keyboard", {}); r = d.get("rear", {}); b = d.get("battery", {}); a = d.get("audio", {})
+    if "mode" in p or "auto" in p: out.append("Power: " + ", ".join(x for x in ((p["mode"].capitalize() + " mode (held for a while)") if "mode" in p else "", ("mode control " + p["auto"]) if "auto" in p else "") if x))
+    if "mode" in f or "curve" in f:
+        txt = {"smart": "smart curve", "auto": "firmware Auto", "max": "maximum", "manual": f"manual {f.get('cpu', '?')} % / {f.get('gpu', '?')} %"}.get(f.get("mode"), f.get("mode", "")) if "mode" in f else ""
+        out.append("Fans: " + ", ".join(x for x in (txt, ("curve " + f["curve"]) if "curve" in f else "") if x))
+    if k:
+        bits = []
+        if "effect" in k: bits.append(k["effect"] + " effect")
+        if "profile" in k: bits.append("key set " + k["profile"])
+        if "on" in k: bits.append("backlight " + ("on" if k["on"] else "off"))
+        if "timeout" in k: bits.append("light off after 30 s " + ("on" if k["timeout"] else "off"))
+        out.append("Keyboard: " + ", ".join(bits))
+    if r: out.append("Rear light: " + (f"{r.get('effect', '')} {r.get('color', '')}".strip() if r.get("effect") else ("on" if r.get("on") else "off")))
+    if b: out.append("Battery: " + ", ".join(x for x in (("80 % limit " + ("on" if b["limit"] else "off")) if "limit" in b else "", f"USB charging while off {b['usb_charge']}" if "usb_charge" in b else "") if x))
+    if d.get("display"): out.append("Screen: overdrive " + ("on" if d["display"].get("overdrive") else "off"))
+    if d.get("boot"): out.append("Boot sound " + ("on" if d["boot"].get("sound") else "off"))
+    if a: out.append("Audio: " + ", ".join(x for x in (a.get("output", ""), ("headset noise reduction " + a["voice_headset"]) if "voice_headset" in a else "", ("built-in noise reduction " + a["voice_array"]) if "voice_array" in a else "") if x))
+    return out or ["(nothing)"]
+
+
 def _fan_manual(cpu, gpu):
     from . import control
     control.fan("manual", cpu, gpu)

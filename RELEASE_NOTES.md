@@ -1,6 +1,6 @@
 # Release notes
 
-## 0.3.5
+## 0.3.5 (2026-10-31): new key animations, game rules, profiles page, power-manager takeover, responsive window
 
 Ideas gathered from four related projects (Venator, jma-studio, acer-predator-helios-rgb, PreySense); everything was written from scratch.
 
@@ -12,7 +12,8 @@ Ideas gathered from four related projects (Venator, jma-studio, acer-predator-he
 - Fans: manual sliders 20 to 100 %; the *Turn fans off…* button asks first, only works while cool, reads the result back, measures the real fan speed afterwards and says when the firmware keeps the fans running at a minimum speed (it does on the tested PH16-71); the watchdog gives the fans back to Auto at 70/65 °C. `fan set CPU GPU --confirm` accepts 0 per fan on the command line. Performance icon redrawn as a full dial; picture preview on the Per-key tab.
 - Window: can be resized from 380 pixels wide up when you turn that on; settings rows move their controls under the name when narrow, the fan curve graph and palette stretch, content is centred on wide windows, and a page can no longer be cut off (a test checks every page). The compact fixed 480 pixel window (which floats on Hyprland and sway) stays the default; the "Fixed-size window" switch in Settings turns on free resizing. Esc now closes the app (the per-key board still uses the first Esc to clear its selection).
 - *TrueSense manages power* (Settings, or `truesense power managers stop|restore|list`, off by default): stops and disables auto-cpufreq, TLP, tuned, power-profiles-daemon or system76-power when they run, fixes what they leave behind (a manager can leave CPU turbo OFF, and the kernel then lowers every core's frequency ceiling to the base clock and does not raise it again when turbo is back on: both are repaired), remembers it all and can restore it. `doctor` also warns when turbo is off.
-- Window controls for every command-line feature that had none: profile bundles (Home: apply, next, save, show, delete), cycle power mode, keyboard colour follows the power mode, per-key sets, At login (keyboard, rear bar, profile, apply now), speaker noise filter, microphone volume, touchpad, show/check configuration, service status.
+- Profiles have their own page (a profile is a one-click bundle of power, fans, rear light, battery, screen, boot sound and audio): it lists what each profile changes in plain words and how profiles differ from Smart auto profiles, fan curves and lighting profiles; Home has a compact picker at the top.
+- Window controls for every command-line feature that had none: profile bundles (apply, next, save, show, delete), cycle power mode, keyboard colour follows the power mode, per-key sets, At login (keyboard, rear bar, profile, apply now), speaker noise filter, microphone volume, touchpad, show/check configuration, service status.
 - `doctor` lists other power managers (tuned, tlp, auto-cpufreq, ...) that can fight the power modes.
 
 ## 0.3.4 (2026-10-31): one-line, multi-distribution installer; AUR package

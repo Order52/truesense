@@ -172,7 +172,7 @@ JACK_HINT = {"auto": "Uses what the codec detects when you plug something in.",
 
 
 AUTOSTART = os.path.expanduser("~/.config/autostart/truesense.desktop")
-PAGES = {"home": 0, "lighting": 1, "battery": 2, "audio": 3, "settings": 4, "curves": 5, "smart": 6, "predator": 7, "undervolt": 8}      # "keys" opens Lighting on its Per-key tab
+PAGES = {"home": 0, "lighting": 1, "battery": 2, "audio": 3, "settings": 4, "curves": 5, "smart": 6, "predator": 7, "undervolt": 8, "profiles": 9}      # "keys" opens Lighting on its Per-key tab
 
 
 class Row(QWidget if Qt else object):
@@ -579,7 +579,7 @@ class Window(QMainWindow if Qt else object):
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         self.nav = [0]; self.nav_fwd = []; self.navigating = False; self.nav_filter = NavFilter(self); QApplication.instance().installEventFilter(self.nav_filter)
-        for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
+        for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt, self.p_profiles): build()
         self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else (self.battery_refresh() if i == PAGES["battery"] else (self.pm_refresh() if i == PAGES["settings"] else None)))
         self.pages.currentChanged.connect(self.nav_changed); QShortcut(QKeySequence("Alt+Left"), self, activated=self.nav_back); QShortcut(QKeySequence("Alt+Right"), self, activated=self.nav_forward)
         QShortcut(QKeySequence("Escape"), self, activated=self.close); QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
@@ -719,6 +719,8 @@ class Window(QMainWindow if Qt else object):
         lay = self.page("TrueSense", back=False)
         self.banner = QFrame(); self.banner.setObjectName("banner"); bl = QHBoxLayout(self.banner); bl.setContentsMargins(14, 10, 10, 10); self.banner_lbl = QLabel(""); self.banner_lbl.setWordWrap(True); bl.addWidget(self.banner_lbl, 1)
         bl.addWidget(self.btn("Update", self.update_now, True)); bl.addWidget(self.btn("Later", lambda: self.banner.setVisible(False))); lay.addWidget(self.banner); self.banner.setVisible(False)
+        self.hp_cb = QComboBox(); self.hp_cb.setMinimumWidth(150); self.hp_cb.setToolTip("A profile sets power, fans, lighting, battery and audio in one click. Manage them under Profiles.")
+        self.line(lay, "Profile", self.hp_cb, self.btn("Apply", self.hp_apply, True), self.btn("Manage…", lambda: self.go("profiles")))
         v = self.card(lay, "Performance Mode", "performance", True); self.stat_cpu = v.right
         try: self.modes = hw.supported_modes()
         except Exception: self.modes = list(hw.MODES)
@@ -761,32 +763,57 @@ class Window(QMainWindow if Qt else object):
         v.addWidget(self.fan_box); self.fan_box.setVisible(False)
         btns = []
         for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Fan curves", "fan", "curves"), ("PREDATOR key", "settings", "predator"), ("Undervolt", "performance", "undervolt"),
-                                               ("Battery and Screen", "battery", "battery"), ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
+                                               ("Profiles", "manual", "profiles"), ("Battery and Screen", "battery", "battery"), ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
             b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); btns.append(b_)
-        v = self.card(lay, "Profiles")
-        v.addWidget(self.hint("A profile is a saved bundle of settings: power mode, fans, lighting, battery, audio. Shipped profiles are read-only."))
-        self.prof_cb = QComboBox(); self.prof_cb.setMinimumWidth(150)
-        self.line(v, "Profile", self.prof_cb, self.btn("Apply", self.prof_apply, True), self.btn("Next", self.prof_next))
-        self.prof_name = QLineEdit(); self.prof_name.setPlaceholderText("name, e.g. my-gaming"); self.prof_name.setMinimumWidth(120); self.line(v, "Save the current state as", self.prof_name, self.btn("Save", self.prof_save))
-        self.line(v, "Manage", self.btn("Show contents", self.prof_show), self.btn("Delete", self.prof_delete)); self.prof_msg = self.hint(""); v.addWidget(self.prof_msg); self.prof_reload()
         lay.addSpacing(4); lay.addWidget(FlowGrid(btns)); lay.addStretch()
 
+    def p_profiles(self):
+        lay = self.page("Profiles")
+        lay.addWidget(self.hint("A profile is a one-click bundle: it sets the power mode, fans, rear light, battery limit, screen overdrive, boot sound and audio in one go. It applies once (the power mode is then held like when you pick a tile)."))
+        v = self.card(lay, "Choose")
+        self.prof_cb = QComboBox(); self.prof_cb.setMinimumWidth(150); self.prof_cb.activated.connect(lambda i: self.prof_changed())
+        self.line(v, "Profile", self.prof_cb, self.btn("Apply", self.prof_apply, True), self.btn("Next", self.prof_next)); self.prof_now = self.hint(""); v.addWidget(self.prof_now)
+        v = self.card(lay, "What it changes"); self.prof_info = QLabel(""); self.prof_info.setWordWrap(True); self.prof_info.setObjectName("stats"); v.addWidget(self.prof_info)
+        self.line(v, "Details", self.btn("Show the file", self.prof_show), self.btn("Delete", self.prof_delete))
+        v = self.card(lay, "Make your own")
+        v.addWidget(self.hint("Set everything the way you like first, then save: TrueSense records the current power mode, fans, rear light, battery, screen, boot sound and audio. (Keyboard colours are saved under Lighting, Profiles.)"))
+        self.prof_name = QLineEdit(); self.prof_name.setPlaceholderText("name, e.g. my-gaming"); self.prof_name.setMinimumWidth(120); self.line(v, "Save the current state as", self.prof_name, self.btn("Save", self.prof_save))
+        v = self.card(lay, "How this differs")
+        v.addWidget(self.hint("Smart auto profiles decide HOW the power mode follows load and heat. Fan curves are only the fan shape. Lighting profiles and key sets are only lights. Key bindings are only the PREDATOR key. A profile here sets all of it once; it does not keep watching."))
+        lay.addStretch(); self.prof_reload()
+
     def prof_reload(self, select=None):
-        cur = select or (self.prof_cb.currentText() if self.prof_cb.count() else "")
-        self.prof_cb.clear()
-        for n in profiles.names(): self.prof_cb.addItem(f"{n}  ({profiles.source(n)})", n)
-        if cur: self.prof_cb.setCurrentIndex(max(0, self.prof_cb.findData(cur)))
+        cur = select or userstate.get("profile") or (self.prof_cb.currentData() if self.prof_cb.count() else "")
+        for cb in (self.prof_cb, self.hp_cb):
+            cb.blockSignals(True); cb.clear()
+            for n in profiles.names(): cb.addItem(f"{n}  ({profiles.source(n)})" if cb is self.prof_cb else n, n)
+            if cur: cb.setCurrentIndex(max(0, cb.findData(cur)))
+            cb.blockSignals(False)
+        self.prof_changed()
+
+    def prof_changed(self):
+        n = self.prof_cb.currentData()
+        if not n: self.prof_info.setText("No profiles yet."); return
+        try: d = profiles.load(n); self.prof_info.setText((d.get("description") or "") + "\n\n" + "\n".join("• " + line for line in profiles.describe(d)))
+        except Exception as e: self.prof_info.setText(f"Could not read this profile: {e}")
+        cur = userstate.get("profile"); self.prof_now.setText(f"Last applied: {cur}" if cur else "No profile applied yet.")
+        self.hp_cb.blockSignals(True); self.hp_cb.setCurrentIndex(max(0, self.hp_cb.findData(n))); self.hp_cb.blockSignals(False)
+
+    def hp_apply(self):
+        n = self.hp_cb.currentData()
+        if n: self.prof_cb.setCurrentIndex(max(0, self.prof_cb.findData(n))); self.prof_changed(); self.prof_apply()
 
     def prof_apply(self):
         n = self.prof_cb.currentData()
-        if n: self.do(lambda: profiles.apply(n), lambda r: f"Profile '{n}' applied" + (f": {r}" if isinstance(r, str) and r else ""))
+        if n: self.do(lambda: profiles.apply(n), lambda r: r if isinstance(r, str) and r else f"Profile '{n}' applied"); QTimer.singleShot(1500, self.prof_changed)
 
-    def prof_next(self): self.do(lambda: profiles.apply(profiles.next_name()), "Next profile applied")
+    def prof_next(self):
+        self.do(lambda: profiles.apply(profiles.next_name()), lambda r: r); QTimer.singleShot(1500, lambda: self.prof_reload())
 
     def prof_save(self):
         n = self.prof_name.text().strip()
         def go(): profiles.save(n, profiles.capture("saved from the window")); return n
-        self.do(go, lambda r: f"Saved profile '{r}' (the current power, fans, lighting, battery and audio settings)", refresh=False); QTimer.singleShot(600, lambda: self.prof_reload(n))
+        self.do(go, lambda r: f"Saved profile '{r}' (the current power, fans, rear light, battery, screen, boot sound and audio)", refresh=False); QTimer.singleShot(600, lambda: self.prof_reload(n))
 
     def prof_show(self):
         n = self.prof_cb.currentData()
