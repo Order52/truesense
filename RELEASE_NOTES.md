@@ -9,6 +9,7 @@ Ideas gathered from four related projects (Venator, jma-studio, acer-predator-he
 - Game rules: `power game add PROGRAM MODE` raises the power mode while a program runs.
 - The "too hot" state now releases 5 degrees below its line (no flapping).
 - Window: Designs and pictures on the Per-key tab, Game rules on the Smart page, hardware self-test and service log in Settings; the mouse back and forward buttons (and Alt+Left / Alt+Right) move through pages.
+- Fans: the separate "Turn fans off" button is gone; the manual fan sliders now go from 0 to 100 %, and 0 % on both fans asks for confirmation and uses the same guarded fans-off path (watchdog back to Auto at 70/65 °C). Performance icon redrawn as a full dial; picture preview on the Per-key tab.
 - `doctor` lists other power managers (tuned, tlp, auto-cpufreq, ...) that can fight the power modes.
 
 ## 0.3.4 (2026-10-31): one-line, multi-distribution installer; AUR package
