@@ -169,7 +169,7 @@ class TestWindowLogic(unittest.TestCase):
         w = gui.Window(); self.assertFalse(hasattr(w, "fan_off_btn"), "the separate Fans off button is gone")
         for sl in (w.fan_pct, w.fan_cpu, w.fan_gpu): self.assertEqual((sl.minimum(), sl.maximum()), (0, 100))
         asked = []; w.fan_stop_ask = lambda: asked.append(1)
-        w.fan_link.setChecked(True); w.fan_pct.setValue(0); w.fan_released(); self.assertEqual(w.manual_duty(), (0, 0)); self.assertTrue(asked)
+        w.fan_link.setChecked(True); w.fan_pct.setValue(0); w.fan_released(); self.assertEqual(w.manual_duty(), (0, 0)); self.assertTrue(asked); self.assertEqual(len(asked), 1)
         w.fan_pct.setValue(10); self.assertEqual(w.manual_duty(), (20, 20), "below the firmware minimum the fans run at 20 %")
         w.fan_link.setChecked(False); w.fan_cpu.setValue(0); w.fan_gpu.setValue(60); self.assertEqual(w.manual_duty(), (0, 60), "the CPU fan alone can be stopped")
         w.fan_cpu.setValue(70); w.fan_gpu.setValue(0); self.assertEqual(w.manual_duty(), (70, 0), "so can the GPU fan alone"); w.fan_gpu.setValue(10); self.assertEqual(w.manual_duty(), (70, 20))

@@ -840,7 +840,7 @@ class Window(QMainWindow if Qt else object):
         self.do(lambda: hw.set_gpu_mode(mode), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False)
 
     def fan_stop_ask(self):
-        if getattr(self, "fan_asking", False): return
+        if getattr(self, "fan_asking", False) or time.monotonic() - getattr(self, "fan_asked_at", -9) < 1.5: return          # one question per gesture
         c, g = self.manual_duty()
         if 0 not in (c, g): return
         which = "both fans" if c == g == 0 else ("the CPU fan" if c == 0 else "the GPU fan"); rest = "" if c == g == 0 else f"\n\nThe other fan keeps running at {g if c == 0 else c} %."
@@ -852,7 +852,7 @@ class Window(QMainWindow if Qt else object):
                               QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, self)
             box.setDefaultButton(QMessageBox.StandardButton.Cancel); box.button(QMessageBox.StandardButton.Apply).setText("Stop " + which)
             ok = box.exec() == QMessageBox.StandardButton.Apply
-        finally: self.fan_asking = False
+        finally: self.fan_asking = False; self.fan_asked_at = time.monotonic()
         if not ok:                                                         # cancelled: the stopped fan goes back to its lowest running speed
             self.loading = True
             try:
