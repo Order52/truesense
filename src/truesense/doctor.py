@@ -64,10 +64,30 @@ def c_headers():
     return (OK if ok else FAIL), f"kernel headers for {kver()}: {'present' if ok else 'MISSING'}", "install your kernel's -headers package (e.g. linux-cachyos-headers), then: sudo dkms autoinstall"
 
 
+DKMS_ROOT = "/var/lib/dkms"
+
+
+def dkms_installed(pkg):
+    """Kernels `pkg` is built and installed for, read from DKMS's own directories (one `kernel-<release>-<arch>` link per installed kernel). The `dkms` command takes about a second
+    for the same answer. None when this system keeps its DKMS state elsewhere (the caller then asks the command); [] when the package is not registered at all."""
+    if not os.path.isdir(DKMS_ROOT): return None
+    base = f"{DKMS_ROOT}/{pkg}"
+    if not os.path.isdir(base): return []
+    out = []
+    for link in glob.glob(base + "/kernel-*-*"):
+        m = re.fullmatch(r"kernel-(.+)-([A-Za-z0-9_]+)", os.path.basename(link))
+        if m and os.path.isdir(link): out.append(m.group(1))
+    return sorted(out)
+
+
 def c_dkms():
-    out = sh("dkms", "status", "truesense-wmi").stdout
-    if not out.strip(): return FAIL, "truesense-wmi is not registered with DKMS", "sudo tools/install.sh"
-    built = re.findall(r",\s*([^,]+),\s*x86_64:\s*installed", out)
+    not_registered = (FAIL, "truesense-wmi is not registered with DKMS", "sudo tools/install.sh")
+    built = dkms_installed("truesense-wmi")
+    if built is None:                                                      # an unusual layout: ask the command
+        out = sh("dkms", "status", "truesense-wmi").stdout
+        if not out.strip(): return not_registered
+        built = re.findall(r",\s*([^,]+),\s*x86_64:\s*installed", out)
+    elif not os.path.isdir(f"{DKMS_ROOT}/truesense-wmi"): return not_registered
     inst = sorted(d.split("/")[-2] for d in glob.glob("/lib/modules/*/build"))
     missing = [k for k in inst if k not in built]
     if kver() not in built: return FAIL, f"not built for the running kernel {kver()}", "sudo dkms autoinstall   (or: sudo tools/install.sh)"
@@ -96,7 +116,8 @@ def c_conflicts():
     bad = [m for m in LEGACY_MODULES if loaded(m)]
     if bad: return FAIL, "conflicting kernel module(s) loaded: " + ", ".join(bad), "sudo tools/migrate-legacy.sh   (they fight over the fans and power modes)"
     blocked = os.path.exists("/etc/modprobe.d/truesense.conf")
-    legacy_dkms = [l for l in sh("dkms", "status").stdout.splitlines() if re.search(r"linuwu|acer-rear", l)]
+    if os.path.isdir(DKMS_ROOT): legacy_dkms = sorted(d for d in os.listdir(DKMS_ROOT) if re.search(r"linuwu|acer-rear", d))
+    else: legacy_dkms = [x for x in sh("dkms", "status").stdout.splitlines() if re.search(r"linuwu|acer-rear", x)]
     if legacy_dkms: return WARN, "old DKMS package(s) still registered: " + "; ".join(legacy_dkms)[:80], "sudo tools/migrate-legacy.sh"
     if not blocked: return WARN, "no modprobe block for the old drivers", "sudo tools/install.sh"
     return OK, "no conflicting driver loaded; old drivers are blocked from loading", ""

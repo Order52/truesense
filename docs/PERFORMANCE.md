@@ -27,7 +27,7 @@ Things that were *ours*, found by measuring:
 - **No bytecode cache in the installed copy.** The install folder is root-owned, so a normal user's Python could not write `.pyc` files and recompiled `gui.py` and 14 other modules on every launch. The installer (and the Arch packages) now compile as root; `truesense doctor` checks it.
 - **Building every page before showing the window.** The window now builds Home, shows itself, and builds the other nine pages right after the first paint: 266 ms to a visible window became 92 ms.
 - **Polling the firmware more than needed.** While idle the window reads only what changes by itself (the fans, and power mode and power source from the service); slow settings are re-read every 20 s, on focus, on opening a page or after a change. 55 firmware/USB calls per 10 s became 15.
-- **Checks that waited for each other.** `truesense doctor` runs its checks side by side (691 ms to 272 ms warm).
+- **Checks that waited for each other, and a slow external tool.** `truesense doctor` runs its checks side by side (691 ms to 272 ms warm), and its two DKMS checks read DKMS's own directories instead of running `dkms status` (1 to 1.3 s here): about 90 ms in total.
 - **Importing things nobody needs yet** (the HTTP stack for update checks) and **building the whole argument parser for one command**.
 
 ## Measured results (before, then now)
@@ -39,7 +39,7 @@ Things that were *ours*, found by measuring:
 | `truesense fan status` | 65 ms | 56 ms |
 | `truesense keyboard status` | 170 ms | 108 ms |
 | `truesense status` | 241 ms | 137 ms |
-| `truesense doctor` | 691 ms | 272 ms |
+| `truesense doctor` | 691 ms (1.2 s on the installed copy) | 272 ms (about 90 ms once it stopped running `dkms`) |
 | Window: full hardware refresh | 212 ms | 115 ms |
 | Window: idle firmware/USB calls per 10 s | 55 (594 ms) | 15 (134 ms) |
 | Keyboard brightness read | 52 ms | 0.55 ms |

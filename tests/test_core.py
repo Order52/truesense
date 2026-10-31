@@ -839,3 +839,47 @@ class TestDoctorParallel(unittest.TestCase):
         self.assertEqual([c["check"] for c in data["checks"]], [f"T{i}" for i in range(5)] + ["Broken", "Last"], "the report keeps its order")
         self.assertLess(dt, 0.8, f"6 checks of 0.2 s ran in {dt:.2f} s: they overlap (one after another would be 1.2 s)")
         broken_entry = [c for c in data["checks"] if c["check"] == "Broken"][0]; self.assertEqual(broken_entry["status"], doctor.WARN); self.assertIn("boom", broken_entry["detail"])
+
+
+class TestDoctorDkms(unittest.TestCase):
+    """c_dkms and c_conflicts read DKMS's own directories (instant) instead of running `dkms status` (about a second)."""
+    def setUp(self):
+        import tempfile
+        from unittest import mock
+        from truesense import doctor
+        self.doctor = doctor; self.root = tempfile.mkdtemp(); self.saved = (doctor.DKMS_ROOT, doctor.kver, doctor.sh)
+        doctor.DKMS_ROOT = self.root; doctor.kver = lambda: "7.3.0-test"
+        self.kernels = ["7.3.0-test"]; real_glob = doctor.glob.glob
+        self.patcher = mock.patch.object(doctor.glob, "glob", side_effect=lambda pat, *a, **k: [f"/lib/modules/{kk}/build" for kk in self.kernels] if pat.startswith("/lib/modules") else real_glob(pat, *a, **k))
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop(); self.doctor.DKMS_ROOT, self.doctor.kver, self.doctor.sh = self.saved
+
+    def install(self, pkg, *kernels, version="0.3.99"):
+        import os as _os
+        for k in kernels:
+            _os.makedirs(f"{self.root}/{pkg}/{version}/{k}/x86_64"); _os.symlink(f"{version}/{k}/x86_64", f"{self.root}/{pkg}/kernel-{k}-x86_64")
+
+    def test_installed_for_the_running_kernel_is_ok(self):
+        self.install("truesense-wmi", "7.3.0-test", "6.18.1-lts"); self.kernels = ["7.3.0-test", "6.18.1-lts"]
+        st, msg, _ = self.doctor.c_dkms(); self.assertEqual(st, self.doctor.OK); self.assertIn("6.18.1-lts", msg); self.assertIn("7.3.0-test", msg)
+
+    def test_not_registered_not_built_for_this_kernel_and_missing_for_another(self):
+        d = self.doctor; self.assertEqual(d.c_dkms()[0], d.FAIL); self.assertIn("not registered", d.c_dkms()[1])
+        self.install("truesense-wmi", "6.18.1-lts"); self.kernels = ["7.3.0-test", "6.18.1-lts"]
+        st, msg, _ = d.c_dkms(); self.assertEqual(st, d.FAIL); self.assertIn("running kernel 7.3.0-test", msg)
+        self.install("truesense-wmi", "7.3.0-test", version="0.3.100"); self.kernels = ["7.3.0-test", "6.18.1-lts", "7.4.0-new"]
+        st, msg, _ = d.c_dkms(); self.assertEqual(st, d.WARN); self.assertIn("7.4.0-new", msg)
+
+    def test_a_system_with_no_dkms_directory_falls_back_to_the_command(self):
+        import subprocess
+        d = self.doctor; d.DKMS_ROOT = self.root + "/nowhere"
+        d.sh = lambda *c, **k: subprocess.CompletedProcess(c, 0, "truesense-wmi/0.3.99, 7.3.0-test, x86_64: installed\n", "")
+        self.assertEqual(d.c_dkms()[0], d.OK)
+        d.sh = lambda *c, **k: subprocess.CompletedProcess(c, 0, "", ""); self.assertEqual(d.c_dkms()[0], d.FAIL)
+
+    def test_old_dkms_packages_are_found_from_the_directory_listing(self):
+        d = self.doctor; self.install("linuwu-sense", "7.3.0-test")
+        st, msg, _ = d.c_conflicts(); self.assertEqual(st, d.WARN); self.assertIn("old DKMS", msg); self.assertIn("linuwu-sense", msg)
+        import shutil; shutil.rmtree(f"{self.root}/linuwu-sense"); self.assertNotIn("old DKMS", d.c_conflicts()[1])
