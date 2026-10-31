@@ -2,8 +2,8 @@
 
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
-import os, sys, threading, time
-from . import actions, audio, backend as hw, config, control, curves, ipc, keyboard, keymap, looks, profiles, smartprofiles, userstate
+import os, shlex, sys, threading, time
+from . import actions, audio, backend as hw, config, control, curves, ipc, keybinds, keyboard, keymap, looks, profiles, smartprofiles, undervolt, userstate
 from .device import HwError
 
 try:
@@ -13,7 +13,7 @@ try:
     from PyQt6.QtCore import QByteArray, QSize
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox, QGridLayout)
+                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox)
 except ImportError as _e:
     Qt = None; _IMPORT_ERROR = _e
 
@@ -156,7 +156,7 @@ JACK_HINT = {"auto": "Uses what the codec detects when you plug something in.",
 
 
 AUTOSTART = os.path.expanduser("~/.config/autostart/truesense.desktop")
-PAGES = {"home": 0, "lighting": 1, "keys": 2, "battery": 3, "audio": 4, "settings": 5, "curves": 6, "smart": 7}
+PAGES = {"home": 0, "lighting": 1, "keys": 2, "battery": 3, "audio": 4, "settings": 5, "curves": 6, "smart": 7, "predator": 8, "undervolt": 9}
 
 
 class Segmented(QWidget if Qt else object):
@@ -181,6 +181,7 @@ class Segmented(QWidget if Qt else object):
 class Bus(QObject if Qt else object):
     message = pyqtSignal(str) if Qt else None
     boot_text = pyqtSignal(str) if Qt else None
+    uv = pyqtSignal(dict) if Qt else None
     refreshed = pyqtSignal(dict) if Qt else None
 
 
@@ -240,6 +241,90 @@ class KeyboardView(QWidget if Qt else object):
             p.drawRoundedRect(rect, 4, 4)
             lum = 0.3 * color.red() + 0.59 * color.green() + 0.11 * color.blue(); p.setPen(QColor("#000" if lum > 140 else "#fff"))
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.labels[c][:5])
+
+
+ACTION_TYPES = [   # (label, kind, base spec / prefix)
+    ("Nothing", "fixed", "none"), ("Next power mode", "fixed", "power-next"), ("Previous power mode", "fixed", "power-prev"), ("Set a power mode", "mode", "power"),
+    ("Cycle through power modes", "cycle", "power-cycle"), ("Mode control: next (Manual / Native / Smart)", "fixed", "auto-next"), ("Mode control: choose", "auto", "auto"),
+    ("Fans: set", "fan", "fan"), ("Fans: toggle Max", "fixed", "fan-max-toggle"), ("Fans: toggle smart curve", "fixed", "smart-fan-toggle"),
+    ("Apply a profile", "profile", "profile"), ("Next profile", "fixed", "profile-next"), ("Apply a lighting look", "look", "look"),
+    ("Switch speakers / headphones", "fixed", "output-toggle"), ("Cycle audio outputs", "fixed", "output-cycle"), ("Mute the microphones", "fixed", "mic-toggle"), ("Next voice mode", "fixed", "voice-next"),
+    ("Toggle the touchpad", "fixed", "touchpad-toggle"), ("Keyboard light on/off", "fixed", "keyboard:toggle"), ("Next keyboard effect", "fixed", "keyboard-effect-next"),
+    ("Rear light on/off", "fixed", "rear:toggle"), ("Next rear effect", "fixed", "rear-effect-next"), ("80 % battery limit on/off", "fixed", "battery-limit-toggle"), ("LCD overdrive on/off", "fixed", "overdrive-toggle"),
+    ("Run a script or program", "script", "exec"), ("Run a command", "command", "exec"), ("Show a message", "text", "notify"),
+]
+
+
+class ActionEditor(QWidget if Qt else object):
+    """One PREDATOR-key gesture: pick WHAT it does, then its detail (a mode, a profile, a script chosen with a file picker, ...). value() is the action spec."""
+    changed = pyqtSignal() if Qt else None
+
+    def __init__(self):
+        super().__init__(); v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(6)
+        top = QHBoxLayout(); top.setSpacing(8); self.type = QComboBox(); self.type.addItems([a[0] for a in ACTION_TYPES]); self.type.setMinimumWidth(190); top.addWidget(self.type, 1)
+        self.test_btn = QPushButton("Test"); top.addWidget(self.test_btn); v.addLayout(top)
+        self.arg_row = QWidget(); a = QHBoxLayout(self.arg_row); a.setContentsMargins(0, 0, 0, 0); a.setSpacing(8)
+        self.combo = QComboBox(); self.edit = QLineEdit(); self.browse = QPushButton("Browse…"); self.spin = QDoubleSpinBox(); self.spin.setRange(20, 100); self.spin.setDecimals(0); self.spin.setSuffix(" %")
+        for w in (self.combo, self.spin, self.edit, self.browse): a.addWidget(w, 1 if w is self.edit else 0)
+        v.addWidget(self.arg_row)
+        self.type.currentIndexChanged.connect(self._kind_changed); self.combo.currentIndexChanged.connect(lambda *_: self.changed.emit()); self.edit.textEdited.connect(lambda *_: self.changed.emit())
+        self.combo.currentIndexChanged.connect(lambda *_: self.spin.setVisible(self.kind() == "fan" and self.combo.currentText() == "manual %"))
+        self.spin.valueChanged.connect(lambda *_: self.changed.emit()); self.browse.clicked.connect(self._browse); self._kind_changed()
+
+    def kind(self): return ACTION_TYPES[self.type.currentIndex()][1]
+
+    def _kind_changed(self, *_):
+        k = self.kind(); self.arg_row.setVisible(k != "fixed"); self.combo.clear()
+        items = {"mode": [m for m in hw.MODES], "auto": ["off", "native", "smart"], "fan": ["smart", "auto", "max", "manual %"], "profile": profiles.names(), "look": looks.names()}.get(k)
+        if items is not None: self.combo.addItems(items)
+        self.combo.setVisible(items is not None); self.spin.setVisible(False)
+        self.edit.setVisible(k in ("cycle", "script", "command", "text")); self.browse.setVisible(k == "script")
+        self.edit.setPlaceholderText({"cycle": "eco,balanced,turbo", "script": "no file chosen", "command": "e.g. notify-send hello", "text": "message"}.get(k, "")); self.edit.setReadOnly(k == "script")
+        if k == "cycle" and not self.edit.text(): self.edit.setText("eco,balanced,turbo")
+        self.changed.emit()
+
+    def _browse(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Choose a script or program to run", os.path.expanduser("~"), "All files (*)")
+        if path: self.edit.setText(path); self.changed.emit()
+
+    @staticmethod
+    def script_command(path):
+        """How to run a chosen file: directly if it is executable, otherwise through its interpreter, else open it with the desktop's default program."""
+        q = shlex.quote(path)
+        if os.access(path, os.X_OK) and os.path.isfile(path): return q
+        ext = os.path.splitext(path)[1].lower()
+        return {"sh": "sh ", "bash": "bash ", "py": "python3 ", "pl": "perl ", "lua": "lua "}.get(ext[1:], "xdg-open ") + q
+
+    def value(self):
+        label, kind, base = ACTION_TYPES[self.type.currentIndex()]
+        if kind == "fixed": return base
+        if kind in ("mode", "auto", "profile", "look"): return f"{base}:{self.combo.currentText()}" if self.combo.currentText() else base + ":"
+        if kind == "cycle": return f"power-cycle:{self.edit.text().replace(' ', '')}"
+        if kind == "fan": return f"fan:{int(self.spin.value())}" if self.combo.currentText() == "manual %" else f"fan:{self.combo.currentText()}"
+        if kind == "script": return "exec:" + self.script_command(self.edit.text()) if self.edit.text() else "exec:"
+        if kind == "command": return "exec:" + self.edit.text()
+        return f"notify:{self.edit.text()}"
+
+    def set_spec(self, spec):
+        name, _, arg = spec.partition(":"); self.blockSignals(True)
+        for i, (label, kind, base) in enumerate(ACTION_TYPES):
+            if kind == "fixed" and spec == base: self.type.setCurrentIndex(i); break
+            if kind in ("mode", "auto", "profile", "look", "cycle", "fan", "text") and name == base and kind != "fixed":
+                if kind == "fan" and not (arg in ("smart", "auto", "max") or arg.isdigit()): continue
+                self.type.setCurrentIndex(i); self._kind_changed()
+                if kind == "cycle": self.edit.setText(arg)
+                elif kind == "text": self.edit.setText(arg)
+                elif kind == "fan":
+                    if arg.isdigit(): self.combo.setCurrentText("manual %"); self.spin.setVisible(True); self.spin.setValue(int(arg))
+                    else: self.combo.setCurrentText(arg)
+                else: self.combo.setCurrentText(arg)
+                break
+            if name == "exec" and kind in ("script", "command"):
+                cmd = arg; parts = shlex.split(cmd) if cmd else []; target = parts[-1] if parts else ""
+                is_script = bool(parts) and os.path.isabs(target) and (len(parts) == 1 or parts[0] in ("sh", "bash", "python3", "perl", "lua", "xdg-open")) and kind == "script"
+                if (kind == "script") == is_script:
+                    self.type.setCurrentIndex(i); self._kind_changed(); self.edit.setText(target if is_script else cmd); break
+        self.blockSignals(False)
 
 
 class CurveEditor(QWidget if Qt else object):
@@ -304,10 +389,11 @@ class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
-        for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart): build()
+        for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
+        self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else None)
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(1000); self.full_refresh(); self.tick()
 
@@ -390,11 +476,11 @@ class Window(QMainWindow if Qt else object):
     def seg(self, v, text, labels, cb):
         s = Segmented(labels); s.picked.connect(lambda i: None if self.loading else cb(i)); self.line(v, text, s); return s
 
-    def slider(self, v, text, lo, hi, step, cb, final=None, suffix=""):
+    def slider(self, v, text, lo, hi, step, cb, final=None, suffix="", prefix=""):
         """The name on the left, the current value on the right, a full-width slider underneath."""
         s = QSlider(Qt.Orientation.Horizontal); s.setRange(lo, hi); s.setSingleStep(step); s.setPageStep(step)
-        val = QLabel(f"{s.value()}{suffix}"); val.setObjectName("stats"); s.vlabel = val
-        s.valueChanged.connect(lambda x: val.setText(f"{x}{suffix}")); s.valueChanged.connect(lambda x: None if self.loading else cb(x))
+        val = QLabel(f"{prefix}{s.value()}{suffix}"); val.setObjectName("stats"); s.vlabel = val
+        s.valueChanged.connect(lambda x: val.setText(f"{prefix}{x}{suffix}")); s.valueChanged.connect(lambda x: None if self.loading else cb(x))
         if final: s.sliderReleased.connect(lambda: final(s.value()))
         lab = QLabel(text); lab.setWordWrap(True); h = QHBoxLayout(); h.addWidget(lab, 1); h.addWidget(val); v.addLayout(h); v.addWidget(s); return s
 
@@ -433,8 +519,8 @@ class Window(QMainWindow if Qt else object):
         self.fan_pct = self.slider(fb, "Manual speed", 20, 100, 5, lambda x: self.live("fanpct", lambda: control.fan("manual", x)), lambda x: None, suffix=" %")
         self.loading = True; self.fan_pct.setValue(40); self.loading = False; v.addWidget(self.fan_box); self.fan_box.setVisible(False)
         g = QGridLayout(); g.setSpacing(8)
-        for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Per-key colours", "palette", "keys"), ("Battery and Screen", "battery", "battery"),
-                                               ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
+        for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Per-key colours", "palette", "keys"), ("PREDATOR key", "settings", "predator"), ("Undervolt", "performance", "undervolt"),
+                                               ("Battery and Screen", "battery", "battery"), ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
             b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); g.addWidget(b_, n // 2, n % 2)
         lay.addSpacing(4); lay.addLayout(g); lay.addStretch()
 
@@ -589,28 +675,159 @@ class Window(QMainWindow if Qt else object):
 
     # ---- Settings --------------------------------------------------------------------------------------------------------------------------
     def p_settings(self):
-        lay = self.page("Settings"); v = self.card(lay, "PREDATOR key")
-        v.addWidget(self.hint("What each press does: power-next, power:turbo, profile:gaming, output-toggle, mic-toggle, exec:firefox ..."))
-        self.key_edits = {}
-        for g, label in GESTURES:
-            e = QLineEdit(self.cfg["keys"][g]); e.setMinimumWidth(170); self.line(v, label, e, self.btn("Save", lambda g=g, e=e: self.save_key(g, e)), self.btn("Test", lambda e=e: self.do(lambda: actions.run(e.text()) or "ok", lambda r: str(r))))
-            self.key_edits[g] = e
-        self.line(v, "Apply saved changes", self.btn("Restart keys", lambda: self.do(lambda: __import__("subprocess").run(["systemctl", "--user", "restart", "truesense-keys"], check=False), "Key service restarted")))
-        v = self.card(lay, "Start up")
+        lay = self.page("Settings"); v = self.card(lay, "Start up")
         self.autostart = self.switch(v, "Open this window at login", self.set_autostart, "Writes ~/.config/autostart/truesense.desktop. Hyprland needs `exec-once = truesense gui` (or uwsm) to run autostart entries.")
-        self.autostart.setChecked(os.path.exists(AUTOSTART)); self.sep(v)
-        v = self.card(lay, "At login"); v.addWidget(self.hint("Lighting is saved on every change. Choose what comes back. For a named look at boot, see Lighting, Profiles."))
-        s = self.cfg["startup"]; keys = [k for k, _ in START]
-        for key, title in (("keyboard", "Keyboard"), ("rear", "Rear light")):
-            sg = Segmented([l for _, l in START]); sg.set_index(keys.index(s[key]) if s[key] in keys else 0)
-            sg.picked.connect(lambda i, key=key: self.do(lambda: config.write_user({"startup": {key: keys[i]}}), f"{key} at login: {keys[i]}")); self.line(v, title, sg)
-        from . import startup
-        self.line(v, "Try it now", self.btn("Apply", lambda: self.do(lambda: startup.apply(), lambda r: "; ".join(r))))
+        self.autostart.setChecked(os.path.exists(AUTOSTART)); v.addWidget(self.hint("Lighting at boot and login is set in Lighting, Profiles. The PREDATOR key has its own page."))
         v = self.card(lay, "CPU power limits")
         self.pl1, self.pl2 = QDoubleSpinBox(), QDoubleSpinBox()
         for s_, val in ((self.pl1, 65), (self.pl2, 80)): s_.setRange(25, 120); s_.setDecimals(0); s_.setSuffix(" W"); s_.setValue(val)
         self.line(v, "PL1 / PL2 (25 to 120 W)", self.pl1, self.pl2, self.btn("Apply", lambda: self.do(lambda: ipc.call("cpu_limits", pl1=self.pl1.value(), pl2=self.pl2.value()), "CPU limits applied", refresh=False)))
         lay.addStretch()
+
+    # ---- PREDATOR key ------------------------------------------------------------------------------------------------------------------
+    def p_predator(self):
+        lay = self.page("PREDATOR key")
+        lay.addWidget(self.hint("What each press of the PREDATOR key does. Pick an action, or run your own script. Built-in profiles can't be edited: copy one, then change the copy."))
+        v = self.card(lay, "Profile")
+        self.kp_list = QComboBox(); self.kp_list.setMinimumWidth(150); self.kp_list.activated.connect(lambda i: self.load_keyprofile(self.kp_list.currentText()))
+        self.line(v, "Bindings", self.kp_list, self.btn("Use", self.kp_use, True)); self.kp_copy = self.btn("Copy to edit", self.kp_copy_do); self.kp_del = self.btn("Delete", self.kp_delete)
+        self.line(v, "Edit", self.kp_copy, self.kp_del); self.kp_name = QLineEdit(); self.kp_name.setPlaceholderText("name"); self.kp_name.setMinimumWidth(120); self.kp_save = self.btn("Save", self.kp_save_do)
+        self.line(v, "Save as", self.kp_name, self.kp_save); self.kp_msg = self.hint(""); v.addWidget(self.kp_msg)
+        self.kp_edit = {}
+        for g in keybinds.GESTURES:
+            v = self.card(lay, keybinds.LABELS[g]); ed = ActionEditor(); v.addWidget(ed); self.kp_edit[g] = ed
+            ed.changed.connect(self.kp_dirty); ed.test_btn.clicked.connect(lambda _, ed=ed: self.do(lambda: actions.run(ed.value()) or "ok", lambda r: str(r), refresh=False))
+        v = self.card(lay, "Timing"); self.kp_long = self.slider(v, "Long press after", 300, 2000, 50, lambda x: self.kp_dirty(), suffix=" ms"); self.kp_multi = self.slider(v, "Taps count together within", 200, 1000, 50, lambda x: self.kp_dirty(), suffix=" ms")
+        self.kp_loading = False; self.reload_keyprofiles(); lay.addStretch()
+
+    def reload_keyprofiles(self, select=None):
+        ns = keybinds.names(); self.kp_list.clear(); self.kp_list.addItems(ns); sel = select or keybinds.current()["profile"]; self.kp_list.setCurrentIndex(max(0, self.kp_list.findText(sel)))
+        self.load_keyprofile(self.kp_list.currentText() if self.kp_list.findText(sel) >= 0 else "default", current=sel == "custom")
+
+    def load_keyprofile(self, name, current=False):
+        try: p = keybinds.load(name) if not current else keybinds.current()
+        except Exception as e: self.say(f"Error: {e}"); return
+        locked = name in keybinds.BUILTIN and not current; self.kp_loading = True
+        for g, ed in self.kp_edit.items(): ed.set_spec(p[g]); ed.type.setEnabled(not locked); [w.setEnabled(not locked) for w in (ed.combo, ed.edit, ed.browse, ed.spin)]
+        self._set(self.kp_long, p["long_ms"]); self._set(self.kp_multi, p["multi_ms"]); self.kp_long.setEnabled(not locked); self.kp_multi.setEnabled(not locked)
+        self.kp_loading = False; self.kp_copy.setVisible(locked); self.kp_save.setEnabled(not locked); self.kp_del.setEnabled(not locked)
+        self.kp_msg.setText("Built-in profiles can't be edited. Press Copy to edit to make your own version." if locked else (p.get("description") or "Change the actions, then Save and Use."))
+
+    def kp_dirty(self, *_): pass
+
+    def kp_profile(self):
+        p = {g: ed.value() for g, ed in self.kp_edit.items()}; p["long_ms"] = self.kp_long.value(); p["multi_ms"] = self.kp_multi.value(); return keybinds.validate(p)
+
+    def kp_use(self):
+        name = self.kp_list.currentText()
+        try: p = self.kp_profile() if name not in keybinds.BUILTIN else keybinds.load(name)
+        except Exception as e: self.kp_msg.setText(str(e)); self.say(f"Error: {e}"); return
+        def go():
+            if name not in keybinds.BUILTIN: keybinds.save(name, p)
+            keybinds.use(name); return name
+        self.do(go, lambda n: f"PREDATOR key: using '{n}' (the key service reloads by itself)", refresh=False)
+
+    def kp_save_do(self):
+        name = self.kp_name.text().strip() or self.kp_list.currentText()
+        try: keybinds.save(name, self.kp_profile())
+        except Exception as e: self.kp_msg.setText(str(e)); self.say(f"Error: {e}"); return
+        self.reload_keyprofiles(name); self.kp_msg.setText(f"Saved '{name}'. Press Use to switch the key to it."); self.say(f"Saved key profile '{name}'")
+
+    def kp_copy_do(self):
+        src = self.kp_list.currentText()
+        try: n = keybinds.copy(src, self.kp_name.text().strip() or None)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_keyprofiles(n); self.kp_msg.setText(f"Copied to '{n}'. Change what you like, then Save and Use."); self.say(f"Copied '{src}' to '{n}'")
+
+    def kp_delete(self):
+        name = self.kp_list.currentText()
+        try: keybinds.delete(name)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_keyprofiles(); self.say(f"Deleted key profile '{name}'")
+
+    # ---- Undervolt ---------------------------------------------------------------------------------------------------------------------
+    def p_undervolt(self):
+        lay = self.page("Undervolt")
+        warn = self.hint("Lowers the CPU voltage to run cooler. Too much can freeze or reboot the laptop. Nothing is applied unless you confirm, and a reboot always returns to stock. Test a profile under load before relying on it.")
+        warn.setStyleSheet("color: #ffb347;"); lay.addWidget(warn)
+        v = self.card(lay, "Right now", "", True); self.uv_now = v.right; self.uv_state = self.hint("…"); v.addWidget(self.uv_state)
+        v = self.card(lay, "Profile")
+        self.uv_list = QComboBox(); self.uv_list.setMinimumWidth(150); self.uv_list.activated.connect(lambda i: self.load_uv(self.uv_list.currentText()))
+        self.line(v, "Profile", self.uv_list, self.btn("Apply", self.uv_apply, True)); self.uv_copy = self.btn("Copy to edit", self.uv_copy_do); self.uv_del = self.btn("Delete", self.uv_delete)
+        self.line(v, "Edit", self.uv_copy, self.uv_del)
+        self.uv_core = self.slider(v, "Core offset", 0, undervolt.MAX_MV, 5, lambda x: None, suffix=" mV", prefix="-"); self.uv_cache = self.slider(v, "Cache offset", 0, undervolt.MAX_MV, 5, lambda x: None, suffix=" mV", prefix="-")
+        self.uv_name = QLineEdit(); self.uv_name.setPlaceholderText("name"); self.uv_name.setMinimumWidth(120); self.uv_save = self.btn("Save", self.uv_save_do)
+        self.line(v, "Save as", self.uv_name, self.uv_save); self.uv_msg = self.hint(""); v.addWidget(self.uv_msg)
+        self.line(v, "Back to stock", self.btn("Reset to stock (0 mV)", lambda: self.do(lambda: ipc.call("undervolt", action="reset"), "Undervolt reset to stock", refresh=False)))
+        v = self.card(lay, "At boot")
+        self.uv_boot = self.switch(v, "Apply the selected profile at boot", self.uv_boot_set, "Off by default. Guarded: if the laptop does not stay up for 10 minutes after applying it, the next boot skips it and turns this off.")
+        self.reload_uv(); lay.addStretch()
+
+    def reload_uv(self, select=None):
+        ns = undervolt.names(); self.uv_list.clear(); self.uv_list.addItems(ns); self.uv_list.setCurrentIndex(max(0, self.uv_list.findText(select or "truesense"))); self.load_uv(self.uv_list.currentText())
+
+    def load_uv(self, name):
+        try: p = undervolt.load(name)
+        except Exception as e: self.say(f"Error: {e}"); return
+        locked = name in undervolt.BUILTIN; self.loading = True; self.uv_core.setValue(-p["core"]); self.uv_cache.setValue(-p["cache"]); self.loading = False
+        for s_ in (self.uv_core, self.uv_cache): s_.setEnabled(not locked)
+        self.uv_copy.setVisible(locked); self.uv_save.setEnabled(not locked); self.uv_del.setEnabled(not locked)
+        self.uv_msg.setText(p.get("description") or ("Built-in profiles can't be edited. Press Copy to edit." if locked else ""))
+
+    def uv_values(self): return {"core": -self.uv_core.value(), "cache": -self.uv_cache.value()}
+
+    def uv_apply(self):
+        name = self.uv_list.currentText(); vals = self.uv_values()
+        if vals["core"] == 0 and vals["cache"] == 0: self.do(lambda: ipc.call("undervolt", action="reset"), "Undervolt reset to stock", refresh=False); return
+        ok = QMessageBox.warning(self, "Apply undervolt", f"Apply '{name}': core {vals['core']} mV, cache {vals['cache']} mV?\n\nIf the laptop freezes or reboots, this offset is too aggressive. "
+                                 "A reboot always returns to stock. Save your work first.", QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
+        if ok != QMessageBox.StandardButton.Apply: return
+        self.do(lambda: ipc.call("undervolt", action="apply", core=vals["core"], cache=vals["cache"], confirm=True, name=name), lambda r: f"Undervolt applied: core {r['core_mv']} mV, cache {r['cache_mv']} mV", refresh=False); QTimer.singleShot(900, self.uv_refresh)
+
+    def uv_boot_set(self, on):
+        if self.loading: return
+        name = self.uv_list.currentText(); vals = self.uv_values()
+        if not on: self.do(lambda: ipc.call("undervolt", action="boot_clear"), "Undervolt at boot: off", refresh=False); return
+        ok = QMessageBox.warning(self, "Undervolt at boot", f"Apply '{name}' (core {vals['core']} mV, cache {vals['cache']} mV) every time the laptop starts?\n\nIf the laptop does not stay up for 10 minutes after applying it, "
+                                 "the next boot skips it and this switches off.", QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
+        if ok != QMessageBox.StandardButton.Apply: self.loading = True; self.uv_boot.setChecked(False); self.loading = False; return
+        self.do(lambda: ipc.call("undervolt", action="boot", core=vals["core"], cache=vals["cache"], confirm=True, name=name), f"Undervolt at boot: {name}", refresh=False)
+
+    def uv_refresh(self):
+        def work():
+            try: r = ipc.call("undervolt", action="get")
+            except Exception as e: r = {"error": str(e)}
+            self.say_uv(r)
+        threading.Thread(target=work, daemon=True).start()
+
+    def say_uv(self, r):
+        try: self.bus.uv.emit(r)
+        except RuntimeError: pass
+
+    def _uv_show(self, r):
+        if "core_mv" in r:
+            self.uv_now.setText(f"core {r['core_mv']} mV · cache {r['cache_mv']} mV")
+            self.uv_state.setText((f"Applied: {r['applied']['name']}. " if r.get("applied") else "Stock voltage. ") + (f"At boot: {r['boot']['name']}. " if r.get("boot") else "") + ("A boot undervolt is waiting to prove stable." if r.get("pending") else ""))
+        else: self.uv_now.setText("not readable"); self.uv_state.setText(str(r.get("error", ""))[:160])
+        self.loading = True; self.uv_boot.setChecked(bool(r.get("boot"))); self.loading = False
+
+    def uv_save_do(self):
+        name = self.uv_name.text().strip() or self.uv_list.currentText()
+        try: undervolt.save(name, self.uv_values())
+        except Exception as e: self.uv_msg.setText(str(e)); self.say(f"Error: {e}"); return
+        self.reload_uv(name); self.say(f"Saved undervolt profile '{name}'")
+
+    def uv_copy_do(self):
+        src = self.uv_list.currentText()
+        try: n = undervolt.copy(src, self.uv_name.text().strip() or None)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_uv(n); self.uv_msg.setText(f"Copied to '{n}'. Change the offsets, then Save and Apply."); self.say(f"Copied '{src}' to '{n}'")
+
+    def uv_delete(self):
+        name = self.uv_list.currentText()
+        try: undervolt.delete(name)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_uv(); self.say(f"Deleted undervolt profile '{name}'")
 
     def set_autostart(self, on):
         def go():
@@ -749,11 +966,6 @@ class Window(QMainWindow if Qt else object):
     def smart_picked(self, i):
         name = self.smart_cb.currentText()
         self.do(lambda: ipc.call("smart_profile", action="use", name=name, data=None if name in smartprofiles.BUILTIN else smartprofiles.load(name)), lambda r: f"Smart auto profile in use: {r['name']}", refresh=False)
-
-    def save_key(self, g, e):
-        err = actions.validate(e.text())
-        if err: self.statusBar().showMessage(err, 8000); return
-        self.do(lambda: config.write_user({"keys": {g: e.text()}}), f"{g}: saved")
 
     # ---- refresh -----------------------------------------------------------------------------------------------------------------------
     def tick(self):

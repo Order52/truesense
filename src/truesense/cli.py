@@ -128,6 +128,10 @@ def build():
     q = ys.add_parser("set"); q.add_argument("gesture", choices=["tap", "double", "triple", "long", "fn_esc"]); q.add_argument("action", help="see: truesense keys actions")
     q = ys.add_parser("reset"); q.add_argument("gesture", nargs="?", choices=["tap", "double", "triple", "long", "fn_esc"])
     q = ys.add_parser("test"); q.add_argument("action", help="run an action now, as the key would")
+    q = ys.add_parser("profile", help="key binding profiles: list | current | show NAME | use NAME | copy NAME [NEW] | save NAME [--from BASE] [--tap A --double A ...] | delete NAME (built-in profiles are read-only: copy to edit)")
+    q.add_argument("action", nargs="?", default="current", choices=["list", "current", "show", "use", "copy", "save", "delete"]); q.add_argument("name", nargs="?"); q.add_argument("new", nargs="?"); q.add_argument("--from", dest="base")
+    for g_ in ("tap", "double", "triple", "long", "fn-esc"): q.add_argument("--" + g_)
+    q.add_argument("--long-ms", type=int); q.add_argument("--multi-ms", type=int)
     q = ys.add_parser("timing"); q.add_argument("--long-ms", type=int); q.add_argument("--multi-ms", type=int)
     # profile
     p = sub.add_parser("profile", help="named bundles of settings (gaming, quiet, battery-saver, yours)"); pr = p.add_subparsers(dest="verb")
@@ -136,7 +140,10 @@ def build():
     q = pr.add_parser("delete"); q.add_argument("name")
     # cpu
     p = sub.add_parser("cpu", help="CPU power limits and the guarded undervolt"); cs = p.add_subparsers(dest="verb"); cs.add_parser("info"); q = cs.add_parser("limits"); q.add_argument("pl1", type=float, nargs="?"); q.add_argument("pl2", type=float, nargs="?")
-    q = cs.add_parser("undervolt"); q.add_argument("action", choices=["get", "set", "reset"]); q.add_argument("mv", type=int, nargs="?"); q.add_argument("--plane", type=int, default=0, choices=[0, 2], help="0 core, 2 cache"); q.add_argument("--confirm", action="store_true")
+    q = cs.add_parser("undervolt", help="CPU undervolt profiles (reset on reboot; applying needs --confirm): get | list | show NAME | use NAME --confirm | reset | copy NAME [NEW] | save NAME --core MV --cache MV | delete NAME | boot NAME|off --confirm")
+    q.add_argument("action", choices=["get", "list", "show", "use", "reset", "copy", "save", "delete", "boot", "set"]); q.add_argument("name", nargs="?"); q.add_argument("new", nargs="?")
+    q.add_argument("--core", type=int); q.add_argument("--cache", type=int); q.add_argument("--confirm", action="store_true", help="I understand this can freeze or reboot the laptop")
+    q.add_argument("--plane", type=int, default=0, choices=[0, 2], help="set: 0 core, 2 cache"); q.add_argument("mv", type=int, nargs="?", help=argparse.SUPPRESS)
     add_onoff(sub, "touchpad", "touchpad on/off (Fn+F10)")
     p = sub.add_parser("service", help="the daemon"); ss = p.add_subparsers(dest="verb"); ss.add_parser("status"); ss.add_parser("restart"); ss.add_parser("logs")
     p = sub.add_parser("config", help="configuration"); cf = p.add_subparsers(dest="verb"); cf.add_parser("show"); cf.add_parser("validate"); cf.add_parser("path")
@@ -421,10 +428,33 @@ def h_keys(a):
     elif v == "set":
         err = actions.validate(a.action)
         if err: raise HwError(err + "   (truesense keys actions)")
-        config.write_user({"keys": {a.gesture: a.action}}); emit(f"{a.gesture} -> {a.action}   (the key service picks it up on its next restart: systemctl --user restart truesense-keys)")
+        config.write_user({"keys": {a.gesture: a.action, "profile": "custom"}}); emit(f"{a.gesture} -> {a.action}   (the key service reloads by itself; save it as a profile: truesense keys profile save NAME)")
     elif v == "reset":
         gs = [a.gesture] if a.gesture else ["tap", "double", "triple", "long", "fn_esc"]
         config.write_user({"keys": {g: config.DEFAULTS["keys"][g] for g in gs}}); emit("reset: " + ", ".join(gs))
+    elif v == "profile":
+        from . import keybinds as kbd
+        act = a.action
+        def fmt(p): return "\n".join(f"  {kbd.LABELS[g]:<11} {p[g]}" for g in kbd.GESTURES) + f"\n  long press after {p['long_ms']} ms; taps within {p['multi_ms']} ms count together"
+        if act == "list": cur = kbd.current()["profile"]; r = kbd.names(); emit(r, "\n".join(("* " if n == cur else "  ") + n + ("  - " + kbd.BUILTIN[n]["description"] if n in kbd.BUILTIN else "") for n in r))
+        elif act == "current": c = kbd.current(); emit(c, f"key profile in use: {c['profile']}\n" + fmt(c))
+        elif act == "show": p = kbd.load(a.name or "default"); emit(p, f"{a.name or 'default'}\n" + fmt(p))
+        elif act == "use":
+            if not a.name: raise HwError("which profile? (truesense keys profile list)")
+            kbd.use(a.name); emit(a.name, f"key profile in use: {a.name}   (the key service reloads by itself)")
+        elif act == "copy":
+            if not a.name: raise HwError("copy which profile?")
+            n = kbd.copy(a.name, a.new); emit(n, f"copied '{a.name}' to '{n}' (edit: truesense keys profile save {n} --tap power:turbo)")
+        elif act == "save":
+            if not a.name: raise HwError("save under which name?")
+            base = kbd.load(a.base) if a.base else (kbd.load(a.name) if a.name in kbd.names() and a.name not in kbd.BUILTIN else dict(kbd.DEFAULT))
+            for g_ in kbd.GESTURES:
+                v_ = getattr(a, g_.replace("_", "_"), None)
+                if v_ is not None: base[g_] = v_
+            for k_ in ("long_ms", "multi_ms"):
+                if getattr(a, k_) is not None: base[k_] = getattr(a, k_)
+            emit(kbd.save(a.name, base), f"saved key profile '{a.name}' (use it: truesense keys profile use {a.name})")
+        elif act == "delete": kbd.delete(a.name or ""); emit(a.name, f"deleted key profile '{a.name}'")
     elif v == "test": msg = actions.run(a.action, cfg); emit(msg or "ok")
     elif v == "timing":
         upd = {k: x for k, x in (("long_ms", a.long_ms), ("multi_ms", a.multi_ms)) if x}
@@ -452,12 +482,32 @@ def h_cpu(a):
         if a.pl1 is None: emit(cpu.info())
         else: emit(cpu.set_limits(a.pl1, a.pl2 if a.pl2 is not None else a.pl1))
     elif v == "undervolt":
-        if a.action == "get": emit({"plane": a.plane, "offset_mv": cpu.uv_get(a.plane)})
-        elif a.action == "set":
-            if a.mv is None: raise HwError("usage: truesense cpu undervolt set -10 --confirm")
-            emit({"plane": a.plane, "offset_mv": cpu.uv_set(a.plane, a.mv, a.confirm)})
-        else: emit(cpu.uv_reset())
-
+        from . import undervolt as uvp
+        act = a.action; ipc = _ipc()
+        def show(r): return f"core {r.get('core_mv')} mV, cache {r.get('cache_mv')} mV" if "core_mv" in r else f"not readable: {r.get('error')}"
+        if act == "get": r = ipc.call("undervolt", action="get"); emit(r, f"{show(r)}" + (f"   (applied: {r['applied']['name']})" if r.get("applied") else "") + (f"   (at boot: {r['boot']['name']})" if r.get("boot") else ""))
+        elif act == "list": r = uvp.names(); emit(r, "\n".join(f"  {n:12} core {uvp.load(n)['core']:>4} mV  cache {uvp.load(n)['cache']:>4} mV" + ("  - " + uvp.BUILTIN[n]["description"] if n in uvp.BUILTIN else "") for n in r))
+        elif act == "show": p = uvp.load(a.name or "truesense"); emit(p, f"{a.name or 'truesense'}: core {p['core']} mV, cache {p['cache']} mV   {p['description']}")
+        elif act == "reset": r = ipc.call("undervolt", action="reset"); emit(r, "undervolt reset: " + show(r))
+        elif act == "use":
+            p = uvp.load(a.name or ""); r = ipc.call("undervolt", action="apply", core=p["core"], cache=p["cache"], confirm=a.confirm, name=a.name)
+            emit(r, f"applied '{a.name}': " + show(r) + "   (a reboot returns to stock; `truesense cpu undervolt reset` does it now)")
+        elif act == "set":
+            if a.mv is None: raise HwError("usage: truesense cpu undervolt set -10 --confirm   (or use a profile)")
+            cur = ipc.call("undervolt", action="get"); c, k = cur.get("core_mv", 0), cur.get("cache_mv", 0)
+            if a.plane == 0: c = a.mv
+            else: k = a.mv
+            r = ipc.call("undervolt", action="apply", core=c, cache=k, confirm=a.confirm, name="manual"); emit(r, show(r))
+        elif act == "copy": n = uvp.copy(a.name or "", a.new); emit(n, f"copied '{a.name}' to '{n}'")
+        elif act == "save":
+            if not a.name or a.core is None or a.cache is None: raise HwError("usage: truesense cpu undervolt save NAME --core -50 --cache -40")
+            emit(uvp.save(a.name, {"core": a.core, "cache": a.cache}), f"saved undervolt profile '{a.name}' (use it: truesense cpu undervolt use {a.name} --confirm)")
+        elif act == "delete": uvp.delete(a.name or ""); emit(a.name, f"deleted undervolt profile '{a.name}'")
+        elif act == "boot":
+            if a.name in (None, "off"): ipc.call("undervolt", action="boot_clear"); emit(None, "no undervolt is applied at boot")
+            else:
+                p = uvp.load(a.name); emit(ipc.call("undervolt", action="boot", core=p["core"], cache=p["cache"], confirm=a.confirm, name=a.name),
+                                           f"'{a.name}' will be applied at boot (guarded: skipped and switched off if the previous boot did not stay up 10 minutes)")
 
 def h_touchpad(a):
     from . import touchpad

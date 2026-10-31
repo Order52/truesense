@@ -68,3 +68,25 @@ class TestWindowLogic(unittest.TestCase):
         self.assertIn("truesense-copy", sp.names()); self.assertTrue(w.sm_modes["ac_busy"].isEnabled())
         w.sm_modes["ac_busy"].setCurrentIndex(sp.MODES.index("turbo")); w.sm_name.setText("truesense-copy"); w.smart_save()
         self.assertEqual(sp.load("truesense-copy")["ac_busy"], "turbo"); sp.delete("truesense-copy"); w.close()
+
+    def test_action_editor_round_trips_every_kind_of_action(self):
+        import tempfile
+        from truesense import actions
+        ed = gui.ActionEditor()
+        script = tempfile.mkdtemp() + "/my script.sh"; open(script, "w").write("#!/bin/sh\n")
+        specs = ["none", "power-next", "power:turbo", "power-cycle:eco,balanced", "fan:smart", "fan:60", "fan:max", "auto:smart", "auto-next", "profile:gaming", "output-toggle", "mic-toggle",
+                 "touchpad-toggle", "keyboard:toggle", "rear-effect-next", "notify:hello there", "exec:notify-send hi", "exec:sh " + gui.shlex.quote(script)]
+        for s in specs:
+            ed.set_spec(s); self.assertEqual(ed.value(), s, f"{s!r} came back as {ed.value()!r}"); self.assertIsNone(actions.validate(ed.value()), s)
+        self.assertEqual(ed.script_command(script), "sh " + gui.shlex.quote(script))                       # not executable: run through sh
+        os.chmod(script, 0o755); self.assertEqual(ed.script_command(script), gui.shlex.quote(script))        # executable: run directly
+        ed.set_spec("exec:sh " + gui.shlex.quote(script)); self.assertEqual(ed.kind(), "script")             # a chosen file is shown as a file, not as a raw command
+
+    def test_key_profiles_builtin_read_only_and_applied_to_the_config(self):
+        from truesense import keybinds, config
+        w = gui.Window(); w.load_keyprofile("gaming")
+        self.assertFalse(w.kp_save.isEnabled()); self.assertFalse(w.kp_edit["tap"].type.isEnabled())
+        w.kp_list.setCurrentIndex(w.kp_list.findText("gaming")); w.kp_copy_do(); n = w.kp_list.currentText(); self.assertIn("gaming", n); self.assertTrue(w.kp_edit["tap"].type.isEnabled())
+        w.kp_edit["tap"].set_spec("power:turbo"); w.kp_name.setText(n); w.kp_save_do(); self.assertEqual(keybinds.load(n)["tap"], "power:turbo")
+        keybinds.use(n); k = config.load()["keys"]; self.assertEqual((k["tap"], k["profile"]), ("power:turbo", n))
+        keybinds.use("default"); self.assertEqual(config.load()["keys"]["tap"], "power-next"); keybinds.delete(n); w.close()

@@ -5,9 +5,10 @@ a missing/failing device never kills the daemon (it keeps waiting and retrying).
 20 % ~1700 rpm, 30 2160, 40 2850, 50 3460, 60 4070, 70 4600, 80 5100, 100 6050. Firmware Auto is the only way to reach 0 rpm, so when calm control goes back to it.
 """
 import glob, os, pwd, signal, socket, subprocess, sys, threading, time
-from . import backend as hw, config, cpu, curves, ipc, looks, smartprofiles, osd, state as statemod, touchpad
+from . import backend as hw, config, cpu, curves, ipc, looks, smartprofiles, undervolt, osd, state as statemod, touchpad
 
 RUN = os.environ.get("TRUESENSE_RUN", "/run/truesense")
+UV_PENDING = os.environ.get("TRUESENSE_UV_PENDING", "/var/lib/truesense/uv-pending")      # exists while an undervolt applied at boot has not yet proven stable
 RAPL = "/sys/class/powercap/intel-rapl:0/"
 
 
@@ -52,7 +53,7 @@ class Brain:
         self.tcpu = self.tgpu = self.tchassis = None; self.rpm = (0, 0)
         self.hist_c, self.hist_g = [], []
         self.tick = self.calm = self.busy_hold = self.last_try = 0
-        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self._smart = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
+        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self._smart = None; self.uv_since = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
         self.written = None                      # (cpu, gpu) last written, (0, 0) = firmware Auto
         self.activity = "idle"; self.last_target = None; self.last_ac = None; self.cur_mode = None
         self.cap = self.p["cap_max_khz"]; self.cap_changed = 0
@@ -253,6 +254,26 @@ class Brain:
             except OSError: pass
 
     # ---- main step -----------------------------------------------------------------------------------------------------------------------
+    def apply_uv_boot(self):
+        """Opt-in undervolt at boot with a crash guard: the flag file exists from applying until 10 minutes of uptime. If it is still there at the next start,
+        the previous boot did not survive, so the undervolt is switched off instead of being applied again."""
+        b = self.st.get("uv_boot")
+        if not b: return
+        if os.path.exists(UV_PENDING):
+            self.st.set("uv_boot", None)
+            try: os.remove(UV_PENDING)
+            except OSError: pass
+            print("undervolt at boot disabled: the previous boot did not stay up for 10 minutes after applying it", flush=True); return
+        try:
+            os.makedirs(os.path.dirname(UV_PENDING), exist_ok=True)
+            with open(UV_PENDING, "w") as f: f.write(str(time.time()))
+            cpu.uv_set(0, b["core"], True); cpu.uv_set(2, b["cache"], True); self.uv_since = time.monotonic()
+            print(f"undervolt at boot: core {b['core']} mV, cache {b['cache']} mV", flush=True)
+        except (hw.HwError, OSError) as e:
+            print(f"undervolt at boot failed: {e}", flush=True)
+            try: os.remove(UV_PENDING)
+            except OSError: pass
+
     def apply_boot_look(self, why):
         """Put the look chosen for boot on the lights (the keyboard may enumerate a little after we start, so retry for ~20 s)."""
         def work():
@@ -269,6 +290,10 @@ class Brain:
 
     def step(self):
         wall, mono = time.time(), time.monotonic()
+        if self.uv_since and mono - self.uv_since > 600:                                 # the boot undervolt survived 10 minutes: drop the crash-guard flag
+            self.uv_since = None
+            try: os.remove(UV_PENDING)
+            except OSError: pass
         if self.last_clock and (wall - self.last_clock[0]) - (mono - self.last_clock[1]) > 5: self.apply_boot_look("resume from suspend")     # wall clock ran, monotonic did not
         self.last_clock = (wall, mono)
         with self.lock: self._step()
@@ -366,6 +391,28 @@ class Brain:
                 else: p = smartprofiles.load(name or "truesense"); self.st.set("smart_profile_data", None if name in smartprofiles.BUILTIN else p); self.st.set("smart_profile", name)
                 self._smart = p; self.log(f"setting smart_profile = {name}", 20); return {"name": self.st.get("smart_profile"), "profile": p}
 
+        def undervolt_(action="get", core=None, cache=None, confirm=False, name=None):
+            """get | apply (core, cache in mV, needs confirm) | reset | boot (name, core, cache: apply at boot, needs confirm) | boot_clear. Offsets never persist across a reboot."""
+            with self.lock:
+                if action == "get":
+                    try: cur = {"core_mv": cpu.uv_get(0), "cache_mv": cpu.uv_get(2)}
+                    except hw.HwError as e: cur = {"error": str(e)}
+                    return {**cur, "applied": self.st.get("uv_applied"), "boot": self.st.get("uv_boot"), "pending": os.path.exists(UV_PENDING)}
+                if action == "reset": r = cpu.uv_reset(); self.st.set("uv_applied", None); self.log("undervolt reset to stock", 5); return r
+                if action == "boot_clear": self.st.set("uv_boot", None); return None
+                if action in ("apply", "boot"):
+                    if not confirm: raise hw.HwError("an undervolt needs explicit confirmation (it can freeze or reboot the laptop if too aggressive)")
+                    p = undervolt.validate({"core": core, "cache": cache})
+                    if action == "boot": self.st.set("uv_boot", {"name": name, "core": p["core"], "cache": p["cache"]}); return self.st.get("uv_boot")
+                    try: cpu.uv_set(0, p["core"], True); cpu.uv_set(2, p["cache"], True)
+                    except hw.HwError:
+                        try: cpu.uv_reset()
+                        except hw.HwError: pass
+                        raise
+                    self.st.set("uv_applied", {"name": name, "core": p["core"], "cache": p["cache"]}); self.log(f"undervolt applied: core {p['core']} mV, cache {p['cache']} mV", 5)
+                    return {"core_mv": cpu.uv_get(0), "cache_mv": cpu.uv_get(2)}
+                raise hw.HwError("undervolt: get | apply | reset | boot | boot_clear")
+
         def boot_look(action="get", look=None):
             if action == "get": return looks.read_boot()
             if action == "clear": looks.write_boot(None); return None
@@ -385,7 +432,7 @@ class Brain:
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
 
 
 def main():
@@ -396,11 +443,12 @@ def main():
         cfg = config.merge(config.copy.deepcopy(config.DEFAULTS), {"user": cfg["user"]})
     os.makedirs(RUN, exist_ok=True)
     st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "smart" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "smart_profile": "truesense", "smart_profile_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
+    st.set("uv_applied", None)                                       # offsets never survive a reboot, so nothing is applied now
     brain = Brain(cfg, st)
     uids = [brain.pw.pw_uid] if brain.pw else []
     server = ipc.Server(brain.handlers(), uids); server.start()
     signal.signal(signal.SIGTERM, brain.shutdown); signal.signal(signal.SIGINT, brain.shutdown)
-    brain.apply_boot_look("boot")
+    brain.apply_boot_look("boot"); brain.apply_uv_boot()
     sd_notify("READY=1"); nxt = time.monotonic()
     try:
         while True:

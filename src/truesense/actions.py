@@ -12,6 +12,7 @@ An action is `name` or `name:argument`. Each returns a short message (shown on s
   keyboard:on | keyboard:off | keyboard:toggle | keyboard-effect-next | keyboard-profile:<name>
   rear:on | rear:off | rear:toggle | rear-effect-next
   battery-limit-toggle | overdrive-toggle
+  look:<name> | auto:<off|native|smart> | auto-next                           lighting looks (truesense look), the mode control
   exec:<shell command>      runs as you, detached      |      notify:<text>
 """
 import os, shlex, subprocess
@@ -20,9 +21,9 @@ from .device import HwError
 
 KB_EFFECTS = ["static", "breathing", "wave", "snake", "ripple", "neon", "raindrop", "lightning", "spot", "star", "fireball", "snow", "heartbeat"]
 REAR_EFFECTS = ["static", "breathing", "neon", "wave", "twinkling"]
-FIXED = {"none", "power-next", "power-prev", "fan-max-toggle", "smart-fan-toggle", "profile-next", "output-toggle", "output-cycle", "mic-toggle", "voice-next",
+FIXED = {"auto-next", "none", "power-next", "power-prev", "fan-max-toggle", "smart-fan-toggle", "profile-next", "output-toggle", "output-cycle", "mic-toggle", "voice-next",
          "touchpad-toggle", "keyboard-effect-next", "rear-effect-next", "battery-limit-toggle", "overdrive-toggle"}
-WITH_ARG = {"power", "power-cycle", "fan", "profile", "output", "mic", "touchpad", "keyboard", "keyboard-profile", "rear", "exec", "notify"}
+WITH_ARG = {"look", "auto", "power", "power-cycle", "fan", "profile", "output", "mic", "touchpad", "keyboard", "keyboard-profile", "rear", "exec", "notify"}
 
 
 def split(spec):
@@ -35,6 +36,10 @@ def validate(spec):
     if name in FIXED: return None if not arg else f"'{name}' takes no argument"
     if name not in WITH_ARG: return f"unknown action '{name}'"
     if not arg: return f"'{name}' needs an argument (e.g. {name}:...)"
+    if name == "auto" and arg not in ("off", "native", "smart"): return "auto: off | native | smart"
+    if name == "look":
+        from . import looks
+        if arg not in looks.names(): return f"no saved look '{arg}' (truesense look list)"
     if name == "power" and arg not in hw.MODES: return f"power mode must be one of {', '.join(hw.MODES)}"
     if name == "power-cycle" and any(m not in hw.MODES for m in arg.split(",")): return "power-cycle needs a comma list of power modes"
     if name == "fan" and arg not in ("smart", "auto", "max") and not (arg.isdigit() and 20 <= int(arg) <= 100): return "fan: smart | auto | max | 20..100"
@@ -83,6 +88,14 @@ def run(spec, cfg=None):
         if arg == "auto": control.fan("auto"); return "Fans: firmware auto"
         if arg == "max": control.fan("max"); return "Fans: MAX"
         control.fan("manual", int(arg)); return f"Fans: {arg} %"
+    if name == "look":
+        from . import looks
+        looks.apply(looks.load(arg)); return f"Look: {arg}"
+    if name == "auto":
+        ipc.call("set", key="auto_mode", value=arg); return f"Mode control: {arg}"
+    if name == "auto-next":
+        cur = ipc.call("state")["settings"].get("auto_mode", "off"); nxt = {"off": "native", "native": "smart", "smart": "off"}.get(cur, "smart")
+        ipc.call("set", key="auto_mode", value=nxt); return f"Mode control: {nxt}"
     if name == "fan-max-toggle":
         if hw.fan_state()["mode"] == "max": control.fan("smart"); return "Fans: smart curve"
         control.fan("max"); return "Fans: MAX"

@@ -25,7 +25,7 @@ DEFAULTS = {
               "up_dwell_s": 5, "down_dwell_s": 30},
     "profile": {"osd": True, "hold_minutes": 30,
                 "auto": {"ac_busy": "turbo", "ac_normal": "balanced", "battery_busy": "balanced", "battery_idle": "eco"}},
-    "keys": {"tap": "power-next", "double": "output-toggle", "triple": "none", "long": "fan-max-toggle", "fn_esc": "none",
+    "keys": {"profile": "default", "tap": "power-next", "double": "output-toggle", "triple": "none", "long": "fan-max-toggle", "fn_esc": "none",
              "long_ms": 800, "multi_ms": 450, "power_cycle": ["eco", "quiet", "balanced", "performance", "turbo"]},
     "startup": {"profile": "", "keyboard": "last", "rear": "last"},   # applied at login: last | default | none | profile:NAME (keyboard) | off (rear)
     "keyboard": {"operating_follow": False, "operating_colors": {}},

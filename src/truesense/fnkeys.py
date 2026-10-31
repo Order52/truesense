@@ -84,6 +84,23 @@ def run(cfg=None):
             print(gesture, "->", spec, "FAILED:", e, flush=True); osd.show(f"TrueSense: {e}", "power", cfg)
 
     g = Gestures(do, k["long_ms"], k["multi_ms"])
+
+    def watch_config():
+        """Pick up changes made in the window or with `truesense keys ...` without a restart: poll the user config's modification time."""
+        path = config.USER_PATH; last = os.stat(path).st_mtime if os.path.exists(path) else 0
+        while True:
+            time.sleep(1.5)
+            try: m = os.stat(path).st_mtime if os.path.exists(path) else 0
+            except OSError: continue
+            if m == last: continue
+            last = m
+            try: new = config.load()["keys"]
+            except ValueError: continue                                           # half-written or invalid file: keep what we have
+            for gst in ("tap", "double", "triple", "long", "fn_esc"):
+                if actions.validate(new[gst]) is None: k[gst] = new[gst]
+            k["long_ms"], k["multi_ms"] = new["long_ms"], new["multi_ms"]; g.long_s, g.multi_s = k["long_ms"] / 1000, k["multi_ms"] / 1000
+            print("key bindings reloaded:", {x: k[x] for x in ("tap", "double", "triple", "long", "fn_esc")}, flush=True)
+    threading.Thread(target=watch_config, daemon=True, name="config-watch").start()
     with open(node, "rb", buffering=0) as f:
         while True:
             r = f.read(8)

@@ -203,6 +203,27 @@ class TestDaemonLogic(Base):
         with self.assertRaises(device.HwError): sp.save("silent", dict(sp.DEFAULTS))                # built-ins are read-only
         self.assertTrue(b.reason)
 
+    def test_undervolt_needs_confirmation_and_boot_has_a_crash_guard(self):
+        import tempfile
+        from truesense import cpu, undervolt
+        store = {"core": 0, "cache": 0}
+        cpu.uv_get = lambda plane=0: store["core" if plane == 0 else "cache"]
+        def fake_set(plane, mv, confirm=False): store["core" if plane == 0 else "cache"] = mv
+        cpu.uv_set = fake_set; cpu.uv_reset = lambda: (store.update(core=0, cache=0), {"core_mv": 0, "cache_mv": 0})[1]
+        daemon.UV_PENDING = tempfile.mkdtemp() + "/uv-pending"
+        b = self.make(); h = b.handlers(); uv = h["undervolt"]
+        with self.assertRaises(device.HwError): uv(action="apply", core=-50, cache=-40)                       # no confirmation: refused
+        with self.assertRaises(device.HwError): uv(action="apply", core=-300, cache=-40, confirm=True)         # beyond the limit: refused
+        self.assertEqual(store, {"core": 0, "cache": 0})
+        uv(action="apply", core=-50, cache=-40, confirm=True, name="truesense"); self.assertEqual(store, {"core": -50, "cache": -40})
+        uv(action="reset"); self.assertEqual(store, {"core": 0, "cache": 0})
+        uv(action="boot", core=-30, cache=-30, confirm=True, name="mild"); self.assertEqual(uv(action="get")["boot"]["name"], "mild")
+        b.apply_uv_boot(); self.assertEqual(store["core"], -30); self.assertTrue(os.path.exists(daemon.UV_PENDING))      # applied, guard flag set
+        store.update(core=0, cache=0); b2 = self.make(); b2.st.set("uv_boot", {"name": "mild", "core": -30, "cache": -30}); b2.apply_uv_boot()
+        self.assertEqual(store["core"], 0, "the previous boot never proved stable: do not apply again"); self.assertIsNone(b2.st.get("uv_boot"))
+        self.assertEqual(undervolt.load("stock")["core"], 0)
+        with self.assertRaises(device.HwError): undervolt.save("truesense", {"core": -10, "cache": -10})
+
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run
         device.SIM.run = lambda c: "err no such device\n"

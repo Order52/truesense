@@ -15,15 +15,17 @@ keyboard|keyboard status|keyboard on|keyboard off|keyboard toggle|keyboard resto
 keyboard effect breathing|keyboard speed 3|keyboard speed 11|keyboard color 00ff00|look list|startup boot|startup boot current|startup boot clear|startup boot smokelook|look save smokelook|look show smokelook|look apply smokelook|startup set keyboard look:smokelook|startup set rear look:smokelook|startup apply|look delete smokelook|keyboard paint w=ff0000 arrows=00ff00|keyboard layout|startup|startup show|startup set keyboard last|startup set rear off|startup set keyboard none|startup apply|rear set static --zones ff0000,00ff00,0000ff|rear set static --zones ff0000|keyboard fill ff0000|keyboard gradient ff3300 6600ff|keyboard rainbow|keyboard keys wasd=ff0000 esc=00ff00 --base 101010|keyboard brightness|keyboard brightness 30
 keyboard timeout|keyboard timeout off|keyboard timeout on|keyboard operating status|keyboard profile list|keyboard profile save smoke fill 00aec7|keyboard profile save smoke2 gradient ff0000 0000ff|keyboard profile save smoke3 rainbow|keyboard profile load smoke|keyboard profile delete smoke
 audio output|audio output status|audio jack|audio jack headset|audio jack headphones|audio jack auto|audio mic|audio mic status|audio mic boost|audio voice|audio voice status|audio speaker-filter status
-keys|keys show|keys actions|keys set tap power:turbo|keys set double output-toggle|keys set long exec:true|keys set fn_esc none|keys reset tap|keys reset|keys test notify:hello|keys test power:eco|keys timing|keys timing --long-ms 700
+keys|keys profile list|keys profile show gaming|keys profile current|keys profile copy gaming kcopy|keys profile save kcopy --tap power:turbo --long-ms 700|keys profile show kcopy|keys profile use kcopy|keys profile use default|keys profile delete kcopy|keys show|keys actions|keys set tap power:turbo|keys set double output-toggle|keys set long exec:true|keys set fn_esc none|keys reset tap|keys reset|keys test notify:hello|keys test power:eco|keys timing|keys timing --long-ms 700
 profile|profile list|profile show gaming|profile save smoketest|profile apply quiet|profile apply smoketest|profile delete smoketest|profile next
-cpu info|cpu limits
+cpu undervolt list|cpu undervolt show truesense|cpu undervolt copy truesense uvmine|cpu undervolt save uvmine2 --core -40 --cache -30|cpu undervolt show uvmine2|cpu undervolt delete uvmine2|cpu undervolt delete uvmine|cpu undervolt get|cpu undervolt use stock|cpu undervolt reset|cpu undervolt boot off|cpu info|cpu limits
 touchpad status
 service|config|config show|config validate|config path
 completion bash|completion zsh|completion fish
 """.replace("|doctor-skip", "").strip()
 
 FAILING_BY_DESIGN = [
+    "keys profile save default --tap power:eco", "keys profile delete default", "keys profile show nosuch", "keys profile save q --tap frobnicate", "keys profile save q --long-ms 5", "keys profile use",
+    "cpu undervolt save truesense --core -10 --cache -10", "cpu undervolt save x --core -200 --cache -10", "cpu undervolt save x --core 5 --cache -10", "cpu undervolt delete truesense", "cpu undervolt show nosuch", "cpu undervolt set -10",
     "power smart save truesense --set ac_busy=turbo", "power smart delete truesense", "power smart show nosuch", "power smart save q --set ac_busy=warp", "power smart save q --set turbo_after_s=1", "power smart use",
     "fan curve save truesense --cpu 50:0,89:100 --gpu 46:0,78:100", "fan curve copy nosuch",
     "fan curve show nosuchcurve", "fan curve delete truesense", "fan curve save x --cpu 50:0,70:50 --gpu 46:0,78:100", "fan curve save y", "fan curve use", "fan curve save z --cpu bad --gpu 1:1",

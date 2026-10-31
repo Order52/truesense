@@ -5,6 +5,9 @@
 The project is now **TrueSense**: one kernel module, one daemon, one CLI, an optional window. Tested only on the **Acer Predator Helios 16 PH16-71** (BIOS V1.18, CachyOS, kernel 7.3.0-4 and 6.18 LTS, PipeWire 1.6). See [docs/STATUS.md](docs/STATUS.md).
 
 ### Added in this release (later)
+* **PREDATOR key profiles and a real editor**: pick an action per gesture (including running a script chosen with a file picker), built-in profiles `default`, `gaming`, `work`, `lights` (read-only, copy to edit), live reload in the key service.
+* **Undervolt profiles** with a page of their own: read-only built-ins including `truesense`, explicit confirmation before applying, optional apply-at-boot with a crash guard.
+* Settings no longer repeats the startup and lighting-profile options.
 * **Smart auto profiles** (built in: `truesense`, `battery-first`, `performance-first`, `silent`; read-only, copy to edit) with an editor in the window; the window shows why Smart auto chose a mode and lets you resume auto after a manual pick.
 * **Native auto and Smart auto** power modes (`truesense power auto native|smart`), and curve-based **smart fan** with built-in curves, your own curves (`truesense fan curve ...`) and a draggable curve editor in the window.
 * **Lighting looks** (`truesense look`) and a **boot look**: the daemon applies a chosen look when the laptop starts, before login, and again after resume from suspend. Window: Lighting, Profiles.

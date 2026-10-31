@@ -48,8 +48,10 @@ Areas that are switches accept `on | off | toggle | status`.
 | `audio voice status\|headset MODE\|array MODE\|apply\|watch` | AI noise reduction; MODE = off, conference, personal |
 | `audio speaker-filter`, `audio dts` | noise filter on the output (off by default); Acer DTS via AcerUltraX |
 | `keys show\|set GESTURE ACTION\|reset\|test ACTION\|actions\|timing` | the PREDATOR key (see below) |
+| `keys profile list\|current\|show NAME\|use NAME\|copy NAME [NEW]\|save NAME [--from BASE] [--tap A --double A --triple A --long A --fn-esc A --long-ms N --multi-ms N]\|delete NAME` | PREDATOR key profiles: built in `default` (the standard behaviour), `gaming`, `work`, `lights`; built-ins are read-only, copy to edit |
 | `profile list\|show\|save\|apply\|delete\|next` | bundles of power, fans, lighting, battery, audio |
-| `cpu info`, `cpu limits PL1 PL2`, `cpu undervolt ...` | RAPL limits (root); undervolt needs `--confirm` |
+| `cpu info`, `cpu limits PL1 PL2` | RAPL power limits |
+| `cpu undervolt get\|list\|show NAME\|use NAME --confirm\|reset\|copy NAME [NEW]\|save NAME --core MV --cache MV\|delete NAME\|boot NAME\|off --confirm` | undervolt profiles (`stock`, `truesense`, `mild`, `balanced`, `aggressive`; built-ins are read-only): nothing applies without `--confirm`, a reboot returns to stock, and "at boot" is guarded (skipped and switched off if the previous boot did not stay up 10 minutes). The offsets are conservative starting points, not validated on every unit |
 | `touchpad on\|off\|toggle` | touchpad inhibit |
 | `service status\|restart\|logs`, `config show\|validate\|path`, `completion bash\|zsh\|fish`, `gui` | housekeeping |
 
@@ -59,7 +61,7 @@ Areas that are switches accept `on | off | toggle | status`.
 `truesense-fast fan smart|auto|max|<20-100>`, `truesense-fast power <mode>` and `truesense-fast auto on|off` talk to the daemon directly (about 5 ms) for status-bar buttons; they fall back to the CLI.
 
 ## The PREDATOR key and Fn keys
-`truesense keys set GESTURE ACTION` with GESTURE = `tap`, `double`, `triple`, `long`, `fn_esc`. `truesense keys actions` lists every action: `power-next`, `power:turbo`, `power-cycle:eco,balanced,turbo`, `fan:smart`, `fan-max-toggle`, `profile:gaming`, `output-toggle`, `mic-toggle`, `voice-next`, `touchpad-toggle`, `keyboard-effect-next`, `rear:toggle`, `battery-limit-toggle`, `overdrive-toggle`, `exec:<command>`, `notify:<text>`, `none`. Actions are checked when you set them, never at key-press time. `truesense keys test ACTION` runs one now. Fn+F11/F12 brightness is done by the keyboard itself and is left alone. Defaults: tap = next power mode, double = output toggle, long = fans to max (toggle).
+`truesense keys set GESTURE ACTION` with GESTURE = `tap`, `double`, `triple`, `long`, `fn_esc`. `truesense keys actions` lists every action: `power-next`, `power:turbo`, `power-cycle:eco,balanced,turbo`, `fan:smart`, `fan-max-toggle`, `profile:gaming`, `output-toggle`, `mic-toggle`, `voice-next`, `touchpad-toggle`, `keyboard-effect-next`, `rear:toggle`, `battery-limit-toggle`, `overdrive-toggle`, `exec:<command>`, `notify:<text>`, `none`. Actions are checked when you set them, never at key-press time. `truesense keys test ACTION` runs one now. Fn+F11/F12 brightness is done by the keyboard itself and is left alone. In the window, the PREDATOR key page lets you pick an action for each gesture, run a script with a file picker (an executable file runs directly, a `.sh` or `.py` file runs through its interpreter), save sets of bindings as profiles, and change timing; the key service picks changes up by itself. Extra actions: `look:NAME`, `auto:off|native|smart`, `auto-next`. Defaults: tap = next power mode, double = output toggle, long = fans to max (toggle).
 
 ## Services
 * `truesense.service` (root, `Type=notify`, watchdog, always restarted): smart fan curve, thermal governor, power limits, automatic profile, IPC socket `/run/truesense/truesense.sock` (root and the configured user only). On stop, crash or exit the fans return to firmware Auto and clock caps are lifted.
