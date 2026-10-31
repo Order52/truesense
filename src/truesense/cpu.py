@@ -81,3 +81,14 @@ def uv_reset():
         try: _msr(0x150, _uv_cmd(p, True, 0))
         except OSError: pass
     return {"core_mv": uv_get(0), "cache_mv": uv_get(2)}
+
+
+PL_SAFE = {"pl1": (35, 80), "pl2": (35, 100)}     # this laptop's stock is 80 W: inside this is fine, beyond it the cooling is the limit
+PL_DANGER = {"pl1": 100, "pl2": 115}
+
+def pl_risk(pl1, pl2):
+    """("safe" | "caution" | "danger", message) for a PL1/PL2 pair."""
+    if pl1 > PL_DANGER["pl1"] or pl2 > PL_DANGER["pl2"]: return "danger", f"Beyond the danger line ({PL_DANGER['pl1']} W sustained / {PL_DANGER['pl2']} W burst): the cooling cannot keep up and the CPU will throttle hard or overheat."
+    if pl1 > PL_SAFE["pl1"][1] or pl2 > PL_SAFE["pl2"][1]: return "caution", f"Above stock ({PL_SAFE['pl1'][1]} W sustained / {PL_SAFE['pl2'][1]} W burst): hotter and louder, and it may throttle."
+    if pl1 < PL_SAFE["pl1"][0] or pl2 < PL_SAFE["pl2"][0]: return "caution", "Very low limits make the laptop feel slow."
+    return "safe", "Inside the safe range."

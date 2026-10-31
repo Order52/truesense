@@ -258,6 +258,42 @@ class TestDaemonLogic(Base):
         self.assertEqual(state["offset"], 0, "the previous boot never proved stable"); self.assertIsNone(b2.st.get("gpu_uv_boot"))
         with self.assertRaises(device.HwError): gu.save("truesense", {"offset": 10, "cap": 0})
 
+    def test_power_limits_are_kept_and_risky_values_need_force(self):
+        import tempfile
+        from truesense import cpu
+        d = tempfile.mkdtemp() + "/"
+        for n in ("constraint_0_power_limit_uw", "constraint_1_power_limit_uw"): open(d + n, "w").write("80000000")
+        daemon.RAPL = d; cpu.RAPL = d
+        b = self.make(); h = b.handlers()
+        r = h["cpu_limits"](pl1=70, pl2=90); self.assertEqual((r["pl1_w"], r["pl2_w"]), (70, 90))
+        for _ in range(5): b.step()                                                                 # the daemon must not overwrite your limits
+        self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), "70000000"); self.assertEqual(open(d + "constraint_1_power_limit_uw").read(), "90000000")
+        self.assertEqual(h["cpu_info"]()["user"], {"pl1": 70.0, "pl2": 90.0})
+        with self.assertRaises(device.HwError): h["cpu_limits"](pl1=105, pl2=118)                  # beyond the danger line: needs force
+        h["cpu_limits"](pl1=105, pl2=118, force=True)
+        h["cpu_limits"](reset=True)
+        for _ in range(4): b.step()
+        self.assertIsNone(h["cpu_info"]()["user"]); self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), open(d + "constraint_1_power_limit_uw").read())
+        self.assertEqual(cpu.pl_risk(65, 80)[0], "safe"); self.assertEqual(cpu.pl_risk(90, 100)[0], "caution"); self.assertEqual(cpu.pl_risk(110, 115)[0], "danger")
+
+    def test_undervolt_risk_zones(self):
+        from truesense import undervolt, gpuundervolt as gu
+        self.assertEqual(undervolt.risk(0, 0)[0], "safe"); self.assertEqual(undervolt.risk(-50, -40)[0], "safe"); self.assertEqual(undervolt.risk(-75, -40)[0], "caution"); self.assertEqual(undervolt.risk(-100, -40)[0], "danger")
+        self.assertEqual(gu.risk(120, 2400)[0], "safe"); self.assertEqual(gu.risk(180, 2400)[0], "caution"); self.assertEqual(gu.risk(220, 2400)[0], "danger"); self.assertEqual(gu.risk(100, 0)[0], "caution")
+
+    def test_headset_boost_reads_the_value_line_not_the_channel_count(self):
+        from truesense import audio
+        header = "numid=8,iface=MIXER,name='Headset Mic Boost Volume'\n  ; type=INTEGER,access=rw---R--,values=2,min=0,max=3,step=0\n  : values=%d,%d\n  | dBscale-min=0.00dB,step=10.00dB,mute=0\n"
+        state = {"v": 1}; real = audio._amixer
+        def fake(*a):
+            if a[0] == "cset": state["v"] = int(a[2].split(",")[0]); return ""
+            return header % (state["v"], state["v"])
+        audio._amixer = fake
+        try:
+            self.assertEqual(audio.headset_boost(), 1)
+            for lv in (0, 3, 2, 1): self.assertEqual(audio.headset_boost(lv), lv)
+        finally: audio._amixer = real
+
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run
         device.SIM.run = lambda c: "err no such device\n"

@@ -17,7 +17,7 @@ keyboard timeout|keyboard timeout off|keyboard timeout on|keyboard operating sta
 audio output|audio output status|audio jack|audio jack headset|audio jack headphones|audio jack auto|audio mic|audio mic status|audio mic boost|audio voice|audio voice status|audio speaker-filter status
 keys|keys profile list|keys profile show gaming|keys profile current|keys profile copy gaming kcopy|keys profile save kcopy --tap power:turbo --long-ms 700|keys profile show kcopy|keys profile use kcopy|keys profile use default|keys profile delete kcopy|keys show|keys actions|keys set tap power:turbo|keys set double output-toggle|keys set long exec:true|keys set fn_esc none|keys reset tap|keys reset|keys test notify:hello|keys test power:eco|keys timing|keys timing --long-ms 700
 profile|profile list|profile show gaming|profile save smoketest|profile apply quiet|profile apply smoketest|profile delete smoketest|profile next
-cpu undervolt list|cpu undervolt show truesense|cpu undervolt copy truesense uvmine|cpu undervolt save uvmine2 --core -40 --cache -30|cpu undervolt show uvmine2|cpu undervolt delete uvmine2|cpu undervolt delete uvmine|cpu undervolt get|cpu undervolt use stock|cpu undervolt reset|cpu undervolt boot off|cpu info|cpu limits
+cpu undervolt list|cpu undervolt show truesense|cpu undervolt copy truesense uvmine|cpu undervolt save uvmine2 --core -40 --cache -30|cpu undervolt show uvmine2|cpu undervolt delete uvmine2|cpu undervolt delete uvmine|cpu undervolt get|cpu undervolt use stock|cpu undervolt reset|cpu undervolt boot off|cpu limits --auto|cpu info|cpu limits
 touchpad status
 service|config|config show|config validate|config path
 completion bash|completion zsh|completion fish

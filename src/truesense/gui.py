@@ -3,7 +3,7 @@
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
 import os, shlex, sys, threading, time
-from . import actions, audio, backend as hw, config, control, curves, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, profiles, smartprofiles, undervolt, userstate
+from . import actions, audio, backend as hw, config, control, cpu, curves, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, profiles, smartprofiles, undervolt, userstate
 from .device import HwError
 
 try:
@@ -13,7 +13,7 @@ try:
     from PyQt6.QtCore import QByteArray, QSize
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox)
+                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
 except ImportError as _e:
     Qt = None; _IMPORT_ERROR = _e
 
@@ -204,14 +204,24 @@ class ColorButton(QPushButton if Qt else object):
         if c.isValid(): self.hex = "%02x%02x%02x" % (c.red(), c.green(), c.blue()); self._paint(); self.changed.emit(self.hex)
 
 
-KB_LAYOUT = [   # physical layout, top to bottom: (key name, width in key units); "_" = gap; heights are 1 except where noted below
-    [("esc", 1)] + [(f"f{i}", 1) for i in range(1, 13)] + [("prtsc", 1), ("ins", 1), ("del", 1), ("_", .5), ("power", 1)],
-    [(k, 1) for k in "`1234567890"] + [("minus", 1), ("=", 1), ("backspace", 2), ("predator", 1), ("_", .5), ("numlock", 1), ("num/", 1), ("*", 1), ("-", 1)],
-    [("tab", 1.5)] + [(k, 1) for k in "qwertyuiop"] + [("[", 1), ("]", 1), ("\\", 1.5), ("playpause", 1), ("_", .5), ("num7", 1), ("num8", 1), ("num9", 1), ("+", 1)],
-    [("caps", 1.75)] + [(k, 1) for k in "asdfghjkl"] + [(";", 1), ("'", 1), ("return", 2.25), ("backward", 1), ("_", .5), ("num4", 1), ("num5", 1), ("num6", 1), ("_", 1)],
-    [("lshift", 2.25)] + [(k, 1) for k in "zxcvbnm"] + [(",", 1), (".", 1), ("/", 1), ("rshift", 1.75), ("up", 1), ("forward", 1), ("_", .5), ("num1", 1), ("num2", 1), ("num3", 1), ("numenter", 1)],
-    [("ctrl", 1.25), ("fn", 1.25), ("windows", 1.25), ("lalt", 1.25), ("space", 5), ("ralt", 1), ("options", 1), ("rctrl", 1), ("left", 1), ("down", 1), ("right", 1), ("_", 1.5), ("num0", 2), ("num.", 1)],
+# The real PH16-71 keyboard (from the product photo): main block, then four numpad columns with the media keys above and the PREDATOR key beside NumLk.
+KB_MAIN = [   # rows top to bottom: (key, width) or (key, width, absolute x); "_" = gap
+    [("esc", 1)] + [(f"f{i}", .93) for i in range(1, 13)] + [("prtsc", .93), ("ins", .93), ("del", .93)],
+    [(k, 1) for k in "`1234567890"] + [("minus", 1), ("=", 1), ("backspace", 2)],
+    [("tab", 1.5)] + [(k, 1) for k in "qwertyuiop"] + [("[", 1), ("]", 1), ("\\", 1.5)],
+    [("caps", 1.75)] + [(k, 1) for k in "asdfghjkl"] + [(";", 1), ("'", 1), ("return", 2.25)],
+    [("lshift", 2.25)] + [(k, 1) for k in "zxcvbnm"] + [(",", 1), (".", 1), ("/", 1), ("rshift", 1.75), ("up", 1)],
+    [("ctrl", 1.25), ("fn", 1.25), ("windows", 1.25), ("lalt", 1.25), ("space", 4.75), ("ralt", 1), ("options", 1), ("rctrl", 1.25), ("left", 1), ("down", 1), ("right", 1)],
 ]
+KB_PAD = [    # numpad: (key, column 0..3, width, height) per row; the media keys sit in the top row
+    [("backward", 0, 1, 1), ("playpause", 1, 1, 1), ("forward", 2, 1, 1), ("power", 3, 1, 1)],
+    [("predator", 0, 1, 1), ("numlock", 1, 1, 1), ("num/", 2, 1, 1), ("*", 3, 1, 1)],
+    [("num7", 0, 1, 1), ("num8", 1, 1, 1), ("num9", 2, 1, 1), ("-", 3, 1, 1)],
+    [("num4", 0, 1, 1), ("num5", 1, 1, 1), ("num6", 2, 1, 1), ("+", 3, 1, 1)],
+    [("num1", 0, 1, 1), ("num2", 1, 1, 1), ("num3", 2, 1, 1), ("numenter", 3, 1, 2)],
+    [("num0", 0, 2, 1), ("num.", 2, 1, 1)],
+]
+PAD_X = 16.5
 KB_LABELS = {"backspace": "⌫", "return": "↵", "lshift": "Shift", "rshift": "Shift", "caps": "Caps", "windows": "Win", "options": "Opt", "lalt": "Alt", "ralt": "Alt", "ctrl": "Ctrl", "rctrl": "Ctrl",
              "space": "", "up": "↑", "down": "↓", "left": "←", "right": "→", "prtsc": "PrtSc", "predator": "P", "power": "⏻", "playpause": "▶", "backward": "⏮", "forward": "⏭", "numlock": "Num",
              "numenter": "↵", "num/": "/", "num.": ".", "minus": "-", "tab": "Tab", "esc": "Esc", "ins": "Ins", "del": "Del", "fn": "Fn", "num0": "0", "num1": "1", "num2": "2", "num3": "3",
@@ -224,23 +234,28 @@ class PerKeyBoard(QWidget if Qt else object):
     """The keyboard as a picture in its real layout. Click a key, Ctrl+click to add or remove, drag a box to select several, right-click a key to pick up its colour."""
     selection_changed = pyqtSignal() if Qt else None
     picked = pyqtSignal(str) if Qt else None
-    UNITS_W, UNITS_H = 20.5, 6.45
+    UNITS_W, UNITS_H = 20.5, 6.4
 
     def __init__(self):
         super().__init__(); self.cells = ["00aec7"] * 126 + ["000000"] * 2; self.sel = set(); self.keys = []; self.hover = None; self.band = None; self.base = set(); self.press_pos = None
         self.setMouseTracking(True); self.setFocusPolicy(Qt.FocusPolicy.StrongFocus); self.setMinimumHeight(150); self._layout()
 
     def _layout(self):
-        seen, y = set(), 0.0
-        for r, row in enumerate(KB_LAYOUT):
+        seen = set(); ys = [0.0, 1.3, 2.3, 3.3, 4.3, 5.3]
+
+        def add(name, x, y, w, h):
+            cs = keymap.NAMES.get(name) or []
+            if cs and not seen.intersection(cs): self.keys.append((name, cs, x, y, w, h)); seen.update(cs)
+        for r, row in enumerate(KB_MAIN):
             x = 0.0
-            for name, w in row:
-                if name != "_":
-                    cs = keymap.NAMES.get(name) or []; h = 2 if name in ("+", "numenter") else 1
-                    if cs and not seen.intersection(cs): self.keys.append((name, cs, x, y, w, h)); seen.update(cs)
-                x += w
-            y += 1.0 if r else 1.3
-        extra = [(n, cs) for n, cs in keymap.NAMES.items() if cs and not seen.intersection(cs) and n not in ("enter", "win")]          # anything the picture does not know still gets a key
+            for item in row:
+                name, w = item[0], item[1]; ax = item[2] if len(item) > 2 else x
+                if name != "_": add(name, ax, ys[r], w, 1)
+                x = x + w if len(item) == 2 else x
+        for r, row in enumerate(KB_PAD):
+            for name, col, w, h in row: add(name, PAD_X + col, ys[r], w, h)
+        y = 6.4
+        extra = [(n, cs) for n, cs in keymap.NAMES.items() if cs and not seen.intersection(cs) and n not in ("enter", "win")]        # anything the picture does not know still gets a key
         for i, (n, cs) in enumerate(extra): self.keys.append((n, cs, i * 1.0, y, 1, 1)); seen.update(cs); self.UNITS_H = max(self.UNITS_H, y + 1.1)
 
     def unit(self): return self.width() / self.UNITS_W
@@ -822,11 +837,22 @@ class Window(QMainWindow if Qt else object):
         lay = self.page("Settings"); v = self.card(lay, "Start up")
         self.autostart = self.switch(v, "Open this window at login", self.set_autostart, "Writes ~/.config/autostart/truesense.desktop. Hyprland needs `exec-once = truesense gui` (or uwsm) to run autostart entries.")
         self.autostart.setChecked(os.path.exists(AUTOSTART)); v.addWidget(self.hint("Lighting at boot and login is set in Lighting, Profiles. The PREDATOR key has its own page."))
-        v = self.card(lay, "CPU power limits")
-        self.pl1, self.pl2 = QDoubleSpinBox(), QDoubleSpinBox()
-        for s_, val in ((self.pl1, 65), (self.pl2, 80)): s_.setRange(25, 120); s_.setDecimals(0); s_.setSuffix(" W"); s_.setValue(val)
-        self.line(v, "PL1 / PL2 (25 to 120 W)", self.pl1, self.pl2, self.btn("Apply", lambda: self.do(lambda: ipc.call("cpu_limits", pl1=self.pl1.value(), pl2=self.pl2.value()), "CPU limits applied", refresh=False)))
+        v = self.card(lay, "Reset")
+        self.line(v, "Everything back to defaults", self.btn("Reset all…", self.reset_all)); v.addWidget(self.hint("Fan curve and Smart auto profile to `truesense`, PREDATOR key to `default`, smart fan and Smart auto on, power limits automatic, lighting to stock, undervolt off. Your saved profiles are kept."))
         lay.addStretch()
+
+    def reset_all(self):
+        if QMessageBox.question(self, "Reset to defaults", "Reset the fan curve, Smart auto profile, PREDATOR key, power limits, lighting and undervolt to their defaults?\n\nYour saved profiles are not deleted.") != QMessageBox.StandardButton.Yes: return
+        def go():
+            steps = (lambda: ipc.call("fan_curve", action="use", name="truesense"), lambda: ipc.call("smart_profile", action="use", name="truesense"), lambda: ipc.call("set", key="smart_fan", value=True),
+                     lambda: ipc.call("set", key="auto_mode", value="smart"), lambda: keybinds.use("default"), lambda: ipc.call("cpu_limits", reset=True),
+                     lambda: ipc.call("undervolt", action="boot_clear"), lambda: ipc.call("undervolt", action="reset"), lambda: ipc.call("gpu_undervolt", action="boot_clear"), lambda: ipc.call("gpu_undervolt", action="reset"),
+                     lambda: keyboard.restore_default(None), lambda: hw.rear_set("static", "00aec7", 3, 100, 1))
+            for fn in steps:
+                try: fn()
+                except Exception as e: self.say(f"Error: {e}")
+            return "done"
+        self.do(go, "Everything is back to its defaults"); QTimer.singleShot(1500, lambda: (self.reload_curves("truesense"), self.reload_smart("truesense"), self.reload_keyprofiles("default"), self.reload_uv("stock"), self.reload_gpu_uv("stock")))
 
     # ---- PREDATOR key ------------------------------------------------------------------------------------------------------------------
     def p_predator(self):
@@ -903,14 +929,23 @@ class Window(QMainWindow if Qt else object):
         v = self.card(lay, "Right now", "", True); self.uv_now = v.right; self.uv_state = self.hint("…"); v.addWidget(self.uv_state)
         v = self.card(lay, "Profile")
         self.uv_list = QComboBox(); self.uv_list.setMinimumWidth(150); self.uv_list.activated.connect(lambda i: self.load_uv(self.uv_list.currentText()))
-        self.line(v, "Profile", self.uv_list, self.btn("Apply", self.uv_apply, True)); self.uv_copy = self.btn("Copy to edit", self.uv_copy_do); self.uv_del = self.btn("Delete", self.uv_delete)
+        self.line(v, "Profile", self.uv_list, self.btn("Reset", self.uv_reset), self.btn("Apply", self.uv_apply, True)); self.uv_copy = self.btn("Copy to edit", self.uv_copy_do); self.uv_del = self.btn("Delete", self.uv_delete)
         self.line(v, "Edit", self.uv_copy, self.uv_del)
         self.uv_core = self.slider(v, "Core offset", 0, undervolt.MAX_MV, 5, lambda x: None, suffix=" mV", prefix="-"); self.uv_cache = self.slider(v, "Cache offset", 0, undervolt.MAX_MV, 5, lambda x: None, suffix=" mV", prefix="-")
+        self.uv_risk = QLabel(""); self.uv_risk.setWordWrap(True); v.addWidget(self.uv_risk)
+        self.uv_core.valueChanged.connect(lambda *_: self.update_uv_risk()); self.uv_cache.valueChanged.connect(lambda *_: self.update_uv_risk())
         self.uv_name = QLineEdit(); self.uv_name.setPlaceholderText("name"); self.uv_name.setMinimumWidth(120); self.uv_save = self.btn("Save", self.uv_save_do)
         self.line(v, "Save as", self.uv_name, self.uv_save); self.uv_msg = self.hint(""); v.addWidget(self.uv_msg)
         self.line(v, "Default", self.btn("Reset to default (stock)", self.uv_reset))
         v = self.card(lay, "At boot")
         self.uv_boot = self.switch(v, "Apply the selected profile at boot", self.uv_boot_set, "Off by default. Guarded: if the laptop does not stay up for 10 minutes after applying it, the next boot skips it and turns this off.")
+        v = self.card(lay, "Power limits", "", True); self.pl_now = v.right
+        v.addWidget(self.hint("How much power the CPU may draw: PL1 is sustained, PL2 is short bursts. Stock is 80 W. TrueSense keeps your values until you go back to automatic."))
+        self.pl1, self.pl2 = QDoubleSpinBox(), QDoubleSpinBox()
+        for s_, val in ((self.pl1, 65), (self.pl2, 80)): s_.setRange(25, 120); s_.setDecimals(0); s_.setSuffix(" W"); s_.setValue(val)
+        self.line(v, "PL1 / PL2", self.pl1, self.pl2); self.pl_risk = QLabel(""); self.pl_risk.setWordWrap(True); v.addWidget(self.pl_risk)
+        for s_ in (self.pl1, self.pl2): s_.valueChanged.connect(lambda *_: self.update_pl_risk())
+        self.line(v, "Limits", self.btn("Use automatic", self.pl_auto), self.btn("Apply", self.pl_apply, True)); self.pl_state = self.hint(""); v.addWidget(self.pl_state); self.update_pl_risk()
         self.reload_uv(); lay.addStretch(); uvstack.addWidget(cpu_w)
         gpu_w = QWidget(); lay = QVBoxLayout(gpu_w); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(14); self.build_gpu_uv(lay); uvstack.addWidget(gpu_w); page_lay.addStretch()
 
@@ -919,10 +954,12 @@ class Window(QMainWindow if Qt else object):
         v = self.card(lay, "Right now", "", True); self.gpu_now = v.right; self.gpu_state = self.hint("…"); v.addWidget(self.gpu_state)
         v = self.card(lay, "Profile")
         self.gp_list = QComboBox(); self.gp_list.setMinimumWidth(150); self.gp_list.activated.connect(lambda i: self.load_gpu_uv(self.gp_list.currentText()))
-        self.line(v, "Profile", self.gp_list, self.btn("Apply", self.gpu_uv_apply, True)); self.gp_copy = self.btn("Copy to edit", self.gpu_uv_copy); self.gp_del = self.btn("Delete", self.gpu_uv_delete)
+        self.line(v, "Profile", self.gp_list, self.btn("Reset", self.gpu_uv_reset), self.btn("Apply", self.gpu_uv_apply, True)); self.gp_copy = self.btn("Copy to edit", self.gpu_uv_copy); self.gp_del = self.btn("Delete", self.gpu_uv_delete)
         self.line(v, "Edit", self.gp_copy, self.gp_del)
         self.gp_off = self.slider(v, "Curve offset", gpuundervolt.OFFSET_RANGE[0], gpuundervolt.OFFSET_RANGE[1], 10, lambda x: None, suffix=" MHz")
         self.gp_cap = self.slider(v, "Clock cap (below 600 = none)", 0, gpuundervolt.CAP_RANGE[1], 50, lambda x: None, suffix=" MHz")
+        self.gp_risk = QLabel(""); self.gp_risk.setWordWrap(True); v.addWidget(self.gp_risk)
+        self.gp_off.valueChanged.connect(lambda *_: self.update_gpu_risk()); self.gp_cap.valueChanged.connect(lambda *_: self.update_gpu_risk())
         self.gp_name = QLineEdit(); self.gp_name.setPlaceholderText("name"); self.gp_name.setMinimumWidth(120); self.gp_save = self.btn("Save", self.gpu_uv_save)
         self.line(v, "Save as", self.gp_name, self.gp_save); self.gp_msg = self.hint(""); v.addWidget(self.gp_msg); self.line(v, "Default", self.btn("Reset to default (stock)", self.gpu_uv_reset))
         v = self.card(lay, "At boot")
@@ -935,20 +972,22 @@ class Window(QMainWindow if Qt else object):
     def load_gpu_uv(self, name):
         try: p = gpuundervolt.load(name)
         except Exception as e: self.say(f"Error: {e}"); return
-        locked = name in gpuundervolt.BUILTIN; self.loading = True; self.gp_off.setValue(p["offset"]); self.gp_cap.setValue(p["cap"]); self.loading = False
+        locked = name in gpuundervolt.BUILTIN; self.loading = True; self.gp_off.setValue(p["offset"]); self.gp_cap.setValue(p["cap"]); self.loading = False; self.update_gpu_risk()
         for s_ in (self.gp_off, self.gp_cap): s_.setEnabled(not locked)
         self.gp_copy.setVisible(locked); self.gp_save.setEnabled(not locked); self.gp_del.setEnabled(not locked)
         self.gp_msg.setText(p.get("description") or ("Built-in profiles can't be edited. Press Copy to edit." if locked else ""))
 
     def gpu_uv_values(self): return {"offset": self.gp_off.value(), "cap": self.gp_cap.value() if self.gp_cap.value() >= gpuundervolt.CAP_RANGE[0] else 0}
 
+    def update_gpu_risk(self):
+        v = self.gpu_uv_values(); lvl, why = gpuundervolt.risk(v["offset"], v["cap"]); self.show_risk(self.gp_risk, lvl, why)
+
     def gpu_uv_apply(self):
         name = self.gp_list.currentText(); v = self.gpu_uv_values()
         if v["offset"] == 0 and v["cap"] == 0: self.gpu_uv_reset(); return
-        ok = QMessageBox.warning(self, "Apply GPU undervolt", f"Apply '{name}': curve offset {v['offset']:+d} MHz, clock cap {v['cap'] or 'none'} MHz?\n\nIf a game crashes or the screen glitches, this is too aggressive. "
-                                 "A reboot always returns to stock. Save your work first.", QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
-        if ok != QMessageBox.StandardButton.Apply: return
-        self.do(lambda: ipc.call("gpu_undervolt", action="apply", offset=v["offset"], cap=v["cap"], confirm=True, name=name), lambda r: f"GPU undervolt applied: offset {r['offset_mhz']:+d} MHz, cap {r['cap_mhz'] or 'none'} MHz", refresh=False); QTimer.singleShot(900, self.uv_refresh)
+        lvl, why = gpuundervolt.risk(v["offset"], v["cap"]); go, force = self.confirm_risk("Apply GPU undervolt", f"Apply '{name}': curve offset {v['offset']:+d} MHz, clock cap {v['cap'] or 'none'} MHz?", lvl, why)
+        if not go: return
+        self.do(lambda: ipc.call("gpu_undervolt", action="apply", offset=v["offset"], cap=v["cap"], confirm=True, name=name, force=force), lambda r: f"GPU undervolt applied: offset {r['offset_mhz']:+d} MHz, cap {r['cap_mhz'] or 'none'} MHz", refresh=False); QTimer.singleShot(900, self.uv_refresh)
 
     def gpu_uv_reset(self):
         self.do(lambda: (ipc.call("gpu_undervolt", action="boot_clear"), ipc.call("gpu_undervolt", action="reset"))[1], "GPU undervolt reset to stock (no GPU undervolt at boot)", refresh=False); self.reload_gpu_uv("stock"); QTimer.singleShot(900, self.uv_refresh)
@@ -957,10 +996,9 @@ class Window(QMainWindow if Qt else object):
         if self.loading: return
         name = self.gp_list.currentText(); v = self.gpu_uv_values()
         if not on: self.do(lambda: ipc.call("gpu_undervolt", action="boot_clear"), "GPU undervolt at boot: off", refresh=False); return
-        ok = QMessageBox.warning(self, "GPU undervolt at boot", f"Apply '{name}' every time the laptop starts?\n\nIf the laptop does not stay up for 10 minutes after applying it, the next boot skips it and this switches off.",
-                                 QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
-        if ok != QMessageBox.StandardButton.Apply: self.loading = True; self.gp_boot.setChecked(False); self.loading = False; return
-        self.do(lambda: ipc.call("gpu_undervolt", action="boot", offset=v["offset"], cap=v["cap"], confirm=True, name=name), f"GPU undervolt at boot: {name}", refresh=False)
+        lvl, why = gpuundervolt.risk(v["offset"], v["cap"]); go, force = self.confirm_risk("GPU undervolt at boot", f"Apply '{name}' every time the laptop starts?\n\nIf it does not stay up for 10 minutes after applying it, the next boot skips it and this switches off.", lvl, why)
+        if not go: self.loading = True; self.gp_boot.setChecked(False); self.loading = False; return
+        self.do(lambda: ipc.call("gpu_undervolt", action="boot", offset=v["offset"], cap=v["cap"], confirm=True, name=name, force=force), f"GPU undervolt at boot: {name}", refresh=False)
 
     def gpu_uv_save(self):
         name = self.gp_name.text().strip() or self.gp_list.currentText()
@@ -986,20 +1024,50 @@ class Window(QMainWindow if Qt else object):
     def load_uv(self, name):
         try: p = undervolt.load(name)
         except Exception as e: self.say(f"Error: {e}"); return
-        locked = name in undervolt.BUILTIN; self.loading = True; self.uv_core.setValue(-p["core"]); self.uv_cache.setValue(-p["cache"]); self.loading = False
+        locked = name in undervolt.BUILTIN; self.loading = True; self.uv_core.setValue(-p["core"]); self.uv_cache.setValue(-p["cache"]); self.loading = False; self.update_uv_risk()
         for s_ in (self.uv_core, self.uv_cache): s_.setEnabled(not locked)
         self.uv_copy.setVisible(locked); self.uv_save.setEnabled(not locked); self.uv_del.setEnabled(not locked)
         self.uv_msg.setText(p.get("description") or ("Built-in profiles can't be edited. Press Copy to edit." if locked else ""))
 
+    RISK_COLOR = {"safe": "#34c759", "caution": "#ffb347", "danger": "#ff5d6c"}
+
+    def show_risk(self, label, level, why):
+        label.setText(why); label.setStyleSheet(f"color: {self.RISK_COLOR[level]}; font-weight: 600;")
+
+    def confirm_risk(self, title, what, level, why):
+        """Ask before changing voltages or power limits. Past the safety line the warning is stronger; beyond the danger line you must type APPLY. Returns (go, force)."""
+        text = f"{what}\n\n{why}\n\nA reboot always returns voltages to stock. Save your work first."
+        if level == "danger":
+            word, ok = QInputDialog.getText(self, title, text + "\n\nThis is beyond the danger line. Type APPLY to go ahead:")
+            return (ok and word.strip() == "APPLY"), True
+        icon = QMessageBox.Icon.Warning if level == "caution" else QMessageBox.Icon.Question
+        box = QMessageBox(icon, title, text, QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, self); box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        return box.exec() == QMessageBox.StandardButton.Apply, False
+
+    def update_pl_risk(self):
+        lvl, why = cpu.pl_risk(self.pl1.value(), self.pl2.value()); self.show_risk(self.pl_risk, lvl, why if self.pl2.value() >= self.pl1.value() else "PL2 (burst) must not be below PL1 (sustained).")
+
+    def pl_apply(self):
+        a_, b_ = self.pl1.value(), self.pl2.value()
+        if b_ < a_: self.say("Error: PL2 (burst) must not be below PL1 (sustained)"); return
+        lvl, why = cpu.pl_risk(a_, b_); go, force = self.confirm_risk("Apply power limits", f"Set PL1 {a_:g} W and PL2 {b_:g} W?", lvl, why) if lvl != "safe" else (True, False)
+        if not go: return
+        self.do(lambda: ipc.call("cpu_limits", pl1=a_, pl2=b_, force=force), lambda r: f"Power limits: PL1 {r['pl1_w']:g} W, PL2 {r['pl2_w']:g} W", refresh=False); QTimer.singleShot(900, self.uv_refresh)
+
+    def pl_auto(self):
+        self.do(lambda: ipc.call("cpu_limits", reset=True), "Power limits are automatic again", refresh=False); QTimer.singleShot(900, self.uv_refresh)
+
     def uv_values(self): return {"core": -self.uv_core.value(), "cache": -self.uv_cache.value()}
+
+    def update_uv_risk(self):
+        v = self.uv_values(); lvl, why = undervolt.risk(v["core"], v["cache"]); self.show_risk(self.uv_risk, lvl, why)
 
     def uv_apply(self):
         name = self.uv_list.currentText(); vals = self.uv_values()
-        if vals["core"] == 0 and vals["cache"] == 0: self.do(lambda: ipc.call("undervolt", action="reset"), "Undervolt reset to stock", refresh=False); return
-        ok = QMessageBox.warning(self, "Apply undervolt", f"Apply '{name}': core {vals['core']} mV, cache {vals['cache']} mV?\n\nIf the laptop freezes or reboots, this offset is too aggressive. "
-                                 "A reboot always returns to stock. Save your work first.", QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
-        if ok != QMessageBox.StandardButton.Apply: return
-        self.do(lambda: ipc.call("undervolt", action="apply", core=vals["core"], cache=vals["cache"], confirm=True, name=name), lambda r: f"Undervolt applied: core {r['core_mv']} mV, cache {r['cache_mv']} mV", refresh=False); QTimer.singleShot(900, self.uv_refresh)
+        if vals["core"] == 0 and vals["cache"] == 0: self.uv_reset(); return
+        lvl, why = undervolt.risk(vals["core"], vals["cache"]); go, force = self.confirm_risk("Apply CPU undervolt", f"Apply '{name}': core {vals['core']} mV, cache {vals['cache']} mV?", lvl, why)
+        if not go: return
+        self.do(lambda: ipc.call("undervolt", action="apply", core=vals["core"], cache=vals["cache"], confirm=True, name=name, force=force), lambda r: f"Undervolt applied: core {r['core_mv']} mV, cache {r['cache_mv']} mV", refresh=False); QTimer.singleShot(900, self.uv_refresh)
 
     def uv_reset(self):
         self.do(lambda: (ipc.call("undervolt", action="boot_clear"), ipc.call("undervolt", action="reset"))[1], "Undervolt reset to stock (no undervolt at boot)", refresh=False); self.reload_uv("stock"); QTimer.singleShot(900, self.uv_refresh)
@@ -1008,15 +1076,16 @@ class Window(QMainWindow if Qt else object):
         if self.loading: return
         name = self.uv_list.currentText(); vals = self.uv_values()
         if not on: self.do(lambda: ipc.call("undervolt", action="boot_clear"), "Undervolt at boot: off", refresh=False); return
-        ok = QMessageBox.warning(self, "Undervolt at boot", f"Apply '{name}' (core {vals['core']} mV, cache {vals['cache']} mV) every time the laptop starts?\n\nIf the laptop does not stay up for 10 minutes after applying it, "
-                                 "the next boot skips it and this switches off.", QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
-        if ok != QMessageBox.StandardButton.Apply: self.loading = True; self.uv_boot.setChecked(False); self.loading = False; return
-        self.do(lambda: ipc.call("undervolt", action="boot", core=vals["core"], cache=vals["cache"], confirm=True, name=name), f"Undervolt at boot: {name}", refresh=False)
+        lvl, why = undervolt.risk(vals["core"], vals["cache"]); go, force = self.confirm_risk("Undervolt at boot", f"Apply '{name}' (core {vals['core']} mV, cache {vals['cache']} mV) every time the laptop starts?\n\nIf it does not stay up for 10 minutes after applying it, the next boot skips it and this switches off.", lvl, why)
+        if not go: self.loading = True; self.uv_boot.setChecked(False); self.loading = False; return
+        self.do(lambda: ipc.call("undervolt", action="boot", core=vals["core"], cache=vals["cache"], confirm=True, name=name, force=force), f"Undervolt at boot: {name}", refresh=False)
 
     def uv_refresh(self):
         def work():
             try: r = ipc.call("undervolt", action="get")
             except Exception as e: r = {"error": str(e)}
+            try: r["cpu"] = ipc.call("cpu_info")
+            except Exception as e: r["cpu"] = {"error": str(e)}
             try: r["gpu"] = ipc.call("gpu_undervolt", action="get")
             except Exception as e: r["gpu"] = {"error": str(e)}
             self.say_uv(r)
@@ -1032,6 +1101,10 @@ class Window(QMainWindow if Qt else object):
             self.uv_state.setText((f"Applied: {r['applied']['name']}. " if r.get("applied") else "Stock voltage. ") + (f"At boot: {r['boot']['name']}. " if r.get("boot") else "") + ("A boot undervolt is waiting to prove stable." if r.get("pending") else ""))
         else: self.uv_now.setText("not readable"); self.uv_state.setText(str(r.get("error", ""))[:160])
         self.loading = True; self.uv_boot.setChecked(bool(r.get("boot"))); self.loading = False
+        c = r.get("cpu") or {}
+        if c.get("pl1_w"):
+            self.pl_now.setText(f"PL1 {c['pl1_w']:g} W · PL2 {c['pl2_w']:g} W"); self.pl_state.setText(f"Yours: {c['user']['pl1']:g} / {c['user']['pl2']:g} W." if c.get("user") else f"Automatic: {c['auto']['normal_w']} W, {c['auto']['gaming_w']} W when gaming.")
+            if not getattr(self, "_pl_init", False): self._pl_init = True; self.pl1.setValue(c["user"]["pl1"] if c.get("user") else c["pl1_w"]); self.pl2.setValue(c["user"]["pl2"] if c.get("user") else c["pl2_w"])
         g = r.get("gpu") or {}
         if "offset_mhz" in g:
             self.gpu_now.setText(f"offset {g['offset_mhz']:+d} MHz"); self.gpu_state.setText((f"Applied: {g['applied']['name']} (cap {g['applied']['cap'] or 'none'} MHz). " if g.get("applied") else "Not applied by TrueSense. ") + (f"At boot: {g['boot']['name']}. " if g.get("boot") else "") + f"Driver range {g['range_mhz'][0]} to {g['range_mhz'][1]} MHz.")

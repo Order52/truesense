@@ -101,3 +101,16 @@ def copy(name, new=None):
     base = new or name + "-copy"; n, target = 2, base
     while target in names(): target = f"{base}-{n}"; n += 1
     save(target, load(name)); return target
+
+
+SAFE_OFFSET = 150          # MHz of curve shift: up to here is usually fine with a clock cap
+DANGER_OFFSET = 200
+
+def risk(offset, cap):
+    """("safe" | "caution" | "danger", message) for a GPU offset and clock cap."""
+    if offset > DANGER_OFFSET: return "danger", f"Beyond the danger line (+{DANGER_OFFSET} MHz). Games and the driver can crash; the screen can glitch."
+    if offset > SAFE_OFFSET: return "caution", f"Past the safety line (+{SAFE_OFFSET} MHz). It may crash in some games: test under load."
+    if offset > 0 and not cap: return "caution", "A positive offset without a clock cap can push the clock above stock: set a cap (2400 MHz is typical) or keep the offset small."
+    if offset < -100: return "caution", "A large negative offset only slows the GPU; it does not save voltage the way a positive offset with a cap does."
+    if cap and cap < 1500: return "caution", "A cap this low will cost a lot of speed in games."
+    return ("safe", "Inside the safe range.") if (offset or cap) else ("safe", "Stock.")

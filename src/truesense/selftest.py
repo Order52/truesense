@@ -78,6 +78,30 @@ def run(skip_fans=False):
     def audio_():
         from . import audio; st = audio.output_status(); assert st["active"] in ("speakers", "headphones"); return str(st)
     check("audio output profile", audio_)
+    def boost():
+        from . import audio
+        cur = audio.headset_boost()
+        if cur is None: return "no headset mic boost control on this card (skipped)"
+        try:
+            for lv in (0, 3, 1): assert audio.headset_boost(lv) == lv, f"boost {lv} did not read back"
+        finally: audio.headset_boost(cur)
+        return f"0, 3 and 1 read back, restored to {cur}"
+    check("headset mic boost", boost)
+    def mic():
+        from . import audio
+        m = audio.mic_state()["muted"]
+        try: audio.mic_set_mute(not m); assert audio.mic_state()["muted"] == (not m), "mute did not read back"
+        finally: audio.mic_set_mute(m)
+        return f"mute toggled and restored ({m})"
+    check("microphone mute", mic)
+    def limits():
+        from . import ipc
+        try: d = ipc.call("cpu_info")
+        except Exception as e:
+            if "unknown command" in str(e): return "the running service is older than this app (skipped: re-run the installer)"
+            raise
+        return f"PL1 {d['pl1_w']} W / PL2 {d['pl2_w']} W readable ({'yours' if d.get('user') else 'automatic'})"
+    check("CPU power limits (read)", limits)
     print("\n== stack health (doctor)")
     import io, sys
     from . import doctor

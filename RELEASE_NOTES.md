@@ -5,6 +5,9 @@
 The project is now **TrueSense**: one kernel module, one daemon, one CLI, an optional window. Tested only on the **Acer Predator Helios 16 PH16-71** (BIOS V1.18, CachyOS, kernel 7.3.0-4 and 6.18 LTS, PipeWire 1.6). See [docs/STATUS.md](docs/STATUS.md).
 
 ### Added in this release (later)
+* **CPU power limits moved to the Undervolt page** and fixed: the service used to overwrite your PL1/PL2 every few seconds; it now keeps them until you go back to automatic. Safety zones (safe, past the safety line, beyond the danger line) with warnings for CPU limits, CPU undervolt and GPU undervolt; beyond the danger line you must type APPLY (window) or pass `--force` (CLI).
+* Headset mic boost fixed (it read the channel count instead of the value). The self-test now covers it and the mic mute.
+* Per-key colour picture follows the real PH16-71 keyboard layout.
 * **GPU undervolt** (NVML clock-curve offset + clock cap) with read-only built-in profiles, the same confirmation and crash-guarded boot apply as the CPU undervolt.
 * **Auto takes over by itself**: a mode you pick now ends when the situation changes (plug, load starts or stops, heat, low battery) or after 10 minutes, and choosing Native/Smart auto applies immediately.
 * **PREDATOR key profiles and a real editor**: pick an action per gesture (including running a script chosen with a file picker), built-in profiles `default`, `gaming`, `work`, `lights` (read-only, copy to edit), live reload in the key service.

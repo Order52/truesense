@@ -55,7 +55,7 @@ def headset_boost(level=None):
     """Headset microphone boost (0..3, +10 dB per step). Without an argument: read."""
     name = "Headset Mic Boost Volume"
     if level is None:
-        m = re.search(r"values=(\d+)", _amixer("cget", f"iface=MIXER,name={name}")); return int(m.group(1)) if m else None
+        m = re.search(r"^\s*: values=(\d+)", _amixer("cget", f"iface=MIXER,name={name}"), re.M); return int(m.group(1)) if m else None      # the ": values=" line, not the "values=2" channel count in the header
     if not 0 <= level <= 3: raise HwError("headset mic boost is 0..3")
     _amixer("cset", f"iface=MIXER,name={name}", f"{level},{level}")
     if headset_boost() != level: raise HwError("boost readback mismatch")

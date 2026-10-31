@@ -157,10 +157,13 @@ class Brain:
         self.write_fan(*fo.output(self.floor_pct()))
 
     # ---- CPU power limit + thermal governor -------------------------------------------------------------------------------------------
-    def enforce_power_limit(self):
-        pl = int((self.p["pl_gaming_w"] if self.activity == "gaming" else self.p["pl_normal_w"]) * 1_000_000)
-        for n in ("constraint_0_power_limit_uw", "constraint_1_power_limit_uw"):
-            if num(RAPL + n) != pl: wr(RAPL + n, pl)
+    def enforce_power_limit(self, force_now=False):
+        u = self.st.get("pl_user")
+        if u: want = {"constraint_0_power_limit_uw": int(u["pl1"] * 1_000_000), "constraint_1_power_limit_uw": int(u["pl2"] * 1_000_000)}      # your own limits
+        else:
+            pl = int((self.p["pl_gaming_w"] if self.activity == "gaming" else self.p["pl_normal_w"]) * 1_000_000); want = {"constraint_0_power_limit_uw": pl, "constraint_1_power_limit_uw": pl}
+        for n, v in want.items():
+            if num(RAPL + n) != v: wr(RAPL + n, v)
 
     def thermal_governor(self):
         if not self.p["gov_enabled"]: return
@@ -435,7 +438,7 @@ class Brain:
                 else: p = smartprofiles.load(name or "truesense"); self.st.set("smart_profile_data", None if name in smartprofiles.BUILTIN else p); self.st.set("smart_profile", name)
                 self._smart = p; self.log(f"setting smart_profile = {name}", 20); return {"name": self.st.get("smart_profile"), "profile": p}
 
-        def undervolt_(action="get", core=None, cache=None, confirm=False, name=None):
+        def undervolt_(action="get", core=None, cache=None, confirm=False, name=None, force=False):
             """get | apply (core, cache in mV, needs confirm) | reset | boot (name, core, cache: apply at boot, needs confirm) | boot_clear. Offsets never persist across a reboot."""
             with self.lock:
                 if action == "get":
@@ -446,7 +449,8 @@ class Brain:
                 if action == "boot_clear": self.st.set("uv_boot", None); return None
                 if action in ("apply", "boot"):
                     if not confirm: raise hw.HwError("an undervolt needs explicit confirmation (it can freeze or reboot the laptop if too aggressive)")
-                    p = undervolt.validate({"core": core, "cache": cache})
+                    p = undervolt.validate({"core": core, "cache": cache}); lvl, why = undervolt.risk(p["core"], p["cache"])
+                    if lvl == "danger" and not force: raise hw.HwError(why + " Add the explicit force flag if you really mean it (CLI: --force).")
                     if action == "boot": self.st.set("uv_boot", {"name": name, "core": p["core"], "cache": p["cache"]}); return self.st.get("uv_boot")
                     try: cpu.uv_set(0, p["core"], True); cpu.uv_set(2, p["cache"], True)
                     except hw.HwError:
@@ -457,7 +461,7 @@ class Brain:
                     return {"core_mv": cpu.uv_get(0), "cache_mv": cpu.uv_get(2)}
                 raise hw.HwError("undervolt: get | apply | reset | boot | boot_clear")
 
-        def gpu_undervolt(action="get", offset=None, cap=0, confirm=False, name=None):
+        def gpu_undervolt(action="get", offset=None, cap=0, confirm=False, name=None, force=False):
             """get | apply (offset MHz, cap MHz; needs confirm) | reset | boot | boot_clear. Neither setting survives a reboot."""
             with self.lock:
                 if action == "get":
@@ -468,7 +472,8 @@ class Brain:
                 if action == "boot_clear": self.st.set("gpu_uv_boot", None); return None
                 if action in ("apply", "boot"):
                     if not confirm: raise hw.HwError("a GPU undervolt needs explicit confirmation (it can crash games or the driver if too aggressive)")
-                    p = gpuundervolt.validate({"offset": offset, "cap": cap})
+                    p = gpuundervolt.validate({"offset": offset, "cap": cap}); lvl, why = gpuundervolt.risk(p["offset"], p["cap"])
+                    if lvl == "danger" and not force: raise hw.HwError(why + " Add the explicit force flag if you really mean it (CLI: --force).")
                     if action == "boot": self.st.set("gpu_uv_boot", {"name": name, **p}); return self.st.get("gpu_uv_boot")
                     try: r = gpuundervolt.apply(p["offset"], p["cap"])
                     except hw.HwError:
@@ -489,14 +494,23 @@ class Brain:
         def hold(minutes=None):
             with self.lock: return self.set_hold(minutes)
 
-        def limits(pl1, pl2): return cpu.set_limits(float(pl1), float(pl2))
+        def limits(pl1=None, pl2=None, reset=False, force=False):
+            """Set CPU power limits and keep them (the daemon re-asserts them every few seconds); reset=True goes back to the automatic limits from the config."""
+            with self.lock:
+                if reset: self.st.set("pl_user", None); self.enforce_power_limit(force_now=True); return {"automatic": True, **cpu.info()}
+                pl1, pl2 = float(pl1), float(pl2); lvl, why = cpu.pl_risk(pl1, pl2)
+                if lvl == "danger" and not force: raise hw.HwError(why + " Add the explicit force flag if you really mean it.")
+                r = cpu.set_limits(pl1, pl2); self.st.set("pl_user", {"pl1": pl1, "pl2": pl2}); self.log(f"setting power limits = {pl1}/{pl2} W", 5); return r
+
+        def cpu_info():
+            d = cpu.info(); d["user"] = self.st.get("pl_user"); d["auto"] = {"normal_w": self.p["pl_normal_w"], "gaming_w": self.p["pl_gaming_w"]}; return d
 
         def touch(action="status"):
             cur = touchpad.enabled()
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "gpu_undervolt": gpu_undervolt, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "gpu_undervolt": gpu_undervolt, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "cpu_info": cpu_info, "touchpad": touch}
 
 
 def main():
@@ -506,7 +520,7 @@ def main():
         print("falling back to the built-in defaults for the whole configuration", flush=True)
         cfg = config.merge(config.copy.deepcopy(config.DEFAULTS), {"user": cfg["user"]})
     os.makedirs(RUN, exist_ok=True)
-    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "smart" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "smart_profile": "truesense", "smart_profile_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
+    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "smart" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "pl_user": None, "smart_profile": "truesense", "smart_profile_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
     st.set("uv_applied", None); st.set("gpu_uv_applied", None)                                       # offsets never survive a reboot, so nothing is applied now
     brain = Brain(cfg, st)
     uids = [brain.pw.pw_uid] if brain.pw else []

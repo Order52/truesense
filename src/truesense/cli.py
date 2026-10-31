@@ -85,7 +85,7 @@ def build():
     p = sub.add_parser("gpu", help="GPU mode (MUX); a change needs a reboot"); gs = p.add_subparsers(dest="verb"); gs.add_parser("status"); q = gs.add_parser("set"); q.add_argument("mode", choices=list(hw.GPU_MODES))
     q = gs.add_parser("undervolt", help="GPU undervolt profiles (clock-curve offset + clock cap; reset on reboot; applying needs --confirm): get | list | show NAME | use NAME --confirm | reset | copy NAME [NEW] | save NAME --offset MHZ [--cap MHZ] | delete NAME | boot NAME|off --confirm")
     q.add_argument("action", choices=["get", "list", "show", "use", "reset", "copy", "save", "delete", "boot"]); q.add_argument("name", nargs="?"); q.add_argument("new", nargs="?")
-    q.add_argument("--offset", type=int); q.add_argument("--cap", type=int, default=0); q.add_argument("--confirm", action="store_true", help="I understand this can crash games or the driver")
+    q.add_argument("--offset", type=int); q.add_argument("--cap", type=int, default=0); q.add_argument("--confirm", action="store_true", help="I understand this can crash games or the driver"); q.add_argument("--force", action="store_true", help="allow values beyond the danger line")
     # rear
     p = sub.add_parser("rear", help="rear light bar"); rs = p.add_subparsers(dest="verb")
     rs.add_parser("status"); rs.add_parser("on"); rs.add_parser("off"); rs.add_parser("toggle")
@@ -142,10 +142,10 @@ def build():
     q = pr.add_parser("save", help="save the CURRENT state as a profile"); q.add_argument("name"); q.add_argument("--description", default="")
     q = pr.add_parser("delete"); q.add_argument("name")
     # cpu
-    p = sub.add_parser("cpu", help="CPU power limits and the guarded undervolt"); cs = p.add_subparsers(dest="verb"); cs.add_parser("info"); q = cs.add_parser("limits"); q.add_argument("pl1", type=float, nargs="?"); q.add_argument("pl2", type=float, nargs="?")
+    p = sub.add_parser("cpu", help="CPU power limits and the guarded undervolt"); cs = p.add_subparsers(dest="verb"); cs.add_parser("info"); q = cs.add_parser("limits", help="CPU power limits PL1 (sustained) and PL2 (burst) in watts; no argument shows them; --auto goes back to automatic"); q.add_argument("pl1", type=float, nargs="?"); q.add_argument("pl2", type=float, nargs="?"); q.add_argument("--auto", action="store_true"); q.add_argument("--force", action="store_true", help="allow values beyond the danger line")
     q = cs.add_parser("undervolt", help="CPU undervolt profiles (reset on reboot; applying needs --confirm): get | list | show NAME | use NAME --confirm | reset | copy NAME [NEW] | save NAME --core MV --cache MV | delete NAME | boot NAME|off --confirm")
     q.add_argument("action", choices=["get", "list", "show", "use", "reset", "copy", "save", "delete", "boot", "set"]); q.add_argument("name", nargs="?"); q.add_argument("new", nargs="?")
-    q.add_argument("--core", type=int); q.add_argument("--cache", type=int); q.add_argument("--confirm", action="store_true", help="I understand this can freeze or reboot the laptop")
+    q.add_argument("--core", type=int); q.add_argument("--cache", type=int); q.add_argument("--confirm", action="store_true", help="I understand this can freeze or reboot the laptop"); q.add_argument("--force", action="store_true", help="allow values beyond the danger line")
     q.add_argument("--plane", type=int, default=0, choices=[0, 2], help="set: 0 core, 2 cache"); q.add_argument("mv", type=int, nargs="?", help=argparse.SUPPRESS)
     add_onoff(sub, "touchpad", "touchpad on/off (Fn+F10)")
     p = sub.add_parser("service", help="the daemon"); ss = p.add_subparsers(dest="verb"); ss.add_parser("status"); ss.add_parser("restart"); ss.add_parser("logs")
@@ -294,7 +294,7 @@ def h_gpu(a):
         elif act == "show": p = gu.load(a.name or "truesense"); emit(p, f"{a.name or 'truesense'}: offset {p['offset']:+d} MHz, cap {p['cap'] or 'none'} MHz   {p['description']}")
         elif act == "reset": r = ipc.call("gpu_undervolt", action="reset"); emit(r, "GPU undervolt reset: offset 0, no clock cap")
         elif act == "use":
-            p = gu.load(a.name or ""); r = ipc.call("gpu_undervolt", action="apply", offset=p["offset"], cap=p["cap"], confirm=a.confirm, name=a.name)
+            p = gu.load(a.name or ""); r = ipc.call("gpu_undervolt", action="apply", offset=p["offset"], cap=p["cap"], confirm=a.confirm, name=a.name, force=a.force)
             emit(r, f"applied '{a.name}': offset {r['offset_mhz']:+d} MHz, cap {r['cap_mhz'] or 'none'} MHz   (a reboot returns to stock; `truesense gpu undervolt reset` does it now)")
         elif act == "copy": n = gu.copy(a.name or "", a.new); emit(n, f"copied '{a.name}' to '{n}'")
         elif act == "save":
@@ -303,7 +303,7 @@ def h_gpu(a):
         elif act == "delete": gu.delete(a.name or ""); emit(a.name, f"deleted GPU undervolt profile '{a.name}'")
         elif act == "boot":
             if a.name in (None, "off"): ipc.call("gpu_undervolt", action="boot_clear"); emit(None, "no GPU undervolt is applied at boot")
-            else: p = gu.load(a.name); emit(ipc.call("gpu_undervolt", action="boot", offset=p["offset"], cap=p["cap"], confirm=a.confirm, name=a.name), f"'{a.name}' will be applied at boot (guarded, like the CPU undervolt)")
+            else: p = gu.load(a.name); emit(ipc.call("gpu_undervolt", action="boot", offset=p["offset"], cap=p["cap"], confirm=a.confirm, name=a.name, force=a.force), f"'{a.name}' will be applied at boot (guarded, like the CPU undervolt)")
         return
     if a.verb == "set": m = hw.set_gpu_mode(a.mode); emit(m, f"GPU mode: {m}   (takes effect after a reboot)")
     else: emit(hw.get_gpu_mode(), f"GPU mode: {hw.get_gpu_mode()}")
@@ -502,8 +502,11 @@ def h_cpu(a):
     v = a.verb or "info"
     if v == "info": emit(cpu.info())
     elif v == "limits":
-        if a.pl1 is None: emit(cpu.info())
-        else: emit(cpu.set_limits(a.pl1, a.pl2 if a.pl2 is not None else a.pl1))
+        ipc = _ipc()
+        def show(d): return f"PL1 {d.get('pl1_w')} W, PL2 {d.get('pl2_w')} W   " + (f"(yours: {d['user']['pl1']:g}/{d['user']['pl2']:g} W)" if d.get("user") else f"(automatic: {d['auto']['normal_w']} W, {d['auto']['gaming_w']} W when gaming)")
+        if a.auto: ipc.call("cpu_limits", reset=True); d = ipc.call("cpu_info"); emit(d, "automatic power limits: " + show(d))
+        elif a.pl1 is None: d = ipc.call("cpu_info"); emit(d, show(d))
+        else: r = ipc.call("cpu_limits", pl1=a.pl1, pl2=a.pl2 if a.pl2 is not None else a.pl1, force=a.force); emit(r, f"power limits set: PL1 {r['pl1_w']:g} W, PL2 {r['pl2_w']:g} W   (the service keeps them; `truesense cpu limits --auto` goes back)")
     elif v == "undervolt":
         from . import undervolt as uvp
         act = a.action; ipc = _ipc()
@@ -513,14 +516,14 @@ def h_cpu(a):
         elif act == "show": p = uvp.load(a.name or "truesense"); emit(p, f"{a.name or 'truesense'}: core {p['core']} mV, cache {p['cache']} mV   {p['description']}")
         elif act == "reset": r = ipc.call("undervolt", action="reset"); emit(r, "undervolt reset: " + show(r))
         elif act == "use":
-            p = uvp.load(a.name or ""); r = ipc.call("undervolt", action="apply", core=p["core"], cache=p["cache"], confirm=a.confirm, name=a.name)
+            p = uvp.load(a.name or ""); r = ipc.call("undervolt", action="apply", core=p["core"], cache=p["cache"], confirm=a.confirm, name=a.name, force=a.force)
             emit(r, f"applied '{a.name}': " + show(r) + "   (a reboot returns to stock; `truesense cpu undervolt reset` does it now)")
         elif act == "set":
             if a.mv is None: raise HwError("usage: truesense cpu undervolt set -10 --confirm   (or use a profile)")
             cur = ipc.call("undervolt", action="get"); c, k = cur.get("core_mv", 0), cur.get("cache_mv", 0)
             if a.plane == 0: c = a.mv
             else: k = a.mv
-            r = ipc.call("undervolt", action="apply", core=c, cache=k, confirm=a.confirm, name="manual"); emit(r, show(r))
+            r = ipc.call("undervolt", action="apply", core=c, cache=k, confirm=a.confirm, name="manual", force=a.force); emit(r, show(r))
         elif act == "copy": n = uvp.copy(a.name or "", a.new); emit(n, f"copied '{a.name}' to '{n}'")
         elif act == "save":
             if not a.name or a.core is None or a.cache is None: raise HwError("usage: truesense cpu undervolt save NAME --core -50 --cache -40")
@@ -529,7 +532,7 @@ def h_cpu(a):
         elif act == "boot":
             if a.name in (None, "off"): ipc.call("undervolt", action="boot_clear"); emit(None, "no undervolt is applied at boot")
             else:
-                p = uvp.load(a.name); emit(ipc.call("undervolt", action="boot", core=p["core"], cache=p["cache"], confirm=a.confirm, name=a.name),
+                p = uvp.load(a.name); emit(ipc.call("undervolt", action="boot", core=p["core"], cache=p["cache"], confirm=a.confirm, name=a.name, force=a.force),
                                            f"'{a.name}' will be applied at boot (guarded: skipped and switched off if the previous boot did not stay up 10 minutes)")
 
 def h_touchpad(a):

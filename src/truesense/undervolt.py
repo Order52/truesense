@@ -9,6 +9,8 @@ from .device import HwError
 
 DIR = os.path.expanduser("~/.config/truesense/undervolt")
 MAX_MV = 120
+SAFE_MV = {"core": 60, "cache": 50}          # up to here: usually fine on 13th-gen HX
+CAUTION_MV = {"core": 90, "cache": 70}       # beyond SAFE, up to here: may be unstable, test under load
 BUILTIN = {
     "stock": {"description": "No undervolt (0 mV)", "core": 0, "cache": 0},
     "truesense": {"description": "Our profile for the i7-13700HX: a conservative offset that usually gives a few degrees less heat at the same speed. Unverified on your unit: test under load", "core": -50, "cache": -40},
@@ -61,3 +63,13 @@ def copy(name, new=None):
     base = new or name + "-copy"; n, target = 2, base
     while target in names(): target = f"{base}-{n}"; n += 1
     save(target, load(name)); return target
+
+
+def risk(core, cache):
+    """("safe" | "caution" | "danger", message) for a pair of offsets: the safety line is where instability becomes likely, the danger line where freezes are likely."""
+    c, k = abs(core), abs(cache)
+    if c > CAUTION_MV["core"] or k > CAUTION_MV["cache"]:
+        return "danger", f"Beyond the danger line (core {CAUTION_MV['core']} mV / cache {CAUTION_MV['cache']} mV). Freezes and reboots are likely; unsaved work can be lost."
+    if c > SAFE_MV["core"] or k > SAFE_MV["cache"]:
+        return "caution", f"Past the safety line (core {SAFE_MV['core']} mV / cache {SAFE_MV['cache']} mV). It may be unstable: test under load before trusting it."
+    return ("safe", "Inside the safe range.") if (c or k) else ("safe", "Stock voltage.")
