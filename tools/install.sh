@@ -75,7 +75,7 @@ if [ "$SERVICES" = 1 ]; then
   systemctl restart truesense.service            # `enable --now` would NOT restart a running service, so upgrades would keep the old code
   systemctl start truesense-health.timer
   systemctl --global enable truesense-keys.service truesense-audio.service truesense-startup.service >/dev/null 2>&1
-  ur systemctl --user restart truesense-keys.service truesense-audio.service || say "(user services start at your next login)"
+  ur systemctl --user restart truesense-keys.service truesense-audio.service truesense-startup.service || say "(user services start at your next login)"
   sleep 2
   if [ -r /var/lib/truesense/migrated_voice ]; then      # the user already had Purified Voice filters: recreate them under the new names, same modes
     hs=$(sed -n 's/^headset=//p' /var/lib/truesense/migrated_voice); ar=$(sed -n 's/^array=//p' /var/lib/truesense/migrated_voice)

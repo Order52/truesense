@@ -24,3 +24,6 @@ docs/hardware-data/acpi/
 # local state
 *.bak*
 .venv/
+
+# release notes drafted for `gh release create`
+.release-*.md
