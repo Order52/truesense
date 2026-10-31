@@ -42,6 +42,7 @@ QPushButton#seg { background: #0f131a; border: 1px solid #1d2530; border-radius:
 QPushButton#seg:checked { background: #10303a; color: #19e3ff; border-color: #19e3ff; }
 QPushButton#tilebtn { background: #131922; border: 1px solid #1f2733; border-radius: 12px; padding: 8px 4px; color: #aab3c0; font-size: 13px; }
 QPushButton#tilebtn:hover { background: #19212c; }
+QPushButton#tilebtn:checked { background: #10303a; color: #19e3ff; border: 1px solid #19e3ff; font-weight: 700; }
 QPushButton#primary { background: #19e3ff; color: #031418; border: none; font-weight: 700; }
 QPushButton#primary:hover { background: #4aeaff; }
 QComboBox { background: #0f131a; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; min-height: 20px; }
@@ -408,6 +409,7 @@ class Window(QMainWindow if Qt else object):
         try:
             if "state" in d:
                 s = d["state"]["settings"]; self.auto.setChecked(bool(s["auto_profile"]))
+                if d.get("fan", {}).get("mode") == "manual": self.fan_pct.setValue(max(20, d["fan"]["duty_register_pct"]["cpu"]))
                 self.fan.set_index(0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1))
             if "ac" in d: self.src = "AC" if d["ac"] else "Battery"
             if d.get("mode") in self.modes: self.power.set_index(self.modes.index(d["mode"]))
