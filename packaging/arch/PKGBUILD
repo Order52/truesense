@@ -33,6 +33,7 @@ WRAP
     for f in truesense-keys.service truesense-audio.service truesense-startup.service; do
         sed 's|@PREFIX@|/usr|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/$f"
     done
+    sed 's|@PREFIX@|/usr|g' "$_src/packaging/truesense.desktop" | install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/truesense.desktop"
     install -Dm644 "$_src/packaging/70-truesense.rules" "$pkgdir/usr/lib/udev/rules.d/70-truesense.rules"
     install -Dm644 "$_src/packaging/truesense.modprobe.conf" "$pkgdir/usr/lib/modprobe.d/truesense.conf"
     install -Dm644 "$_src/packaging/truesense.modules-load.conf" "$pkgdir/usr/lib/modules-load.d/truesense.conf"
