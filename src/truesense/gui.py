@@ -11,7 +11,7 @@ try:
     from PyQt6.QtNetwork import QLocalServer, QLocalSocket
     from PyQt6.QtSvg import QSvgRenderer
     from PyQt6.QtCore import QByteArray, QSize
-    from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap
+    from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QShortcut, QKeySequence
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
                                  QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
 except ImportError as _e:
@@ -127,6 +127,9 @@ QSlider::sub-page:horizontal:disabled { background: #3a404a; }
 QComboBox QAbstractItemView { background: #1d1f24; border: 1px solid #222b37; selection-background-color: #243247; outline: 0; }
 QLineEdit { background: #1b1d22; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; }
 QLineEdit:focus { border-color: #58a6ff; }
+QPushButton:focus { border: 1px solid #58a6ff; }
+QComboBox:focus { border-color: #58a6ff; }
+QToolTip { background: #202328; color: #e8edf3; border: 1px solid #2e3239; padding: 6px; }
 QCheckBox { spacing: 12px; background: transparent; }
 QSlider::groove:horizontal { height: 5px; background: #2a2e35; border-radius: 2px; }
 QSlider::sub-page:horizontal { background: #6f7f96; border-radius: 2px; }
@@ -182,6 +185,8 @@ class Bus(QObject if Qt else object):
     message = pyqtSignal(str) if Qt else None
     boot_text = pyqtSignal(str) if Qt else None
     uv = pyqtSignal(dict) if Qt else None
+    batt = pyqtSignal(dict) if Qt else None
+    report = pyqtSignal(str) if Qt else None
     refreshed = pyqtSignal(dict) if Qt else None
 
 
@@ -472,11 +477,12 @@ class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.refreshed.connect(self._apply); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.refreshed.connect(self._apply); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
-        self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else None)
+        self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else (self.battery_refresh() if i == PAGES["battery"] else None))
+        QShortcut(QKeySequence("Escape"), self, activated=lambda: self.pages.setCurrentIndex(0) if self.pages.currentIndex() else None); QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(1000); self.full_refresh(); self.tick()
 
@@ -484,7 +490,7 @@ class Window(QMainWindow if Qt else object):
     def closeEvent(self, e):
         """Stop the timer and cut the worker threads off from the widgets: a late result must never land in a window that is going away."""
         self.closing = True; self.timer.stop()
-        for sig in (self.bus.message, self.bus.refreshed, self.bus.boot_text, self.bus.uv):
+        for sig in (self.bus.message, self.bus.refreshed, self.bus.boot_text, self.bus.uv, self.bus.batt, self.bus.report):
             try: sig.disconnect()
             except TypeError: pass
         super().closeEvent(e)
@@ -592,6 +598,8 @@ class Window(QMainWindow if Qt else object):
         cols = {"eco": "#5de0a0", "quiet": "#5db8ff", "balanced": "#58a6ff", "performance": "#ffb347", "turbo": "#ff5d6c"}
         self.power = Segmented([m.capitalize() for m in order], tiles=True, icons=[m if m in _P else "balanced" for m in order], colors=[cols.get(m, "#58a6ff") for m in order]); v.addWidget(self.power)
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
+        TIPS = {"eco": "Lowest power and heat; for battery and light work", "quiet": "Low fan noise; reduced speed", "balanced": "PredatorSense's default: everyday use", "performance": "More power for demanding work and games", "turbo": "Maximum power; loud fans and high heat"}
+        for b_, m_ in zip(self.power.btns, order): b_.setToolTip(TIPS.get(m_, ""))
         self.auto = Segmented(["Manual", "Native auto", "Smart auto"]); self.auto.picked.connect(self.auto_picked); self.line(v, "Mode control", self.auto)
         self.auto_hint = self.hint(AUTO_HINT["off"]); v.addWidget(self.auto_hint)
         self.smart_box = QWidget(); sb = QVBoxLayout(self.smart_box); sb.setContentsMargins(0, 0, 0, 0); sb.setSpacing(8)
@@ -603,13 +611,17 @@ class Window(QMainWindow if Qt else object):
         self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True, icons=["optimus", "gpu", "auto"]); v.addWidget(self.gpu)
         self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False))
         v = self.card(lay, "Fans", "fan", True); self.stat_fan = v.right
-        self.fan = Segmented(FAN_MODES, tiles=True, icons=["smart", "auto", "max", "manual"]); self.fan.picked.connect(self.fan_picked); v.addWidget(self.fan)
+        self.fan = Segmented(FAN_MODES, tiles=True, icons=["smart", "auto", "max", "manual"])
+        for b_, tip in zip(self.fan.btns, ("Follows your fan curve by temperature and load", "The firmware's own control, exactly like PredatorSense on Windows", "Both fans at full speed", "Set the speed yourself")): b_.setToolTip(tip)
+        self.fan.picked.connect(self.fan_picked); v.addWidget(self.fan)
         self.curve_box = QWidget(); cb = QVBoxLayout(self.curve_box); cb.setContentsMargins(0, 0, 0, 0)
         self.curve_cb = QComboBox(); self.curve_cb.setMinimumWidth(140); self.curve_cb.activated.connect(self.curve_picked)
         self.line(cb, "Smart curve", self.curve_cb, self.btn("Edit", lambda: self.go("curves"))); v.addWidget(self.curve_box)
         self.fan_hint = self.hint("Smart follows your fan curve. Auto is the firmware's own control, exactly like Auto in PredatorSense on Windows (fans stop when cool)."); v.addWidget(self.fan_hint)
         self.fan_box = QWidget(); fb = QVBoxLayout(self.fan_box); fb.setContentsMargins(0, 0, 0, 0); fb.setSpacing(8)      # only shown while Manual is chosen
         self.fan_link = self.switch(fb, "Control both fans together", self.fan_link_changed)
+        self.fan_off_btn = self.btn("Turn fans off…", self.fan_off_ask); self.fan_off_btn.setToolTip("Stops both fans. Only allowed while cool; TrueSense gives them back to the firmware if the laptop gets warm.")
+        self.line(fb, "Fans off", self.fan_off_btn)
         self.fan_one = QWidget(); o = QVBoxLayout(self.fan_one); o.setContentsMargins(0, 0, 0, 0); o.setSpacing(8)
         self.fan_pct = self.slider(o, "Fan speed", 20, 100, 5, lambda x: self.fan_manual_live(), suffix=" %"); fb.addWidget(self.fan_one)
         self.fan_two = QWidget(); w2 = QVBoxLayout(self.fan_two); w2.setContentsMargins(0, 0, 0, 0); w2.setSpacing(8)
@@ -639,6 +651,14 @@ class Window(QMainWindow if Qt else object):
     def fan_manual_live(self):
         if self.loading: return
         c, g = self.manual_duty(); self.live("fanpct", lambda: control.fan("manual", c, g))
+
+    def fan_off_ask(self):
+        box = QMessageBox(QMessageBox.Icon.Warning, "Turn the fans off", "Stop both fans?\n\nWith the fans off the laptop can overheat quickly under any load. This is only for quiet, light use.\n\n"
+                          "It is only allowed while the CPU is under 60 °C and the GPU under 55 °C. If the CPU reaches 70 °C or the GPU 65 °C, TrueSense gives the fans back to the firmware automatically.",
+                          QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, self)
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel); box.button(QMessageBox.StandardButton.Apply).setText("Turn fans off")
+        if box.exec() != QMessageBox.StandardButton.Apply: return
+        self.do(lambda: control.fan("off", confirm=True), "Fans are off (they come back on Auto automatically if it gets warm)", refresh=False)
 
     def fan_link_changed(self, on):
         """One slider for both fans, or one each. Switching keeps the speeds you have: both sliders start from the same value."""
@@ -852,7 +872,10 @@ class Window(QMainWindow if Qt else object):
     def p_battery(self):
         lay = self.page("Battery and Screen"); v = self.card(lay, "Battery", "", True); self.stat_bat = v.right
         self.limit = self.switch(v, "80 % charge limit", lambda x: self.do(lambda: hw.set_battery_limit(x), lambda r: f"80 % limit: {'on' if r else 'off'}", refresh=False)); self.sep(v)
-        self.usb = self.seg(v, "USB charging while off", ["Off", "10 %", "20 %", "30 %"], lambda i: self.do(lambda: hw.set_usb_charge(hw.USB_LEVELS[i]), lambda r: f"USB charge stops at {r} %", refresh=False)); self.sep(v)
+        self.sep(v); self.full_btn = self.btn("Charge to 100 % once", self.full_toggle); self.full_lbl = self.hint("")
+        self.line(v, "Need a full battery", self.full_btn); v.addWidget(self.full_lbl)
+        v.addWidget(self.hint("The firmware offers two levels: 80 % or 100 %. Charge to 100 % once lifts the limit for one charge; the 80 % limit comes back by itself when you unplug, when the battery has been full for 5 minutes, or after 24 hours."))
+        self.sep(v); self.usb = self.seg(v, "USB charging while off", ["Off", "10 %", "20 %", "30 %"], lambda i: self.do(lambda: hw.set_usb_charge(hw.USB_LEVELS[i]), lambda r: f"USB charge stops at {r} %", refresh=False)); self.sep(v)
         self.calib = self.switch(v, "Calibration", lambda x: self.do(lambda: hw.set_calibration(x), lambda r: f"Calibration: {'on' if r else 'off'}", refresh=False), "Needs AC power and takes hours. Switch off to cancel.")
         v = self.card(lay, "Screen and boot")
         self.od = self.switch(v, "LCD overdrive", lambda x: self.do(lambda: hw.set_overdrive(x), lambda r: f"Overdrive: {'on' if r else 'off'}", refresh=False)); self.sep(v)
@@ -861,6 +884,26 @@ class Window(QMainWindow if Qt else object):
         lay.addStretch()
 
     # ---- Audio -----------------------------------------------------------------------------------------------------------------------------
+    def full_toggle(self):
+        if self.full_btn.property("active"): self.do(lambda: ipc.call("battery_full", action="cancel"), "80 % limit is back on", refresh=False); QTimer.singleShot(700, self.battery_refresh)
+        else: self.do(lambda: ipc.call("battery_full", action="start"), "Charging to 100 % once: the 80 % limit comes back by itself", refresh=False); QTimer.singleShot(700, self.battery_refresh)
+
+    def battery_refresh(self):
+        def work():
+            try: r = ipc.call("battery_full", action="get")
+            except Exception as e: r = {"error": str(e)}
+            self.say_batt(r)
+        threading.Thread(target=work, daemon=True).start()
+
+    def say_batt(self, r):
+        try: self.bus.batt.emit(r)
+        except RuntimeError: pass
+
+    def _batt_show(self, r):
+        if "error" in r: self.full_btn.setEnabled(False); self.full_lbl.setText("needs the updated service" if "unknown command" in r["error"] else r["error"][:120]); return
+        act = bool(r.get("active")); self.full_btn.setProperty("active", act); self.full_btn.setText("Back to the 80 % limit" if act else "Charge to 100 % once")
+        self.full_btn.setEnabled(act or (bool(r.get("limit")) and bool(r.get("ac")))); self.full_lbl.setText(f"Battery {r.get('capacity')} %. " + ("Charging to full this time." if act else ("Plug in the charger to use this." if not r.get("ac") else ("The 80 % limit is off already." if not r.get("limit") else ""))))
+
     def p_audio(self):
         lay = self.page("Audio"); v = self.card(lay, "Output")
         self.out = self.seg(v, "Play sound on", ["Speakers", "Headphones"], lambda i: self.do(lambda: audio.set_output(("speakers", "headphones")[i]), f"Output: {('speakers', 'headphones')[i]}"))
@@ -884,9 +927,31 @@ class Window(QMainWindow if Qt else object):
         lay = self.page("Settings"); v = self.card(lay, "Start up")
         self.autostart = self.switch(v, "Open this window at login", self.set_autostart, "Writes ~/.config/autostart/truesense.desktop. Hyprland needs `exec-once = truesense gui` (or uwsm) to run autostart entries.")
         self.autostart.setChecked(os.path.exists(AUTOSTART)); v.addWidget(self.hint("Lighting at boot and login is set in Lighting, Profiles. The PREDATOR key has its own page."))
+        v = self.card(lay, "About")
+        from . import __version__
+        self.line(v, "TrueSense", QLabel(f"version {__version__}")); self.line(v, "System check", self.btn("Run check…", self.run_doctor)); self.line(v, "Support", self.btn("Copy report", self.copy_report))
         v = self.card(lay, "Reset")
         self.line(v, "Everything back to defaults", self.btn("Reset all…", self.reset_all)); v.addWidget(self.hint("Back to how a fresh install behaves, like PredatorSense on Windows: Native auto mode control, firmware fans, power limits left to the firmware, lighting stock, undervolt off, PREDATOR key `default`. Your saved profiles are kept."))
         lay.addStretch()
+
+    def run_doctor(self):
+        def work():
+            import io
+            from . import doctor
+            try: buf = io.StringIO(); doctor.run(False, buf); txt = buf.getvalue()
+            except Exception as e: txt = f"The check failed: {e}"
+            self.say_report(txt)
+        threading.Thread(target=work, daemon=True).start()
+
+    def say_report(self, txt):
+        try: self.bus.report.emit(txt)
+        except RuntimeError: pass
+
+    def _show_report(self, txt):
+        self.last_report = txt; box = QMessageBox(QMessageBox.Icon.Information, "System check", txt[:3000], QMessageBox.StandardButton.Ok, self); box.exec()
+
+    def copy_report(self):
+        QApplication.clipboard().setText(getattr(self, "last_report", "") or "Run the system check first."); self.say("Report copied to the clipboard")
 
     def reset_all(self):
         if QMessageBox.question(self, "Reset to defaults", "Reset the fan curve, Smart auto profile, PREDATOR key, power limits, lighting and undervolt to their defaults?\n\nYour saved profiles are not deleted.") != QMessageBox.StandardButton.Yes: return
@@ -1216,7 +1281,7 @@ class Window(QMainWindow if Qt else object):
         locked = name in curves.BUILTIN; self.editor.locked = locked; self.editor.set_curve(c); self.loading = True
         for s_ in (self.c_pre, self.c_hys, self.c_rate): s_.setEnabled(not locked)
         self.copy_btn.setVisible(locked); self.del_btn.setEnabled(not locked); self.curve_save_btn.setEnabled(not locked)
-        self.curve_msg.setText("Built-in curves can't be edited. Press Copy to edit to make your own version." if locked else "")
+        self.curve_msg.setText(("Native: the firmware controls the fans, exactly like PredatorSense on Windows. There is no curve to edit." if c.get("native") else "Built-in curves can't be edited. Press Copy to edit to make your own version.") if locked else "")
         for s_, k in ((self.c_pre, "predict"), (self.c_hys, "hysteresis"), (self.c_rate, "down_rate")): s_.setValue(int(round(c[k])))
         self.loading = False
 

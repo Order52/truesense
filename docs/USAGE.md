@@ -5,6 +5,9 @@
 ## Defaults
 A fresh install behaves like PredatorSense on Windows: the fans are on the firmware's own Auto control, the power mode follows the power source (Native auto: Balanced on power, Eco on battery), the CPU's clocks and power limits are left to the firmware, lighting is untouched, and there is no undervolt. TrueSense's own management (the smart fan curve, Smart auto, the thermal clock cap and automatic power limits) only starts when you choose it, and switching it off hands the firmware's values back. Settings, Reset all (or choosing the default of any profile) returns to this state.
 
+### The `native` profile
+Every kind of profile has a built-in, read-only `native` entry that is the factory default and behaves like PredatorSense on Windows: the fan curve `native` hands the fans to the firmware; the Smart auto profile `native` is Balanced on power and Eco on battery with no load or heat logic; the PREDATOR key profile `native` opens this app (the other key profiles remain: `default` is the earlier behaviour); the undervolt profiles `native` mean no undervolt; and the lighting look `native` is what PredatorSense leaves on this laptop (keyboard cyan at brightness 12, rear bar Breathing). Copy any profile to make your own; Reset to default always returns to `native`.
+
 ## Install, check, remove
 ```
 sudo tools/install.sh                  # module (DKMS), daemon, user services, udev rule, health timer
@@ -26,6 +29,8 @@ Areas that are switches accept `on | off | toggle | status`.
 | `power auto off\|native\|smart` | who picks the power mode: you (`off`), **native** (like PredatorSense on Windows: Balanced on power, Eco on battery), or **smart** (heat, load and battery aware: Performance when you game or work hard, Turbo when that is sustained and cool enough, a back-off if it overheats, Eco on battery); `on` = smart |
 | `power smart list\|current\|show NAME\|use NAME\|copy NAME [NEW]\|save NAME [--from BASE] --set key=value\|delete NAME` | Smart auto profiles (how it chooses the mode): built in `truesense` (ours), `battery-first`, `performance-first`, `silent`; built-ins are read-only, copy one to edit |
 | `power hold [MIN]`, `power release` | a mode you pick yourself overrides auto only until the situation changes (you plug or unplug, a game starts or stops, it overheats, the battery gets low) or the time is up (10 min by default); then auto takes over again on its own. Choosing Native or Smart auto applies at once |
+| `fan off --confirm` | stops both fans: only allowed below 60 C CPU / 55 C GPU, and the service gives them back to the firmware at 70 C / 65 C (needs the service; the fans-off command itself is untested on hardware) |
+| `battery full start\|cancel\|status` | charge to 100 % once: lifts the 80 % limit for one charge; it comes back by itself when you unplug, after 5 minutes at 100 %, or after 24 hours. The firmware only supports 80 % or 100 %, so other thresholds are not possible |
 | `fan auto \| max \| set CPU [GPU] \| status` | fans; manual duty 20-100 %, one value for both fans or separate CPU and GPU values (the window has a "Control both fans together" switch) |
 | `fan smart on\|off\|toggle` | the daemon's smart curve |
 | `fan curve list\|current\|show NAME\|use NAME` | fan curves (temperature to duty, CPU and GPU separately): built in `truesense` (tuned for this laptop), `quiet`, `performance`, `max-cooling`, plus yours |

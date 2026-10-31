@@ -5,6 +5,9 @@
 The project is now **TrueSense**: one kernel module, one daemon, one CLI, an optional window. Tested only on the **Acer Predator Helios 16 PH16-71** (BIOS V1.18, CachyOS, kernel 7.3.0-4 and 6.18 LTS, PipeWire 1.6). See [docs/STATUS.md](docs/STATUS.md).
 
 ### Added in this release (later)
+* **`native` profile everywhere** (fan control, Smart auto, PREDATOR key, CPU and GPU undervolt, lighting look): read-only, the factory default, behaving like PredatorSense on Windows.
+* **Fans off** with a warning, a start-temperature limit and a watchdog that returns the fans to the firmware when it gets warm; **Charge to 100 % once** with automatic return to the 80 % limit.
+* Smart system: the GPU sampler only runs when a smart feature needs it, and the service paces itself (every 2 s when idle or hands-off). Window: tooltips, Esc to go back, Ctrl+Q, system check and report, focus rings.
 * **Fresh installs behave like PredatorSense on Windows**: firmware fan control, Native auto mode control, and nothing of ours touching clocks or power limits until you pick a smart feature (switching it off hands the firmware's values back).
 * **Per-key animations** (pulse, wave, colour cycle, twinkle) on chosen keys, drawn in software by the key service; per-key colours now live in Lighting as a tab.
 * Fixed a crash risk when closing the window while a background refresh was finishing.
