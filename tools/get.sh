@@ -3,7 +3,7 @@
 # One-line installer. Downloads the newest TrueSense release from GitHub and runs tools/install.sh.
 #   curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
 #   ... | sudo bash -s -- --no-gui          (extra options go to install.sh)
-# Environment: TRUESENSE_VERSION=0.3.9 (pin a version), TRUESENSE_SHA256=<hash> (verify the download)
+# Environment: TRUESENSE_VERSION=0.3.10 (pin a version), TRUESENSE_SHA256=<hash> (verify the download)
 set -Eeuo pipefail
 REPO=Order52/truesense
 [ "$(id -u)" -eq 0 ] || { echo "run as root:  curl -fsSL https://raw.githubusercontent.com/$REPO/main/tools/get.sh | sudo bash" >&2; exit 1; }

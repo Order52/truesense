@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.3.10 (2026-10-31): slower effects, a faster and lighter window, a cleaner look
 
 **Effect speed**
 - The keyboard effect speed slider now goes slower. Measured on the real keyboard: it stores speed bytes 0 (fastest) to 11 (slowest) and refuses anything above; the old scale (1..11, byte = 10 - speed) never reached the two slowest steps, and its top setting sent 0xFF, which the keyboard turns into a medium speed (so the fastest setting was slower than the one below it). The scale is now 1 (slowest) to 12 (fastest), one keyboard step per slider step.
