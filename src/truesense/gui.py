@@ -51,6 +51,24 @@ def icon_pixmap(name, color="#dfe5ee", size=24):
 def make_icon(name, color="#dfe5ee", size=20): return QIcon(icon_pixmap(name, color, size))
 
 
+class Switch(QCheckBox if Qt else object):
+    """A pill toggle like PreySense's: a ring marks off, a bar marks on, and the thumb sits on the side that is chosen."""
+    def __init__(self): super().__init__(); self.setCursor(Qt.CursorShape.PointingHandCursor); self.setFixedSize(52, 26)
+    def sizeHint(self): return QSize(52, 26)
+    def hitButton(self, pos): return self.rect().contains(pos)
+
+    def paintEvent(self, _):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing); on = self.isChecked(); r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        p.setBrush(QColor("#2a2e35")); p.setPen(QPen(QColor("#3d434c"), 1)); p.drawRoundedRect(r, 13, 13)
+        thumb = QRectF(r.right() - 25, r.top() + 2, 23, r.height() - 4) if on else QRectF(r.left() + 2, r.top() + 2, 23, r.height() - 4)
+        p.setBrush(QColor("#7b93b6" if on else "#4a505a")); p.setPen(Qt.PenStyle.NoPen); p.drawRoundedRect(thumb, 10, 10)
+        mark = QColor("#ffffff" if on else "#c9ced6"); p.setPen(QPen(mark, 1.8)); p.setBrush(Qt.BrushStyle.NoBrush)
+        if on:
+            p.drawLine(int(thumb.center().x()), int(thumb.center().y() - 5), int(thumb.center().x()), int(thumb.center().y() + 5)); p.setPen(QPen(QColor("#8b929c"), 1.6)); p.drawEllipse(QRectF(r.left() + 9, r.center().y() - 4, 8, 8))
+        else:
+            p.drawEllipse(QRectF(thumb.center().x() - 4, thumb.center().y() - 4, 8, 8)); p.setPen(QPen(QColor("#8b929c"), 1.8)); p.drawLine(int(r.right() - 13), int(r.center().y() - 5), int(r.right() - 13), int(r.center().y() + 5))
+
+
 class TileButton(QPushButton if Qt else object):
     """A big choice tile: icon above, label below; the chosen one is outlined (or filled with its own colour, like the performance modes)."""
     def __init__(self, label, icon, fill=None):
@@ -59,28 +77,28 @@ class TileButton(QPushButton if Qt else object):
 
     def paintEvent(self, _):
         p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing); r = QRectF(self.rect()).adjusted(1, 1, -1, -1); on = self.isChecked(); hot = self.underMouse()
-        if on and self.fill: bg, fg, border = QColor(self.fill), "#04101a", QColor(self.fill)
-        elif on: bg, fg, border = QColor("#10303a"), ACCENT, QColor(ACCENT)
-        else: bg, fg, border = QColor("#19212c" if hot else "#131922"), "#aab3c0", QColor("#1f2733")
+        if on and self.fill: bg, fg, border = QColor(self.fill), "#06121f", QColor(self.fill)
+        elif on: bg, fg, border = QColor("#243247"), ACCENT, QColor(ACCENT)
+        else: bg, fg, border = QColor("#272b32" if hot else "#202328"), "#aab3c0", QColor("#1f2733")
         p.setBrush(bg); p.setPen(QPen(border, 1.4)); p.drawRoundedRect(r, 12, 12)
         px = icon_pixmap(self.icon_name, fg, 22); p.drawPixmap(int(r.center().x() - 11), int(r.top() + 10), px)
         f = QFont(self.font()); f.setBold(on); p.setFont(f); p.setPen(QColor(fg)); p.drawText(QRectF(r.left(), r.top() + 36, r.width(), r.height() - 38), Qt.AlignmentFlag.AlignCenter, self.label)
 
 
-ACCENT = "#19e3ff"
+ACCENT = "#58a6ff"
 STYLE = """
 * { font-family: "Inter", "Noto Sans", "Segoe UI", sans-serif; font-size: 14px; }
-QMainWindow, QWidget { background: #0b0e13; color: #e8edf3; }
-#side { background: #080a0e; border-right: 1px solid #151a22; }
-#brand { font-size: 17px; font-weight: 800; letter-spacing: 3px; color: #19e3ff; }
+QMainWindow, QWidget { background: #17181c; color: #e8edf3; }
+#side { background: #121316; border-right: 1px solid #151a22; }
+#brand { font-size: 17px; font-weight: 800; letter-spacing: 3px; color: #58a6ff; }
 #model { color: #5d6877; font-size: 11px; }
 QListWidget { background: transparent; border: none; outline: 0; }
 QListWidget::item { padding: 11px 14px; border-radius: 10px; margin: 2px 0; color: #8d97a6; }
-QListWidget::item:selected { background: #10252b; color: #19e3ff; }
+QListWidget::item:selected { background: #10252b; color: #58a6ff; }
 QListWidget::item:hover:!selected { background: #11161d; color: #cfd6e0; }
 #card { background: transparent; border: none; }
 #cardtitle { font-size: 15px; font-weight: 700; color: #e8edf3; }
-#tile { background: #11151c; border: 1px solid #1b222c; border-radius: 16px; }
+#tile { background: #1d1f24; border: 1px solid #1b222c; border-radius: 16px; }
 #tilevalue { font-size: 26px; font-weight: 700; color: #ffffff; }
 #tilelabel { font-size: 11px; letter-spacing: 1px; color: #6c7787; }
 #hint { color: #6c7787; font-size: 12px; }
@@ -89,28 +107,29 @@ QListWidget::item:hover:!selected { background: #11161d; color: #cfd6e0; }
 QPushButton { background: #171d26; border: 1px solid #222b37; border-radius: 10px; padding: 8px 16px; color: #dfe5ee; }
 QPushButton:hover { background: #1d2530; border-color: #2c3847; }
 QPushButton:pressed { background: #10252b; }
-QPushButton#seg { background: #0f131a; border: 1px solid #1d2530; border-radius: 0; padding: 9px 16px; margin: 0; color: #9aa4b2; }
-QPushButton#seg:checked { background: #10303a; color: #19e3ff; border-color: #19e3ff; }
-QPushButton#tilebtn { background: #131922; border: 1px solid #1f2733; border-radius: 12px; padding: 8px 4px; color: #aab3c0; font-size: 13px; }
-QPushButton#tilebtn:hover { background: #19212c; }
-QPushButton#tilebtn:checked { background: #10303a; color: #19e3ff; border: 1px solid #19e3ff; font-weight: 700; }
-QPushButton#primary { background: #19e3ff; color: #031418; border: none; font-weight: 700; }
+QWidget#segwrap { background: #202328; border: 1px solid #2e3239; border-radius: 10px; }
+QPushButton#seg { background: transparent; border: none; border-radius: 8px; padding: 7px 14px; margin: 0; color: #8b929c; }
+QPushButton#seg:hover { color: #dfe5ee; }
+QPushButton#seg:checked { background: #363c46; color: #ffffff; font-weight: 700; }
+QPushButton#tilebtn { background: #202328; border: 1px solid #1f2733; border-radius: 12px; padding: 8px 4px; color: #aab3c0; font-size: 13px; }
+QPushButton#tilebtn:hover { background: #272b32; }
+QPushButton#tilebtn:checked { background: #243247; color: #58a6ff; border: 1px solid #58a6ff; font-weight: 700; }
+QPushButton#primary { background: #58a6ff; color: #031418; border: none; font-weight: 700; }
 QPushButton#primary:hover { background: #4aeaff; }
-QComboBox { background: #0f131a; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; min-height: 20px; }
+QComboBox { background: #1b1d22; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; min-height: 20px; }
 QComboBox::drop-down { border: none; width: 24px; }
-QComboBox QAbstractItemView { background: #11151c; border: 1px solid #222b37; selection-background-color: #10303a; outline: 0; }
-QLineEdit { background: #0f131a; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; }
-QLineEdit:focus { border-color: #19e3ff; }
+QComboBox QAbstractItemView { background: #1d1f24; border: 1px solid #222b37; selection-background-color: #243247; outline: 0; }
+QLineEdit { background: #1b1d22; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; }
+QLineEdit:focus { border-color: #58a6ff; }
 QCheckBox { spacing: 12px; background: transparent; }
-QCheckBox::indicator { width: 40px; height: 22px; border-radius: 11px; background: #232b36; }
-QCheckBox::indicator:checked { background: #19e3ff; }
-QSlider::groove:horizontal { height: 6px; background: #232b36; border-radius: 3px; }
-QSlider::sub-page:horizontal { background: #19e3ff; border-radius: 3px; }
-QSlider::handle:horizontal { background: #ffffff; width: 18px; height: 18px; margin: -6px 0; border-radius: 9px; }
+QSlider::groove:horizontal { height: 5px; background: #2a2e35; border-radius: 2px; }
+QSlider::sub-page:horizontal { background: #6f7f96; border-radius: 2px; }
+QSlider::handle:horizontal { background: #aab6c8; border: 2px solid #3a404a; width: 14px; height: 14px; margin: -7px 0; border-radius: 9px; }
+QSlider::handle:horizontal:hover { background: #d3dcea; }
 QScrollArea { border: none; background: transparent; }
 QScrollBar:vertical { background: transparent; width: 8px; } QScrollBar::handle:vertical { background: #232b36; border-radius: 4px; min-height: 30px; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
-QStatusBar { background: #080a0e; color: #6c7787; border-top: 1px solid #151a22; }
+QStatusBar { background: #121316; color: #6c7787; border-top: 1px solid #151a22; }
 QLabel { background: transparent; }
 """
 
@@ -130,17 +149,16 @@ PAGES = {"home": 0, "keys": 1, "audio": 2, "settings": 3}
 
 
 class Segmented(QWidget if Qt else object):
-    """A row of exclusive buttons. tiles=True: separate icon tiles (like PreySense / G-Helper's mode buttons)."""
+    """Choice pills (PreySense's "Dark | Light"): the chosen one is raised and bold. tiles=True: separate icon tiles for the big mode buttons."""
     picked = pyqtSignal(int) if Qt else None
 
     def __init__(self, labels, parent=None, tiles=False, colors=None, icons=None):
         super().__init__(parent); h = QHBoxLayout(self); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(8 if tiles else 0); self.group = QButtonGroup(self); self.group.setExclusive(True); self.btns = []
+        if not tiles: self.setObjectName("segwrap"); self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True); h.setContentsMargins(3, 3, 3, 3)
         for i, t in enumerate(labels):
             if tiles: b = TileButton(t, (icons or [""] * len(labels))[i], colors[i] if colors else None)
             else: b = QPushButton(t); b.setObjectName("seg"); b.setCheckable(True); b.setCursor(Qt.CursorShape.PointingHandCursor)
             self.group.addButton(b, i); h.addWidget(b); self.btns.append(b)
-        if not tiles:
-            self.btns[0].setStyleSheet("border-top-left-radius:10px; border-bottom-left-radius:10px;"); self.btns[-1].setStyleSheet("border-top-right-radius:10px; border-bottom-right-radius:10px;")
         self.group.idClicked.connect(self.picked.emit)
 
     def set_index(self, i):
@@ -277,18 +295,20 @@ class Window(QMainWindow if Qt else object):
         v.addLayout(h); return lab
 
     def switch(self, v, text, cb, sub=None):
-        c = QCheckBox(); c.toggled.connect(lambda x: None if self.loading else cb(x)); self.line(v, text, c)
+        c = Switch(); c.toggled.connect(lambda x: None if self.loading else cb(x)); self.line(v, text, c)
         if sub: v.addWidget(self.hint(sub))
         return c
 
     def seg(self, v, text, labels, cb):
         s = Segmented(labels); s.picked.connect(lambda i: None if self.loading else cb(i)); self.line(v, text, s); return s
 
-    def slider(self, v, text, lo, hi, step, cb, final=None):
-        s = QSlider(Qt.Orientation.Horizontal); s.setRange(lo, hi); s.setSingleStep(step); s.setPageStep(step); s.setMinimumWidth(260)
-        s.valueChanged.connect(lambda x: None if self.loading else cb(x))
+    def slider(self, v, text, lo, hi, step, cb, final=None, suffix=""):
+        """Like PreySense: the name on the left, the current value on the right, a full-width slider underneath."""
+        s = QSlider(Qt.Orientation.Horizontal); s.setRange(lo, hi); s.setSingleStep(step); s.setPageStep(step)
+        val = QLabel(f"{s.value()}{suffix}"); val.setObjectName("stats"); s.vlabel = val
+        s.valueChanged.connect(lambda x: val.setText(f"{x}{suffix}")); s.valueChanged.connect(lambda x: None if self.loading else cb(x))
         if final: s.sliderReleased.connect(lambda: final(s.value()))
-        self.line(v, text, s); return s
+        h = QHBoxLayout(); h.addWidget(QLabel(text)); h.addStretch(); h.addWidget(val); v.addLayout(h); v.addWidget(s); return s
 
     def btn(self, text, cb, primary=False):
         b = QPushButton(text); b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -302,13 +322,13 @@ class Window(QMainWindow if Qt else object):
         try: self.modes = hw.supported_modes()
         except Exception: self.modes = list(hw.MODES)
         order = [m for m in ("eco", "quiet", "balanced", "performance", "turbo") if m in self.modes] or self.modes; self.modes = order
-        cols = {"eco": "#5de0a0", "quiet": "#5db8ff", "balanced": "#19e3ff", "performance": "#ffb347", "turbo": "#ff5d6c"}
-        self.power = Segmented([m.capitalize() for m in order], tiles=True, icons=[m if m in _P else "balanced" for m in order], colors=[cols.get(m, "#19e3ff") for m in order]); v.addWidget(self.power)
+        cols = {"eco": "#5de0a0", "quiet": "#5db8ff", "balanced": "#58a6ff", "performance": "#ffb347", "turbo": "#ff5d6c"}
+        self.power = Segmented([m.capitalize() for m in order], tiles=True, icons=[m if m in _P else "balanced" for m in order], colors=[cols.get(m, "#58a6ff") for m in order]); v.addWidget(self.power)
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
         self.auto = self.switch(v, "Choose automatically", lambda x: self.do(lambda: ipc.call("set", key="auto_profile", value=x), "Saved", refresh=False), "By power source and load. A mode you pick holds for 30 minutes.")
         v = self.card(lay, "Fans", "fan", True); self.stat_fan = v.right
         self.fan = Segmented(FAN_MODES, tiles=True, icons=["smart", "auto", "max", "manual"]); self.fan.picked.connect(lambda i: None if self.loading else self.fan_apply(i)); v.addWidget(self.fan)
-        self.fan_pct = self.slider(v, "Manual speed", 20, 100, 5, lambda x: None, lambda x: self.fan_apply(3))
+        self.fan_pct = self.slider(v, "Manual speed", 20, 100, 5, lambda x: None, lambda x: self.fan_apply(3), suffix=" %")
         v = self.card(lay, "GPU Mode", "gpu", True); self.stat_gpu = v.right
         self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True, icons=["optimus", "gpu", "auto"]); v.addWidget(self.gpu)
         self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False)); v.addWidget(self.hint("Takes effect after a reboot."))
@@ -326,7 +346,7 @@ class Window(QMainWindow if Qt else object):
         self.zc = [ColorButton("00aec7") for _ in range(3)]; self.rear_color = ColorButton("00aec7")
         for b in self.zc + [self.rear_color]: b.changed.connect(lambda h_: self.rear_apply())
         self.line(v, "Static: left · middle · right", *self.zc); self.line(v, "Colour (other effects)", self.rear_color)
-        self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply())
+        self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply(), suffix=" %")
         v = self.card(lay, "Battery and Screen", "battery", True); self.stat_bat = v.right
         self.limit = self.switch(v, "80 % charge limit", lambda x: self.do(lambda: hw.set_battery_limit(x), lambda r: f"80 % limit: {'on' if r else 'off'}", refresh=False))
         self.od = self.switch(v, "LCD overdrive", lambda x: self.do(lambda: hw.set_overdrive(x), lambda r: f"Overdrive: {'on' if r else 'off'}", refresh=False))
@@ -493,7 +513,7 @@ class Window(QMainWindow if Qt else object):
 def _icon():
     """A small drawn app icon (no image files to ship): a cyan ring with a T."""
     pm = QPixmap(128, 128); pm.fill(Qt.GlobalColor.transparent); p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setBrush(QColor("#0b0e13")); p.setPen(QPen(QColor(ACCENT), 9)); p.drawEllipse(10, 10, 108, 108)
+    p.setBrush(QColor("#17181c")); p.setPen(QPen(QColor(ACCENT), 9)); p.drawEllipse(10, 10, 108, 108)
     f = QFont(); f.setBold(True); f.setPixelSize(70); p.setFont(f); p.setPen(QColor(ACCENT)); p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "T"); p.end(); return QIcon(pm)
 
 
