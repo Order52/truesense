@@ -536,3 +536,11 @@ class TestDesigns(unittest.TestCase):
             p = _os.path.join(d, "a.png"); Image.new("RGB", (40, 12), (200, 10, 20)).save(p)
             cv = designs.image_cells(p); self.assertEqual(len(cv), 128); self.assertEqual(cv[5], (200, 10, 20)); self.assertEqual(cv[127], (0, 0, 0))
             with self.assertRaises(device.HwError): designs.image_cells(_os.path.join(d, "missing.png"))
+
+
+class TestSimIsolation(unittest.TestCase):
+    def test_the_simulator_never_uses_the_real_user_state(self):
+        import subprocess, sys, os as _os
+        env = dict(_os.environ, TRUESENSE_SIM="1", PYTHONPATH=_os.path.join(_os.path.dirname(__file__), "..", "src")); env.pop("TRUESENSE_USERSTATE", None)
+        out = subprocess.run([sys.executable, "-c", "from truesense import userstate; print(userstate.PATH)"], env=env, capture_output=True, text=True).stdout.strip()
+        self.assertNotIn(".local/state", out); self.assertIn("truesense-sim", out)

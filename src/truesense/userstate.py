@@ -2,7 +2,10 @@
 """Small per-user memory (~/.local/state/truesense/user.json): what a light was set to before `off`, last keyboard profile, ... Never required: every reader has a default."""
 import json, os
 
-PATH = os.path.expanduser("~/.local/state/truesense/user.json")
+import tempfile
+# The simulator (TRUESENSE_SIM=1) must never touch your real settings: the key service running on this machine would act on them.
+PATH = os.environ.get("TRUESENSE_USERSTATE") or (os.path.join(tempfile.gettempdir(), f"truesense-sim-{os.getuid()}", "user.json") if os.environ.get("TRUESENSE_SIM")
+                                                  else os.path.expanduser("~/.local/state/truesense/user.json"))
 
 
 def load():
