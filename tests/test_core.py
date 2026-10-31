@@ -126,7 +126,10 @@ class TestDaemonLogic(Base):
     def make(self):
         cfg = config.load("/nonexistent", None); cfg["user"] = "no-such-user"
         st = state.State({"smart_fan": True, "auto_profile": True, "operating_follow": False, "profile_hold_until": 0}, tempfile.mkdtemp() + "/s.json")
-        daemon.RUN = tempfile.mkdtemp(); b = daemon.Brain(cfg, st); b.say = lambda *a, **k: None; b.last_ac = True; return b
+        daemon.RUN = tempfile.mkdtemp(); daemon.TMP_STATE = tempfile.mkdtemp() + "/ts"; b = daemon.Brain(cfg, st); b.say = lambda *a, **k: None; b.last_ac = True
+        daemon.hw.on_ac = lambda: True                                           # not the real charger state
+        b.find_hwmon = lambda: None; b.coretemp = None; b.gpu_temp = 0          # the test drives the temperatures; real sensors must not leak in
+        return b
 
     def drive(self, b, n, cpu, gpu, load):
         for _ in range(n): device.SIM.temps = (cpu, 55, gpu); b.cpu_load = load; b.step()
