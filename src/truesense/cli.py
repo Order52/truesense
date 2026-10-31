@@ -240,7 +240,7 @@ def h_look(a):
 
 
 def h_startup(a):
-    from . import config, startup, profiles, keyprofiles, looks
+    from . import config, startup, profiles, keyprofiles, looks, ipc
     v = a.verb or "show"
     if v == "boot":
         cur = ipc.call("boot_look", action="get")
