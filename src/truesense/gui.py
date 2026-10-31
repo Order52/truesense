@@ -46,6 +46,18 @@ class Window(Adw.ApplicationWindow if Gtk else object):
             except Exception as e: GLib.idle_add(lambda: (self.toast(f"Error: {e}"), self.refresh(), False)[-1])
         threading.Thread(target=work, daemon=True).start() if slow else work()
 
+    def live(self, key, fn):
+        """Apply a colour while it is being picked: one write at a time, the newest value always wins."""
+        busy = self.__dict__.setdefault("_busy", {})
+        if busy.get(key): busy[key] = "again"; return
+        busy[key] = True
+        def work():
+            try: fn()
+            except Exception as e: GLib.idle_add(lambda: (self.toast(f"Error: {e}"), False)[-1])
+            again = busy.get(key) == "again"; busy[key] = None
+            if again: GLib.idle_add(lambda: (self.live(key, fn), False)[-1])
+        threading.Thread(target=work, daemon=True).start()
+
     def page(self, name, title, icon):
         pg = Adw.PreferencesPage(); self.stack.add_titled_with_icon(pg, name, title, icon); return pg
 
@@ -119,6 +131,7 @@ class Window(Adw.ApplicationWindow if Gtk else object):
         self.kb_on = self.switch(g, "On", "", lambda v: self.do(lambda: actions.run("keyboard:on" if v else "keyboard:off"), lambda r: r))
         self.kb_bright = self.spin(g, "Brightness (0 to 50)", 0, 50, 5, lambda v: self.do(lambda: keyboard.set_brightness(v), "Brightness set"))
         self.kb_fx = self.combo(g, "Built-in effect", KB_EFFECTS, lambda i: None); self.kb_color = self.color_row(g, "Colour", "00aec7")
+        self.kb_color.connect("notify::rgba", lambda *_: None if self.updating else self.live("kb", lambda: keyboard.set_color(to_hex(self.kb_color.get_rgba()))))
         self.button_row(g, "Apply the effect", "neon needs high brightness", "Apply", lambda: self.do(lambda: keyboard.set_effect(KB_EFFECTS[self.kb_fx.get_selected()], to_hex(self.kb_color.get_rgba()), 5, max(int(self.kb_bright.get_value()), 50 if self.kb_fx.get_selected() == 5 else 1)), "Keyboard effect applied"))
         self.button_row(g, "Change colour only", "Keeps the current effect, changes its colour", "Apply", lambda: self.do(lambda: keyboard.set_color(to_hex(self.kb_color.get_rgba())), "Colour changed"))
         names = ["all", "wasd", "arrows", "fkeys", "numrow", "letters", "numpad", "esc", "space", "enter", "predator", "lshift"]

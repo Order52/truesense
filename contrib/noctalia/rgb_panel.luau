@@ -11,6 +11,18 @@ local st = { tab = "kb", hex = "00AAFF", level = 25, kgroup = 2, khex = "FF0000"
              rear = "static", rhex = "00AEC7", rlevel = 100, speed = 3, zone = 1, z = { "00AEC7", "00AEC7", "00AEC7" } }
 
 local function run(cmd) noctalia.runAsync(cmd) end
+
+-- Live updates while a colour or slider is being dragged: one command at a time, and when it finishes the newest value is sent
+-- (so the keyboard follows the drag without a backlog of processes).
+local busy = {}
+local function live(key, build)
+  if busy[key] then busy[key] = "again"; return end
+  busy[key] = true
+  noctalia.runStream(build() .. "; echo done", function()
+    local again = busy[key] == "again"; busy[key] = nil
+    if again then live(key, build) end
+  end)
+end
 local function clean(h) return (tostring(h):gsub("[^%x]", ""):sub(1, 6)) end
 
 local function tabs()
@@ -29,14 +41,12 @@ end
 
 local function cap(t) return ui.label({ text = t, fontSize = 12, color = "on_surface_variant" }) end
 
-local function rearApply()
+local function rearCmd()
   local zs = st.z[1] .. "," .. st.z[2] .. "," .. st.z[3]
-  if st.rear == "static" then
-    run("truesense rear set static --zones " .. zs .. " --brightness " .. st.rlevel .. " --speed " .. st.speed)
-  else
-    run("truesense rear set " .. st.rear .. " --color " .. st.rhex .. " --brightness " .. st.rlevel .. " --speed " .. st.speed)
-  end
+  if st.rear == "static" then return "truesense rear set static --zones " .. zs .. " --brightness " .. st.rlevel .. " --speed " .. st.speed end
+  return "truesense rear set " .. st.rear .. " --color " .. st.rhex .. " --brightness " .. st.rlevel .. " --speed " .. st.speed
 end
+local function rearApply() live("rear", rearCmd) end
 
 function render()
   local body
@@ -103,12 +113,12 @@ function onKb1() kbEffect(1) end function onKb2() kbEffect(2) end function onKb3
 function onKb5() kbEffect(5) end function onKb6() kbEffect(6) end function onKb7() kbEffect(7) end function onKb8() kbEffect(8) end
 function onKb9() kbEffect(9) end function onKb10() kbEffect(10) end function onKb11() kbEffect(11) end function onKb12() kbEffect(12) end
 function onKb13() kbEffect(13) end
-function onKbColorLive(v) st.hex = clean(v) end
-function onKbColor(v) st.hex = clean(v); run("truesense keyboard color " .. st.hex) end
+function onKbColorLive(v) st.hex = clean(v); live("kbcolor", function() return "truesense keyboard color " .. st.hex end) end
+function onKbColor(v) st.hex = clean(v); live("kbcolor", function() return "truesense keyboard color " .. st.hex end) end
 function onKbFill() run("truesense keyboard fill " .. st.hex) end
 function onKbRainbow() run("truesense keyboard rainbow") end
-function onKbLevel(v) v = tonumber(v); if v then st.level = math.floor(v) end end
-function onKbLevelEnd(v) st.level = math.floor(tonumber(v) or st.level); run("truesense keyboard brightness " .. st.level); render() end
+function onKbLevel(v) v = tonumber(v); if v then st.level = math.floor(v); live("kblevel", function() return "truesense keyboard brightness " .. st.level end) end end
+function onKbLevelEnd(v) st.level = math.floor(tonumber(v) or st.level); live("kblevel", function() return "truesense keyboard brightness " .. st.level end); render() end
 
 -- Per key
 local function paint(hex) run("truesense keyboard paint " .. GROUPS[st.kgroup][1] .. "=" .. hex) end
@@ -116,8 +126,8 @@ local function group(i) st.kgroup = i; render() end
 function onGroup1() group(1) end function onGroup2() group(2) end function onGroup3() group(3) end function onGroup4() group(4) end
 function onGroup5() group(5) end function onGroup6() group(6) end function onGroup7() group(7) end function onGroup8() group(8) end
 function onGroup9() group(9) end function onGroup10() group(10) end function onGroup11() group(11) end function onGroup12() group(12) end
-function onPaintLive(v) st.khex = clean(v) end
-function onPaint(v) st.khex = clean(v); paint(st.khex) end
+function onPaintLive(v) st.khex = clean(v); live("paint", function() return "truesense keyboard paint " .. GROUPS[st.kgroup][1] .. "=" .. st.khex end) end
+function onPaint(v) st.khex = clean(v); live("paint", function() return "truesense keyboard paint " .. GROUPS[st.kgroup][1] .. "=" .. st.khex end) end
 function onPaintNow() paint(st.khex) end
 function onPaintBlack() paint("000000") end
 
@@ -133,8 +143,8 @@ local function setRearColor(h)
   st.rhex = h
   if st.zone == 1 then st.z = { h, h, h } else st.z[st.zone - 1] = h end
 end
-function onRearColorLive(v) setRearColor(clean(v)) end
+function onRearColorLive(v) setRearColor(clean(v)); rearApply() end
 function onRearColor(v) setRearColor(clean(v)); rearApply() end
-function onRearLevel(v) v = tonumber(v); if v then st.rlevel = math.floor(v) end end
+function onRearLevel(v) v = tonumber(v); if v then st.rlevel = math.floor(v); rearApply() end end
 function onRearLevelEnd(v) st.rlevel = math.floor(tonumber(v) or st.rlevel); rearApply(); render() end
 function onOpen() render() end
