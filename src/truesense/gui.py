@@ -239,7 +239,7 @@ class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.loading = False
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings): build()
@@ -247,7 +247,9 @@ class Window(QMainWindow if Qt else object):
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(2000); self.full_refresh(); self.tick()
 
     # ---- plumbing --------------------------------------------------------------------------------------------------------------------
-    def _msg(self, t): self.statusBar().showMessage(t, 6000)
+    def _msg(self, t):
+        self.statusBar().setStyleSheet("QStatusBar { color: #ff7b72; }" if t.startswith("Error") else "")
+        self.statusBar().showMessage(t, 9000 if t.startswith("Error") else 6000)
 
     def go(self, name): self.pages.setCurrentIndex(PAGES[name])
 
@@ -260,14 +262,14 @@ class Window(QMainWindow if Qt else object):
         threading.Thread(target=work, daemon=True).start()
 
     def live(self, key, fn):
-        """For colours and sliders while dragging: one write at a time, the newest value always wins."""
-        if self.busy.get(key): self.busy[key] = "again"; return
+        """For colours and sliders while dragging: one write at a time, and the NEWEST request is always the one that ends up applied."""
+        if self.busy.get(key): self.pending[key] = fn; return
         self.busy[key] = True
         def work():
             try: fn()
             except Exception as e: self.bus.message.emit(f"Error: {e}")
-            again = self.busy.get(key) == "again"; self.busy[key] = None
-            if again: self.live(key, fn)
+            self.busy[key] = None; nxt = self.pending.pop(key, None)
+            if nxt: self.live(key, nxt)
         threading.Thread(target=work, daemon=True).start()
 
     def page(self, heading, back=True):
@@ -359,7 +361,7 @@ class Window(QMainWindow if Qt else object):
         self.kb_on = self.switch(v, "Backlight", lambda x: self.do(lambda: actions.run("keyboard:on" if x else "keyboard:off"), lambda r: r, refresh=False)); self.sep(v)
         self.kb_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("kbl", lambda: keyboard.set_brightness(x)))
         self.kb_fx = QComboBox(); self.kb_fx.addItems([e.capitalize() for e in KB_EFFECTS]); self.kb_fx.setMinimumWidth(170); self.kb_color = ColorButton("00aec7")
-        self.kb_fx.activated.connect(lambda i: self.do(lambda: keyboard.set_effect(KB_EFFECTS[i], self.kb_color.hex, self.kb_speed.value() or 5, max(self.kb_level.value(), 50 if KB_EFFECTS[i] == "neon" else 10)), "Effect applied", refresh=False))
+        self.kb_fx.activated.connect(lambda i: self.do(lambda: keyboard.set_effect(KB_EFFECTS[i], self.kb_color.hex, self.kb_speed.value() or 5, max(self.kb_level.value(), 50 if KB_EFFECTS[i] == "neon" else 10)), "Effect applied", refresh=False) or QTimer.singleShot(300, lambda: self.sync_enabled()))
         self.kb_color.changed.connect(lambda h_: self.live("kbc", lambda: keyboard.set_color(h_)))
         self.sep(v); self.line(v, "Lighting mode", self.kb_fx); self.line(v, "Colour", self.kb_color)
         self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x))); v.addStretch(); stack.addWidget(kb)
@@ -412,6 +414,11 @@ class Window(QMainWindow if Qt else object):
         def go():
             look = looks.capture() if sel == "__current__" else looks.load(sel); ipc.call("boot_look", action="set", look=look); return looks.describe(look)
         self.do(go, lambda d: f"At boot: {d}", refresh=False); QTimer.singleShot(500, self.reload_looks)
+
+    def sync_enabled(self, look=None):
+        """Grey out what the current keyboard look cannot use: wave and neon have no colour; static and per-key looks have no animation speed."""
+        look = look if look is not None else keyboard.last(); name = look.get("name") if look.get("mode") == "effect" else None
+        self.kb_color.setEnabled(name not in keyboard.NO_COLOR and name != "off"); self.kb_speed.setEnabled(name is not None and name not in ("static", "off"))
 
     def rear_apply(self):
         def go():
@@ -543,23 +550,28 @@ class Window(QMainWindow if Qt else object):
             self.bus.refreshed.emit(d)
         threading.Thread(target=work, daemon=True).start()
 
+    @staticmethod
+    def _set(slider, value):
+        if not slider.isSliderDown(): slider.setValue(value)            # a refresh must never move a slider while it is being dragged
+
     def _apply(self, d):
         self.loading = True
         try:
             if "state" in d:
                 s = d["state"]["settings"]; self.auto.setChecked(bool(s["auto_profile"]))
-                if d.get("fan", {}).get("mode") == "manual": self.fan_pct.setValue(max(20, d["fan"]["duty_register_pct"]["cpu"]))
+                if d.get("fan", {}).get("mode") == "manual": self._set(self.fan_pct, max(20, d["fan"]["duty_register_pct"]["cpu"]))
                 self.fan.set_index(0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1))
             if "ac" in d: self.src = "AC" if d["ac"] else "Battery"
             if d.get("mode") in self.modes: self.power.set_index(self.modes.index(d["mode"]))
             if "rear" in d:
-                r = d["rear"]; self.rear_on.setChecked(r["brightness"] > 0); self.rear_bright.setValue(r["brightness"]); self.rear_speed.setValue(r["speed"])
+                r = d["rear"]; self.rear_on.setChecked(r["brightness"] > 0); self._set(self.rear_bright, r["brightness"]); self._set(self.rear_speed, r["speed"])
                 self.rear_fx.set_index(list(hw.REAR_MODES).index(r["mode"]) if r["mode"] in hw.REAR_MODES else -1); self.rear_color.set_hex(r["color"])
                 zs = r.get("zones") or userstate.get("rear_zones")
                 for b, z in zip(self.zc, zs if isinstance(zs, list) and len(zs) == 3 else [r["color"]] * 3): b.set_hex(z)
-            if "kb" in d: self.kb_level.setValue(d["kb"]); self.kb_on.setChecked(d["kb"] > 0)
+            if "kb" in d: self._set(self.kb_level, d["kb"]); self.kb_on.setChecked(d["kb"] > 0)
             look = d.get("look") or {}
-            if look.get("mode") == "effect" and look.get("name") in KB_EFFECTS: self.kb_fx.setCurrentIndex(KB_EFFECTS.index(look["name"])); self.kb_color.set_hex(look.get("color", "00aec7")); self.kb_speed.setValue(look.get("speed", 5))
+            if look.get("mode") == "effect" and look.get("name") in KB_EFFECTS: self.kb_fx.setCurrentIndex(KB_EFFECTS.index(look["name"])); self.kb_color.set_hex(look.get("color", "00aec7")); self._set(self.kb_speed, look.get("speed", 5))
+            self.sync_enabled(look)
             if d.get("kbtimeout") is not None: self.kb_timeout.setChecked(bool(d["kbtimeout"]))
             if "cells" in d and not self.kv.sel: self.kv.cells = ["%02x%02x%02x" % tuple(c) for c in d["cells"]]; self.kv.update()
             for k, w in (("limit", self.limit), ("calib", self.calib), ("od", self.od), ("boot", self.boot), ("dts", self.dts)):
@@ -571,7 +583,7 @@ class Window(QMainWindow if Qt else object):
                 keys = [k for k, _ in JACK]; self.jack.set_index(keys.index(d["jackset"]) if d["jackset"] in keys else 0); self.jack_hint.setText(JACK_HINT.get(d["jackset"], ""))
             if "jack" in d: j = d["jack"]; self.jack_state.setText("Detected now: " + ("headset with microphone" if j["headset_mic"] else "headphones" if j["headphones"] else "nothing plugged in"))
             if "mic" in d: self.mute.setChecked(bool(d["mic"]["muted"]))
-            if d.get("boost") is not None: self.boost.setValue(d["boost"])
+            if d.get("boost") is not None: self._set(self.boost, d["boost"])
             if "voice" in d:
                 v = d["voice"]; self.v_head.set_index(VOICE.index(v["headset"]) if v.get("headset") in VOICE else 0); self.v_arr.set_index(VOICE.index(v["array"]) if v.get("array") in VOICE else 0)
             if "voice" in d: self.v_note.setChecked(bool(config.load()["audio"]["notify"]))
