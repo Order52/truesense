@@ -1,7 +1,7 @@
 -- TrueSense power mode (Acer firmware: eco / quiet / balanced / performance / turbo). State comes from the TrueSense daemon.
 -- Click: profile panel · Middle: toggle automatic profile · IPC: set <mode> | auto <on|off>
 local STATE = "/tmp/truesense-state"
-local PANEL = "sloppy/toggles:profile_panel"
+local PANEL = "YOUR-PLUGIN-ID:profile_panel"
 local INFO = {
   eco         = { "ECO",   "battery-eco", "tertiary",           "Eco" },
   quiet       = { "QUIET", "moon",        "secondary",          "Quiet" },

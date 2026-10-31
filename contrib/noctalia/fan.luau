@@ -1,8 +1,8 @@
 -- TrueSense fan button: shows Smart / Auto / Max / manual, with live RPM.
 -- Click / right-click: fan panel · Middle click: Smart curve
--- IPC: noctalia msg plugin sloppy/toggles:fan all set <smart|auto|max|20-100>
+-- IPC: noctalia msg plugin YOUR-PLUGIN-ID:fan all set <smart|auto|max|20-100>
 local STATE = "/tmp/truesense-state"
-local PANEL = "sloppy/toggles:fan_panel"
+local PANEL = "YOUR-PLUGIN-ID:fan_panel"
 local ACT   = { idle = "Idle", browsing = "Browsing", gaming = "Gaming", heavy = "Heavy load", hot = "Hot!" }
 
 local function readState()

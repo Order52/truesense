@@ -1,6 +1,6 @@
 -- Keyboard + rear light RGB (TrueSense). Click opens the panel · Middle click: keyboard on/off · Scroll: keyboard brightness
--- IPC: noctalia msg plugin sloppy/toggles:rgb all <kb-on|kb-off|rear-on|rear-off>
-local PANEL = "sloppy/toggles:rgb_panel"
+-- IPC: noctalia msg plugin YOUR-PLUGIN-ID:rgb all <kb-on|kb-off|rear-on|rear-off>
+local PANEL = "YOUR-PLUGIN-ID:rgb_panel"
 local level = 25
 
 local function run(cmd) noctalia.runAsync(cmd) end
