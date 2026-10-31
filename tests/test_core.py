@@ -375,6 +375,14 @@ class TestDaemonLogic(Base):
         with open(user, "w") as f: f.write('[update]\nrepo = "evil/repo"\n')
         self.assertEqual(update.repo(), "Order52/truesense", "the repository never comes from the user config")
 
+    def test_update_prefers_a_newer_tag_over_an_older_release_page(self):
+        from truesense import update
+        answers = {"releases/latest": {"tag_name": "v0.3.0", "html_url": "rel", "body": "notes"}, "tags": [{"name": "v0.3.1"}, {"name": "v0.3.0"}, {"name": "junk"}]}
+        real = update._get_json; update._get_json = lambda url, timeout=8: answers["tags" if "/tags" in url else "releases/latest"]
+        try: info = update.latest("o/r")
+        finally: update._get_json = real
+        self.assertEqual((info["version"], info["tag"]), ("0.3.1", "v0.3.1"), "a tag newer than the latest release page must win")
+
     def test_update_download_is_checked_before_anything_runs_as_root(self):
         import io, tarfile, tempfile, urllib.request
         from truesense import update

@@ -33,18 +33,19 @@ def _get_json(url, timeout=8):
 
 
 def latest(r=None):
-    """Newest release (or, without releases, newest tag): {"version", "tag", "url", "notes"}."""
-    r = r or repo(); best = None
+    """Newest version of the repository: the highest of the newest release and the newest version tag (a tag may not have a release page yet).
+    Returns {"version", "tag", "url", "notes"}."""
+    r = r or repo(); found = {}
     try:
         d = _get_json(f"https://api.github.com/repos/{r}/releases/latest")
-        if parse(d.get("tag_name")): best = {"version": ".".join(map(str, parse(d["tag_name"]))), "tag": d["tag_name"], "url": d.get("html_url", ""), "notes": (d.get("body") or "")[:1500]}
+        if parse(d.get("tag_name")): found[d["tag_name"]] = {"url": d.get("html_url", ""), "notes": (d.get("body") or "")[:1500]}
     except urllib.error.HTTPError as e:
         if e.code != 404: raise
-    if best is None:                                                    # no release page: use the tags
-        tags = [t["name"] for t in _get_json(f"https://api.github.com/repos/{r}/tags?per_page=30") if parse(t.get("name"))]
-        if not tags: raise HwError("no release or version tag found in the repository")
-        tag = max(tags, key=parse); best = {"version": ".".join(map(str, parse(tag))), "tag": tag, "url": f"https://github.com/{r}/releases/tag/{tag}", "notes": ""}
-    return best
+    for tg in _get_json(f"https://api.github.com/repos/{r}/tags?per_page=30"):
+        if parse(tg.get("name")): found.setdefault(tg["name"], {"url": f"https://github.com/{r}/releases/tag/{tg['name']}", "notes": ""})
+    if not found: raise HwError("no release or version tag found in the repository")
+    tag = max(found, key=parse)
+    return {"version": ".".join(map(str, parse(tag))), "tag": tag, "url": found[tag]["url"], "notes": found[tag]["notes"]}
 
 
 def _load_cache():

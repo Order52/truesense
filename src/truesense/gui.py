@@ -561,6 +561,8 @@ class Window(QMainWindow if Qt else object):
         h = QHBoxLayout(); h.setSpacing(10)
         if back:
             b = self.btn(" Back", lambda: self.pages.setCurrentIndex(0)); b.setIcon(make_icon("back")); b.setObjectName("quiet"); h.addWidget(b)
+        if not back:
+            il = QLabel(); il.setPixmap(logo_pixmap(30)); il.setFixedSize(32, 32); h.addWidget(il)
         t_ = QLabel(heading); t_.setObjectName("brand" if not back else "h1"); h.addWidget(t_); h.addStretch(); lay.addLayout(h); return lay
 
     def card(self, lay, title, icon="", right=False):
@@ -990,7 +992,9 @@ class Window(QMainWindow if Qt else object):
         self.auto_upd = self.switch(v, "Check for updates automatically", self.set_auto_update, "Once a day it asks GitHub for the newest release number (nothing else is sent) and shows a notification; nothing is installed without you pressing Update.")
         self.auto_upd.setChecked(bool(self.cfg["update"]["auto_check"]))
         v = self.card(lay, "About")
-        self.line(v, "TrueSense", QLabel(f"version {__version__}")); self.line(v, "System check", self.btn("Run check…", self.run_doctor)); self.line(v, "Support", self.btn("Copy report", self.copy_report))
+        lg = QLabel(); lg.setPixmap(logo_pixmap(40)); lg.setFixedSize(42, 42); self.line(v, f"TrueSense {__version__}", lg)
+        self.line(v, "Credits and licence", self.btn("Credits", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense/blob/main/docs/CREDITS.md"))), self.btn("Source", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense"))))
+        self.line(v, "System check", self.btn("Run check…", self.run_doctor)); self.line(v, "Support", self.btn("Copy report", self.copy_report))
         v = self.card(lay, "Reset")
         self.line(v, "Everything back to defaults", self.btn("Reset all…", self.reset_all)); v.addWidget(self.hint("Back to how a fresh install behaves, like PredatorSense on Windows: Native auto mode control, firmware fans, power limits left to the firmware, lighting stock, undervolt off, PREDATOR key `default`. Your saved profiles are kept."))
         lay.addStretch()
@@ -1589,8 +1593,23 @@ class Window(QMainWindow if Qt else object):
 _WINDOW = [None]
 
 
+LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "truesense.svg")
+
+
+def logo_pixmap(size):
+    """The TrueSense logo (src/truesense/data/truesense.svg) at the given size, crisp on high-DPI screens."""
+    px = QPixmap(size * 2, size * 2); px.fill(Qt.GlobalColor.transparent)
+    if os.path.exists(LOGO): p = QPainter(px); QSvgRenderer(LOGO).render(p); p.end()
+    px.setDevicePixelRatio(2); return px
+
+
 def _icon():
-    """A small drawn app icon (no image files to ship): a cyan ring with a T."""
+    """The app icon: the logo at every common size (a drawn ring with a T if the file is missing)."""
+    if os.path.exists(LOGO):
+        ic = QIcon()
+        for s in (16, 24, 32, 48, 64, 128, 256):
+            px = QPixmap(s, s); px.fill(Qt.GlobalColor.transparent); p = QPainter(px); p.setRenderHint(QPainter.RenderHint.Antialiasing); QSvgRenderer(LOGO).render(p); p.end(); ic.addPixmap(px)
+        return ic
     pm = QPixmap(128, 128); pm.fill(Qt.GlobalColor.transparent); p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setBrush(QColor("#17181c")); p.setPen(QPen(QColor(ACCENT), 9)); p.drawEllipse(10, 10, 108, 108)
     f = QFont(); f.setBold(True); f.setPixelSize(70); p.setFont(f); p.setPen(QColor(ACCENT)); p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "T"); p.end(); return QIcon(pm)

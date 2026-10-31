@@ -1,5 +1,11 @@
 # Release notes
 
+## 0.3.2 (2026-10-31): icon, credits, update-check fix
+
+* **Logo and app icon** (`src/truesense/data/truesense.svg`, PNGs in `packaging/icons`), used by the window, the launcher and the README; installed into the icon theme.
+* **Credits**: [docs/CREDITS.md](docs/CREDITS.md) thanks every project that helped (Linuwu-Sense, AcerUltraX, RNNoise, noise-suppression-for-voice, G-Helper, PreySense, the maintainer's earlier tools, and the platform) with what each gave and its licence; a Credits button in Settings, About; a code of conduct and README badges.
+* **Update check fix**: a version tag newer than the latest GitHub Release page is now found (the older release page used to win).
+
 ## 0.3.1 (2026-10-31): updates
 
 * **Update check and one-click update**: Settings, Updates (and `truesense update check|apply|auto`). A banner on Home appears when a newer release exists; Update downloads the tagged release, verifies it and runs its installer with administrator rights (graphical password prompt, or sudo in a terminal), then offers to restart the window.

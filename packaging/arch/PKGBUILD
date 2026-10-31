@@ -2,7 +2,7 @@
 # Acer Predator Helios 16 (PH16-71): fans, power modes, battery, GPU mode, lighting, Fn keys, audio helpers.
 # Build from a checkout:  cd packaging/arch && makepkg -si
 pkgname=truesense
-pkgver=0.3.1
+pkgver=0.3.2
 pkgrel=1
 pkgdesc='PredatorSense for Linux: Acer Predator Helios 16 PH16-71 (fans, power modes, battery, lighting, PREDATOR key, audio)'
 arch=('any')
@@ -35,6 +35,7 @@ WRAP
         sed 's|@PREFIX@|/usr|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/$f"
     done
     sed 's|@PREFIX@|/usr|g' "$_src/packaging/truesense.desktop" | install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/truesense.desktop"
+    install -Dm644 "$_src/src/truesense/data/truesense.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/truesense.svg"; install -Dm644 "$_src/packaging/icons/truesense-256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/truesense.png"
     install -Dm644 "$_src/packaging/70-truesense.rules" "$pkgdir/usr/lib/udev/rules.d/70-truesense.rules"
     install -Dm644 "$_src/packaging/truesense.modprobe.conf" "$pkgdir/usr/lib/modprobe.d/truesense.conf"
     install -Dm644 "$_src/packaging/truesense.modules-load.conf" "$pkgdir/usr/lib/modules-load.d/truesense.conf"
