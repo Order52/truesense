@@ -75,6 +75,12 @@ if [ "$SERVICES" = 1 ]; then
   systemctl --global enable truesense-keys.service truesense-audio.service >/dev/null 2>&1
   ur systemctl --user restart truesense-keys.service truesense-audio.service || say "(user services start at your next login)"
   sleep 2
+  if [ -r /var/lib/truesense/migrated_voice ]; then      # the user already had Purified Voice filters: recreate them under the new names, same modes
+    hs=$(sed -n 's/^headset=//p' /var/lib/truesense/migrated_voice); ar=$(sed -n 's/^array=//p' /var/lib/truesense/migrated_voice)
+    ur "$PREFIX/bin/truesense" audio voice set headset "${hs:-off}" >/dev/null 2>&1 || true
+    ur "$PREFIX/bin/truesense" audio voice set array "${ar:-off}" >/dev/null 2>&1 || true
+    rm -f /var/lib/truesense/migrated_voice; say "Purified Voice filters recreated (headset: ${hs:-off}, array: ${ar:-off})"
+  fi
 else say "services installed but not enabled (--no-services)"; fi
 
 step "health check"

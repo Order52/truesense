@@ -4,6 +4,7 @@ Everything goes through the kernel helper (device.py). Every setter reads the ol
 can answer -1 / the old value right after a write); set_* return the verified new value or raise HwError.
 """
 import glob, os, re, subprocess, time
+from . import util
 from .device import HwError, cmd, ival
 
 MODES = {"quiet": 0, "balanced": 1, "performance": 4, "turbo": 5, "eco": 6}
@@ -117,10 +118,10 @@ def cpu_temp():
     best = None
     for h in glob.glob("/sys/class/hwmon/hwmon*"):
         try:
-            if open(h + "/name").read().strip() != "coretemp": continue
+            if util.read(h + "/name").strip() != "coretemp": continue
         except OSError: continue
         for t in glob.glob(h + "/temp*_input"):
-            try: v = int(open(t).read()) / 1000
+            try: v = int(util.read(t)) / 1000
             except OSError: continue
             best = v if best is None else max(best, v)
     return best
@@ -134,6 +135,6 @@ def gpu_temp():
 
 def on_ac():
     for n in ("ACAD", "AC", "AC0", "ADP0", "ADP1"):
-        try: return open(f"/sys/class/power_supply/{n}/online").read().strip() == "1"
+        try: return util.read(f"/sys/class/power_supply/{n}/online").strip() == "1"
         except OSError: continue
     return True

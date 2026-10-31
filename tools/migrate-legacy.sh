@@ -42,6 +42,22 @@ for pkg in linuwu_sense acer-rear-wmi; do
 done
 rm -rf /usr/src/linuwu_sense-* /usr/src/acer-rear-wmi-*
 
+# 4b. the invoking user's own files: carry settings over, then remove the old-named PipeWire filter configs (TrueSense recreates them under its own names)
+if [ -n "$U" ]; then
+  H=$(getent passwd "$U" | cut -d: -f6); PWD_="$H/.config/pipewire/pipewire.conf.d"
+  mode_of() { thr=$(sed -n 's/.*"VAD Threshold (%)" = \([0-9]*\).*/\1/p' "$1" 2>/dev/null | head -1); case "$thr" in 85) echo personal;; 50) echo conference;; *) echo off;; esac; }
+  if [ -e "$PWD_/rps-pv-headset.conf" ] || [ -e "$PWD_/rps-pv-array.conf" ]; then
+    mkdir -p /var/lib/truesense; printf 'headset=%s\narray=%s\n' "$(mode_of "$PWD_/rps-pv-headset.conf")" "$(mode_of "$PWD_/rps-pv-array.conf")" > /var/lib/truesense/migrated_voice
+    tar -czf "/var/backups/truesense/legacy-userfiles-$(date +%Y%m%d-%H%M%S).tar.gz" "$PWD_"/rps-* 2>/dev/null; rm -f "$PWD_"/rps-pv-*.conf "$PWD_"/rps-purified-voice-*.conf
+    say "old Purified Voice filters removed (modes kept: $(tr '\n' ' ' < /var/lib/truesense/migrated_voice))"
+  fi
+  if [ -d "$H/.config/rpredatorsense/profiles" ]; then
+    install -d -o "$U" -g "$(id -gn "$U")" "$H/.config/truesense/lighting"
+    cp -n "$H"/.config/rpredatorsense/profiles/*.json "$H/.config/truesense/lighting/" 2>/dev/null; chown -R "$U": "$H/.config/truesense" 2>/dev/null
+    say "keyboard lighting profiles carried over to ~/.config/truesense/lighting"
+  fi
+fi
+
 # 5. remove the files themselves (they are in the backup); carry the old config's login over to TrueSense
 if [ -r /etc/rpredatorsense/config.toml ]; then mkdir -p /var/lib/truesense; sed -n 's/^user *= *"\(.*\)"/\1/p' /etc/rpredatorsense/config.toml | head -1 > /var/lib/truesense/migrated_user; fi
 for p in $FILES; do [ -e "$p" ] && rm -rf "$p"; done

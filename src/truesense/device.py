@@ -64,6 +64,9 @@ class _Sim:
     def run(self, command):
         with self.lock:
             name, _, arg = command.strip().partition(" ")
+            takes = {"set_mode", "set_gpu", "set_boot", "get_misc", "set_overdrive", "set_fan_manual", "set_rear", "set_color", "set_usb", "set_kbtimeout", "get_battery", "set_battery"}
+            if name in takes and not arg.strip(): return "err missing argument\n"
+            if name not in takes and arg.strip(): return "err unexpected argument\n"
             try: return getattr(self, "c_" + name)(arg.strip())
             except AttributeError: return "err unknown command\n"
             except (ValueError, IndexError): return "err invalid argument\n"
@@ -81,10 +84,16 @@ class _Sim:
         if int(a) not in (1, 2, 3): return "err invalid argument\n"
         self.gpu = int(a); return f"ok gpu={self.gpu}\n"
     def c_get_boot(self, a): return f"ok boot={self.boot}\n"
-    def c_set_boot(self, a): self.boot = int(a) & 1 if int(a) in (0, 1) else self.boot; return f"ok boot={self.boot}\n"
+    def c_set_boot(self, a):
+        if int(a) not in (0, 1): return "err invalid argument\n"
+        self.boot = int(a); return f"ok boot={self.boot}\n"
     def c_get_overdrive(self, a): return f"ok overdrive={self.overdrive} raw=0x0\n"
-    def c_set_overdrive(self, a): self.overdrive = int(a); return f"ok overdrive={self.overdrive}\n"
-    def c_get_misc(self, a): return f"ok idx={a} status=0 value=0\n"
+    def c_set_overdrive(self, a):
+        if int(a) not in (0, 1): return "err invalid argument\n"
+        self.overdrive = int(a); return f"ok overdrive={self.overdrive}\n"
+    def c_get_misc(self, a):
+        if not 1 <= int(a) <= 16: return "err invalid argument\n"
+        return f"ok idx={a} status=0 value=0\n"
     def c_get_fan(self, a):
         beh = {"auto": 0x41, "max": 0x82, "manual": 0xC3}[self.fan]
         return f"ok behavior=0x{beh:x} cpu={self.fan_duty[0]} gpu={self.fan_duty[1]}\n"
@@ -96,17 +105,27 @@ class _Sim:
         self.fan = "manual"; self.fan_duty = [c, g]; return f"ok fan=manual cpu={c} gpu={g}\n"
     def c_get_rear(self, a): return f"ok raw={self.rear.hex()}\n"
     def c_get_slot(self, a): return "ok raw=00000564000100aec700000000000000\n"
-    def c_set_rear(self, a): b = bytes.fromhex(a); self.rear = b"\x00" + b[:15]; return "ok\n" if len(b) == 16 else "err invalid argument\n"
-    def c_set_color(self, a): return "ok\n"
+    def c_set_rear(self, a):
+        b = bytes.fromhex(a)
+        if len(b) != 16 or not (b[0] <= 3 or b[0] == 7) or not 1 <= b[1] <= 5 or b[2] > 100 or b[3] or b[4] > 1 or b[8] != 3 or b[9] != 2 or any(b[10:]): return "err invalid argument\n"
+        self.rear = b"\x00" + b[:15]; return "ok\n"
+    def c_set_color(self, a):
+        if len(a) != 6: return "err invalid argument\n"
+        bytes.fromhex(a); return "ok\n"
     def c_get_usb(self, a): return f"ok usb={self.usb} raw=0\n"
     def c_set_usb(self, a):
         if int(a) not in (0, 10, 20, 30): return "err invalid argument\n"
         self.usb = int(a); return f"ok usb={self.usb}\n"
     def c_get_kbtimeout(self, a): return f"ok kbtimeout={self.kbtimeout} raw=0x0\n"
-    def c_set_kbtimeout(self, a): self.kbtimeout = int(a); return f"ok kbtimeout={self.kbtimeout}\n"
-    def c_get_battery(self, a): return f"ok battery={self.battery[int(a)]} list=3\n"
+    def c_set_kbtimeout(self, a):
+        if int(a) not in (0, 1): return "err invalid argument\n"
+        self.kbtimeout = int(a); return f"ok kbtimeout={self.kbtimeout}\n"
+    def c_get_battery(self, a):
+        if int(a) not in (1, 2): return "err invalid argument\n"
+        return f"ok battery={self.battery[int(a)]} list=3\n"
     def c_set_battery(self, a):
-        w, v = (int(x) for x in a.split()); self.battery[w] = v; return f"ok battery={w} value={v}\n"
-
+        w, v = (int(x) for x in a.split())
+        if w not in (1, 2) or v not in (0, 1): return "err invalid argument\n"
+        self.battery[w] = v; return f"ok battery={w} value={v}\n"
 
 SIM = _Sim()

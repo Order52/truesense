@@ -4,6 +4,7 @@ Packets are 8 bytes, checksum = 0xFF - (sum of bytes 0..6) & 0xFF, sent with HID
 Effects: STATUS of write path = packets verified against a Windows capture; the visible result on Linux needs eyes (see docs/STATUS.md).
 """
 import fcntl, glob, os, time
+from . import util
 from .backend import HwError
 
 EFFECTS = {"off": 0, "static": 1, "breathing": 2, "wave": 3, "snake": 5, "ripple": 6, "neon": 8, "raindrop": 10, "lightning": 18,
@@ -19,8 +20,8 @@ def _pkt(*b): return bytes(b) + bytes([_chk(bytes(b))])
 def _hidraw():
     for h in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
         try:
-            if "000004F2:00000117" not in open(h + "/device/uevent").read().upper(): continue
-            d = open(h + "/device/report_descriptor", "rb").read()
+            if "000004F2:00000117" not in util.read(h + "/device/uevent").upper(): continue
+            d = util.read(h + "/device/report_descriptor", "rb")
         except OSError: continue
         if d[:3] == b"\x06\x02\xff": return "/dev/" + os.path.basename(h)   # usage page 0xFF02
     raise HwError("keyboard lighting interface (usage page 0xFF02) not found")

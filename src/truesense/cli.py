@@ -1,136 +1,397 @@
-import argparse, json, os, sys
-from . import backend as hw, fancurve, selftest
+"""truesense: command line for the Acer Predator Helios 16 (PH16-71).   truesense <area> <verb> ...   (every setting has on / off / toggle / status; --json for scripts)
 
-ONOFF = {"on": True, "off": False}
+Areas: status sensors power fan battery display boot gpu rear keyboard audio keys profile cpu touchpad service config doctor selftest completion gui
+"""
+import argparse, json, os, subprocess, sys
+from . import __version__
+from .device import HwError
+
+JSON = False
 
 
-def _show(d): print(json.dumps(d, indent=2) if isinstance(d, (dict, list)) else d)
+def emit(value, human=None):
+    """Print a result: JSON for scripts (--json), otherwise the human form (or pretty JSON for dicts)."""
+    if JSON: print(json.dumps(value, indent=2, default=str))
+    elif human is not None: print(human)
+    elif isinstance(value, (dict, list)): print(json.dumps(value, indent=2, default=str))
+    elif isinstance(value, bool): print("on" if value else "off")
+    elif value is not None: print(value)
 
 
-def status():
+def onoff_value(v): return "on" if v else "off" if v is not None else "unknown"
+
+
+def tri(action, get, set_, label=None):
+    """The on / off / toggle / status pattern shared by every boolean setting."""
+    cur = get()
+    if action == "status" or action is None: new = cur
+    elif action == "toggle": new = set_(not cur)
+    else: new = set_(action == "on")
+    emit(new, f"{label + ': ' if label else ''}{onoff_value(new)}")
+    return new
+
+
+def _ipc():
+    from . import ipc
+    return ipc
+
+
+def daemon_set(key, value):
+    return _ipc().call("set", key=key, value=value)
+
+
+# ---- builders ---------------------------------------------------------------------------------------------------------------------------
+def add_onoff(sub, name, help_, extra=()):
+    p = sub.add_parser(name, help=help_); p.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status", *extra]); return p
+
+
+def build():
+    from . import backend as hw
+    ap = argparse.ArgumentParser(prog="truesense", description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 epilog="Examples:\n  truesense status\n  truesense power set turbo\n  truesense fan set 60\n  truesense rear set breathing --color 00ff88\n  truesense keyboard effect wave --brightness 50\n"
+                                        "  truesense keys set double output-toggle\n  truesense profile apply gaming\n  truesense doctor")
+    ap.add_argument("--json", action="store_true", help="machine-readable output"); ap.add_argument("-V", "--version", action="version", version=f"truesense {__version__}")
+    sub = ap.add_subparsers(dest="area", metavar="area")
+
+    p = sub.add_parser("status", help="everything at a glance"); p = sub.add_parser("sensors", help="temperatures and fan RPM")
+    # power
+    p = sub.add_parser("power", help="power mode (quiet balanced performance turbo eco) and the automatic profile"); ps = p.add_subparsers(dest="verb")
+    ps.add_parser("status"); ps.add_parser("list"); q = ps.add_parser("set"); q.add_argument("mode", choices=list(hw.MODES))
+    q = ps.add_parser("next"); q = ps.add_parser("prev")
+    q = ps.add_parser("auto", help="automatic profile (AC/battery/load) on or off"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "status"])
+    q = ps.add_parser("hold", help="keep the current power mode against the automatic profile"); q.add_argument("minutes", nargs="?", type=float, default=30)
+    ps.add_parser("release", help="end a hold")
+    # fan
+    p = sub.add_parser("fan", help="fans: firmware auto, max, manual %%, smart curve"); fs = p.add_subparsers(dest="verb")
+    fs.add_parser("status"); fs.add_parser("auto", help="firmware control (0 rpm when cool)"); fs.add_parser("max")
+    q = fs.add_parser("set", help="manual duty, 20..100 %%"); q.add_argument("cpu", type=int); q.add_argument("gpu", type=int, nargs="?")
+    q = fs.add_parser("smart", help="the daemon's smart curve"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
+    # battery
+    p = sub.add_parser("battery", help="80 %% charge limit, calibration, USB power-off charging"); bs = p.add_subparsers(dest="verb")
+    q = bs.add_parser("limit"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
+    q = bs.add_parser("calibration"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
+    q = bs.add_parser("usb-charge", help="USB charging while powered off: stop level 0 (off) 10 20 30"); q.add_argument("level", nargs="?", default="status", choices=["status", "0", "10", "20", "30"])
+    bs.add_parser("status")
+    # simple settings
+    p = sub.add_parser("display", help="LCD overdrive"); ds = p.add_subparsers(dest="verb"); q = ds.add_parser("overdrive"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
+    p = sub.add_parser("boot", help="boot animation and sound"); bs2 = p.add_subparsers(dest="verb"); q = bs2.add_parser("sound"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
+    p = sub.add_parser("gpu", help="GPU mode (MUX); a change needs a reboot"); gs = p.add_subparsers(dest="verb"); gs.add_parser("status"); q = gs.add_parser("set"); q.add_argument("mode", choices=list(hw.GPU_MODES))
+    # rear
+    p = sub.add_parser("rear", help="rear light bar"); rs = p.add_subparsers(dest="verb")
+    rs.add_parser("status"); rs.add_parser("on"); rs.add_parser("off"); rs.add_parser("toggle")
+    q = rs.add_parser("set"); q.add_argument("effect", choices=list(hw.REAR_MODES)); q.add_argument("--color", default="ffffff"); q.add_argument("--speed", type=int, default=3)
+    q.add_argument("--brightness", type=int, default=100); q.add_argument("--direction", type=int, default=1, choices=[0, 1])
+    # keyboard
+    p = sub.add_parser("keyboard", help="keyboard lighting"); ks = p.add_subparsers(dest="verb")
+    ks.add_parser("status"); ks.add_parser("on"); ks.add_parser("off"); ks.add_parser("toggle"); ks.add_parser("restore", help="back to the stock cyan per-key state"); ks.add_parser("list-keys")
+    q = ks.add_parser("effect"); q.add_argument("name"); q.add_argument("--color", default="00aec7"); q.add_argument("--speed", type=int, default=5); q.add_argument("--brightness", type=int, default=None); q.add_argument("--direction", type=int, default=0)
+    q = ks.add_parser("fill"); q.add_argument("color"); q.add_argument("--brightness", type=int, default=None)
+    q = ks.add_parser("gradient"); q.add_argument("from_color"); q.add_argument("to_color"); q.add_argument("--brightness", type=int, default=None)
+    q = ks.add_parser("rainbow"); q.add_argument("--brightness", type=int, default=None)
+    q = ks.add_parser("keys", help='per-key colours, e.g. keys "wasd=ff0000" "esc=00ff00" --base 101010'); q.add_argument("items", nargs="+"); q.add_argument("--base", default="000000"); q.add_argument("--brightness", type=int, default=None)
+    q = ks.add_parser("brightness", help="0..50 (also Fn+F11/F12)"); q.add_argument("level", nargs="?", type=int)
+    q = ks.add_parser("timeout", help="backlight off after 30 s of no typing"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
+    q = ks.add_parser("operating", help="colour follows the power mode"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "status"])
+    q = ks.add_parser("profile", help="saved lighting profiles"); q.add_argument("verb2", choices=["list", "load", "save", "delete"]); q.add_argument("name", nargs="?"); q.add_argument("spec", nargs="*", help="save: fill COLOR | gradient C1 C2 | rainbow")
+    # audio
+    p = sub.add_parser("audio", help="output, microphone, headset jack, Purified Voice, DTS"); au = p.add_subparsers(dest="verb")
+    q = au.add_parser("output", help="speakers / headphones while the aux jack is plugged in"); q.add_argument("action", nargs="?", default="status", choices=["status", "speakers", "headphones", "toggle", "cycle"])
+    q = au.add_parser("mic"); q.add_argument("action", nargs="?", default="status", choices=["status", "mute", "unmute", "toggle", "volume", "boost"]); q.add_argument("value", nargs="?", type=int); q.add_argument("--default-only", action="store_true", help="act on the default input only (default: every input)")
+    au.add_parser("jack", help="what the codec sees on the 3.5 mm jack")
+    q = au.add_parser("voice", help="Purified Voice (AI mic noise reduction)"); q.add_argument("action", nargs="?", default="status", choices=["status", "set", "enable", "disable", "next", "apply", "watch", "notify"]); q.add_argument("a", nargs="?"); q.add_argument("b", nargs="?")
+    q = au.add_parser("speaker-filter", help="noise filter on the output (off by default: it also gates music)"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "status"])
+    q = au.add_parser("dts", help="Acer DTS sound through AcerUltraX"); q.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "mode", "profiles", "setup"]); q.add_argument("name", nargs="?")
+    # keys
+    p = sub.add_parser("keys", help="PREDATOR key and Fn+Esc: what each gesture does"); ys = p.add_subparsers(dest="verb")
+    ys.add_parser("show"); ys.add_parser("actions"); ys.add_parser("run", help="run the key service in the foreground (what the systemd user service does)")
+    q = ys.add_parser("set"); q.add_argument("gesture", choices=["tap", "double", "triple", "long", "fn_esc"]); q.add_argument("action", help="see: truesense keys actions")
+    q = ys.add_parser("reset"); q.add_argument("gesture", nargs="?", choices=["tap", "double", "triple", "long", "fn_esc"])
+    q = ys.add_parser("test"); q.add_argument("action", help="run an action now, as the key would")
+    q = ys.add_parser("timing"); q.add_argument("--long-ms", type=int); q.add_argument("--multi-ms", type=int)
+    # profile
+    p = sub.add_parser("profile", help="named bundles of settings (gaming, quiet, battery-saver, yours)"); pr = p.add_subparsers(dest="verb")
+    pr.add_parser("list"); pr.add_parser("next"); q = pr.add_parser("show"); q.add_argument("name"); q = pr.add_parser("apply"); q.add_argument("name")
+    q = pr.add_parser("save", help="save the CURRENT state as a profile"); q.add_argument("name"); q.add_argument("--description", default="")
+    q = pr.add_parser("delete"); q.add_argument("name")
+    # cpu
+    p = sub.add_parser("cpu", help="CPU power limits and the guarded undervolt"); cs = p.add_subparsers(dest="verb"); cs.add_parser("info"); q = cs.add_parser("limits"); q.add_argument("pl1", type=float, nargs="?"); q.add_argument("pl2", type=float, nargs="?")
+    q = cs.add_parser("undervolt"); q.add_argument("action", choices=["get", "set", "reset"]); q.add_argument("mv", type=int, nargs="?"); q.add_argument("--plane", type=int, default=0, choices=[0, 2], help="0 core, 2 cache"); q.add_argument("--confirm", action="store_true")
+    add_onoff(sub, "touchpad", "touchpad on/off (Fn+F10)")
+    p = sub.add_parser("service", help="the daemon"); ss = p.add_subparsers(dest="verb"); ss.add_parser("status"); ss.add_parser("restart"); ss.add_parser("logs")
+    p = sub.add_parser("config", help="configuration"); cf = p.add_subparsers(dest="verb"); cf.add_parser("show"); cf.add_parser("validate"); cf.add_parser("path")
+    p = sub.add_parser("doctor", help="check the whole stack and say how to fix problems")
+    p = sub.add_parser("selftest", help="set -> read back -> restore every firmware feature"); p.add_argument("--skip-fans", action="store_true")
+    p = sub.add_parser("completion", help="shell completion script"); p.add_argument("shell", choices=["bash", "zsh", "fish"])
+    sub.add_parser("gui", help="the small optional window"); sub.add_parser("daemon", help="run the daemon (systemd does this)"); sub.add_parser("version")
+    return ap
+
+
+# ---- handlers ----------------------------------------------------------------------------------------------------------------------------
+def h_status(a):
+    from . import audio, backend as hw, ipc, touchpad
     out = {}
-    for k, f in (("power_mode", hw.get_mode), ("supported_modes", hw.supported_modes), ("sensors", hw.sensors), ("fans", hw.fan_state),
-                 ("lcd_overdrive", hw.get_overdrive), ("battery_limit_80", hw.get_battery_limit), ("usb_charge_stop", hw.get_usb_charge),
-                 ("boot_sound", hw.get_boot_sound), ("kb_backlight_timeout", hw.get_kb_timeout), ("gpu_mode", hw.get_gpu_mode), ("rear", hw.rear_get)):
+    def put(k, f):
         try: out[k] = f()
-        except hw.HwError as e: out[k] = f"ERROR: {e}"
-    _show(out)
+        except Exception as e: out[k] = f"ERROR: {e}"
+    put("power_mode", hw.get_mode); put("sensors", hw.sensors); put("fans", hw.fan_state)
+    put("daemon", lambda: ipc.call("state")); put("battery_limit", hw.get_battery_limit); put("usb_charge_stop", hw.get_usb_charge); put("overdrive", hw.get_overdrive)
+    put("boot_sound", hw.get_boot_sound); put("kb_backlight_timeout", hw.get_kb_timeout); put("gpu_mode", hw.get_gpu_mode); put("rear", hw.rear_get)
+    put("touchpad", touchpad.enabled); put("audio_output", audio.output_status); put("jack", lambda: audio.jack_status()["raw"]); put("voice", audio.voice_modes)
+    emit(out)
+
+
+def h_sensors(a):
+    from . import backend as hw
+    s = hw.sensors(); emit(s, f"CPU {s['cpu_temp']} C   GPU {s['gpu_temp']} C   board {s['sys_temp']} C   fans {s['cpu_fan_rpm']} / {s['gpu_fan_rpm']} rpm")
+
+
+def h_power(a):
+    from . import backend as hw, ipc
+    v = a.verb or "status"
+    if v == "status":
+        d = {"mode": hw.get_mode(), "supported": hw.supported_modes()}
+        try: st = ipc.call("state"); d.update(auto_profile=st["settings"]["auto_profile"], hold_left_s=st["hold_left_s"])
+        except HwError: pass
+        emit(d, f"power mode: {d['mode']}" + (f"   (automatic profile {'on' if d.get('auto_profile') else 'off'}" + (f", manual choice held for {d['hold_left_s']//60} more min" if d.get("hold_left_s") else "") + ")" if "auto_profile" in d else ""))
+    elif v == "list": emit(hw.supported_modes(), "  ".join(hw.supported_modes()))
+    elif v == "set":
+        m = hw.set_mode(a.mode)
+        try: ipc.call("hold", minutes=30)
+        except HwError: pass
+        emit(m, f"power mode: {m}   (held 30 min against the automatic profile; `truesense power release` to end)")
+    elif v in ("next", "prev"):
+        from . import actions; emit(actions.run("power-" + v))
+    elif v == "auto": tri(a.action, lambda: ipc.call("state")["settings"]["auto_profile"], lambda x: daemon_set("auto_profile", x)["auto_profile"], "automatic power profile")
+    elif v == "hold": ipc.call("hold", minutes=a.minutes); emit(f"holding the current power mode for {a.minutes:g} min")
+    elif v == "release": ipc.call("hold", minutes=None); emit("hold released: the automatic profile is in charge again")
+
+
+def h_fan(a):
+    from . import backend as hw, ipc
+    v = a.verb or "status"
+    def off(): 
+        try: daemon_set("smart_fan", False); __import__("time").sleep(1.2)
+        except HwError: pass
+    if v == "status":
+        d = {**hw.fan_state(), **{k: x for k, x in hw.sensors().items() if "fan" in k}}
+        try: d["smart"] = ipc.call("state")["settings"]["smart_fan"]
+        except HwError: d["smart"] = None
+        emit(d, f"fans: {d['mode']}   CPU {d['cpu_fan_rpm']} rpm   GPU {d['gpu_fan_rpm']} rpm   smart curve: {onoff_value(d['smart'])}")
+    elif v == "auto": off(); hw.fan_auto(); emit("fans: firmware auto (they stop when cool)")
+    elif v == "max": off(); hw.fan_max(); emit("fans: MAX  (`truesense fan smart on` hands them back)")
+    elif v == "set": off(); hw.fan_manual(a.cpu, a.gpu if a.gpu is not None else a.cpu); emit(f"fans: manual {a.cpu} % / {a.gpu if a.gpu is not None else a.cpu} %")
+    elif v == "smart": tri(a.action, lambda: ipc.call("state")["settings"]["smart_fan"], lambda x: daemon_set("smart_fan", x)["smart_fan"], "smart fan curve")
+
+
+def h_battery(a):
+    from . import backend as hw
+    v = a.verb or "status"
+    if v == "status": emit({"limit_80": hw.get_battery_limit(), "calibration": hw.get_calibration(), "usb_charge_stop": hw.get_usb_charge()})
+    elif v == "limit": tri(a.action, hw.get_battery_limit, hw.set_battery_limit, "80 % battery limit")
+    elif v == "calibration": tri(a.action, hw.get_calibration, hw.set_calibration, "battery calibration (needs AC, takes hours)")
+    elif v == "usb-charge":
+        if a.level == "status": emit(hw.get_usb_charge(), f"USB charging while off, stop level: {hw.get_usb_charge()}")
+        else: lv = hw.set_usb_charge(int(a.level)); emit(lv, f"USB charging while off, stop level: {lv}")
+
+
+def h_display(a):
+    from . import backend as hw
+    tri(a.action, hw.get_overdrive, hw.set_overdrive, "LCD overdrive")
+
+def h_boot(a):
+    from . import backend as hw
+    tri(a.action, hw.get_boot_sound, hw.set_boot_sound, "boot sound")
+
+def h_gpu(a):
+    from . import backend as hw
+    if a.verb == "set": m = hw.set_gpu_mode(a.mode); emit(m, f"GPU mode: {m}   (takes effect after a reboot)")
+    else: emit(hw.get_gpu_mode(), f"GPU mode: {hw.get_gpu_mode()}")
+
+
+def h_rear(a):
+    from . import actions, backend as hw
+    v = a.verb or "status"
+    if v == "status": emit(hw.rear_get())
+    elif v == "set": emit(hw.rear_set(a.effect, a.color, a.speed, a.brightness, a.direction))
+    else: emit(actions.run("rear:" + v))
+
+
+def h_keyboard(a):
+    from . import actions, backend as hw, config, keyboard as kb, keymap as km, keyprofiles, userstate, ipc
+    v = a.verb or "status"
+    def done(msg="sent"): emit(msg)
+    if v == "status": emit({"brightness": kb.get_brightness(), "max": kb.MAX_BRIGHT, "backlight_timeout": hw.get_kb_timeout(), "lighting_profiles": keyprofiles.names()})
+    elif v in ("on", "off", "toggle"): emit(actions.run("keyboard:" + v))
+    elif v == "restore": kb.restore_default(None); done()
+    elif v == "list-keys": emit({"keys": sorted(km.NAMES), "groups": sorted(km.GROUPS)})
+    elif v == "effect":
+        if a.name == "operatingmode": kb.set_operating_mode(a.color)
+        else:
+            b = a.brightness if a.brightness is not None else (kb.get_brightness() or 30)
+            kb.set_effect(a.name, a.color, a.speed, 50 if (a.name == "neon" and a.brightness is None) else b, a.direction)
+        done()
+    elif v == "fill": kb.per_key(km.to_list(km.canvas(km.hexcolor(a.color))), a.brightness); done()
+    elif v == "gradient": kb.per_key(km.to_list(km.gradient(km.hexcolor(a.from_color), km.hexcolor(a.to_color))), a.brightness); done()
+    elif v == "rainbow": kb.per_key(km.to_list(km.rainbow()), a.brightness); done()
+    elif v == "keys":
+        cv = km.canvas(km.hexcolor(a.base))
+        for item in a.items:
+            k_, _, col = item.partition("=")
+            if not col: raise HwError(f"'{item}': use key=RRGGBB")
+            for c in km.cells_for(k_): cv[c] = km.hexcolor(col)
+        kb.per_key(km.to_list(cv), a.brightness); done()
+    elif v == "brightness":
+        if a.level is None: emit(kb.get_brightness(), f"keyboard brightness: {kb.get_brightness()} / {kb.MAX_BRIGHT}")
+        else: kb.set_brightness(a.level); emit(a.level, f"keyboard brightness: {a.level} / {kb.MAX_BRIGHT}")
+    elif v == "timeout": tri(a.action, hw.get_kb_timeout, hw.set_kb_timeout, "backlight timeout (off after 30 s)")
+    elif v == "operating": tri(a.action, lambda: ipc.call("state")["settings"]["operating_follow"], lambda x: daemon_set("operating_follow", x)["operating_follow"], "operating-mode colour follows the power mode")
+    elif v == "profile": keyprofiles.cli(a.verb2, a.name, a.spec)
+
+
+def h_audio(a):
+    from . import audio, config
+    v = a.verb
+    if not v: raise HwError("choose: output | mic | jack | voice | speaker-filter | dts   (truesense audio -h)")
+    if v == "output":
+        if a.action == "status": emit(audio.output_status())
+        elif a.action == "toggle": audio.output_toggle(); emit(audio.output_status())
+        elif a.action == "cycle": emit(audio.output_cycle(), None)
+        else: audio._say(f"Audio output: {audio.LABEL[a.action]}", audio.ICON[a.action]); emit(audio.set_output(a.action), f"audio output: {a.action}")
+    elif v == "mic":
+        act = a.action
+        if act == "status": emit(audio.mic_state())
+        elif act in ("mute", "unmute"): audio.mic_set_mute(act == "mute", not a.default_only); emit(act + "d")
+        elif act == "toggle": m = audio.mic_toggle(not a.default_only); emit(m, "microphones: MUTED" if m else "microphones: live")
+        elif act == "volume":
+            r = audio.mic_volume(a.value); emit(r, f"microphone volume: {r} %")
+        elif act == "boost":
+            r = audio.headset_boost(a.value); emit(r, f"headset mic boost: {r} (0..3, +10 dB per step)")
+    elif v == "jack": emit(audio.jack_status())
+    elif v == "voice":
+        act = a.action
+        if act == "status": emit({"modes": audio.voice_modes(), "jack": audio.jack_status()["headset_mic"], "default_source": audio._run(["pactl", "get-default-source"]).stdout.strip(), "notify": config.load()["audio"]["notify"]})
+        elif act == "set":
+            if not a.a or not a.b: raise HwError("usage: truesense audio voice set headset|array off|conference|personal")
+            emit(audio.voice_set(a.a, a.b), f"Purified Voice ({a.a}): {a.b}"); audio.apply_mic_policy(False)
+        elif act == "enable": emit(audio.voice_enable(True)); audio.apply_mic_policy(False)
+        elif act == "disable": emit(audio.voice_enable(False)); audio.apply_mic_policy(False)
+        elif act == "next": dev, m = audio.voice_next(); audio.apply_mic_policy(False); emit(f"Purified Voice ({dev}): {m}")
+        elif act == "apply": emit(audio.apply_mic_policy(True))
+        elif act == "watch": audio.watch_mic()
+        elif act == "notify":
+            if a.a not in ("on", "off"): raise HwError("usage: truesense audio voice notify on|off")
+            config.write_user({"audio": {"notify": a.a == "on"}}); emit(f"mic mode notification: {a.a}")
+    elif v == "speaker-filter":
+        if a.action == "status": emit(audio.speaker_filter_on(), f"speaker filter: {onoff_value(audio.speaker_filter_on())}")
+        else: audio.speaker_filter(a.action == "on"); emit(f"speaker filter: {a.action}")
+    elif v == "dts":
+        act = a.action
+        if act == "status": print(audio.dts_status())
+        elif act in ("on", "off"): print(audio.dts_power(act == "on"))
+        elif act == "mode":
+            if not a.name: raise HwError("usage: truesense audio dts mode music|movie|voice|game1|game2|game3|off|plain|\"custom audio\"")
+            print(audio.dts_mode(a.name))
+        elif act == "profiles": print(audio.dts("profiles"))
+        elif act == "setup": print(audio.dts("setup", timeout=1800))
+
+
+def h_keys(a):
+    from . import actions, config
+    v = a.verb or "show"; cfg = config.load()
+    if v == "show": emit(cfg["keys"], "\n".join(f"{g:<8} {cfg['keys'][g]}" for g in ("tap", "double", "triple", "long", "fn_esc")) + f"\n(long press after {cfg['keys']['long_ms']} ms; taps within {cfg['keys']['multi_ms']} ms count together)")
+    elif v == "actions": print(actions.catalogue())
+    elif v == "run": from . import fnkeys; fnkeys.run(cfg)
+    elif v == "set":
+        err = actions.validate(a.action)
+        if err: raise HwError(err + "   (truesense keys actions)")
+        config.write_user({"keys": {a.gesture: a.action}}); emit(f"{a.gesture} -> {a.action}   (the key service picks it up on its next restart: systemctl --user restart truesense-keys)")
+    elif v == "reset":
+        gs = [a.gesture] if a.gesture else ["tap", "double", "triple", "long", "fn_esc"]
+        config.write_user({"keys": {g: config.DEFAULTS["keys"][g] for g in gs}}); emit("reset: " + ", ".join(gs))
+    elif v == "test": msg = actions.run(a.action, cfg); emit(msg or "ok")
+    elif v == "timing":
+        upd = {k: x for k, x in (("long_ms", a.long_ms), ("multi_ms", a.multi_ms)) if x}
+        if not upd: emit({k: cfg["keys"][k] for k in ("long_ms", "multi_ms")})
+        else: config.write_user({"keys": upd}); emit(f"timing: {upd}")
+
+
+def h_profile(a):
+    from . import config, profiles
+    v = a.verb or "list"
+    if v == "list": emit([{"name": n, "source": profiles.source(n), "description": profiles.load(n).get("description", "")} for n in profiles.names()],
+                          "\n".join(f"{n:<16} [{profiles.source(n):>7}] {profiles.load(n).get('description', '')}" for n in profiles.names()) or "(no profiles)")
+    elif v == "show": d = profiles.load(a.name); emit(d, config.dumps(d))
+    elif v == "apply": emit(profiles.apply(a.name))
+    elif v == "next": emit(profiles.apply(profiles.next_name()))
+    elif v == "save": emit(profiles.save(a.name, profiles.capture(a.description)), f"saved the current state as profile '{a.name}'")
+    elif v == "delete": profiles.delete(a.name); emit(f"deleted {a.name}")
+
+
+def h_cpu(a):
+    from . import cpu
+    v = a.verb or "info"
+    if v == "info": emit(cpu.info())
+    elif v == "limits":
+        if a.pl1 is None: emit(cpu.info())
+        else: emit(cpu.set_limits(a.pl1, a.pl2 if a.pl2 is not None else a.pl1))
+    elif v == "undervolt":
+        if a.action == "get": emit({"plane": a.plane, "offset_mv": cpu.uv_get(a.plane)})
+        elif a.action == "set":
+            if a.mv is None: raise HwError("usage: truesense cpu undervolt set -10 --confirm")
+            emit({"plane": a.plane, "offset_mv": cpu.uv_set(a.plane, a.mv, a.confirm)})
+        else: emit(cpu.uv_reset())
+
+
+def h_touchpad(a):
+    from . import touchpad
+    def set_(on):
+        try: return _ipc().call("touchpad", action="on" if on else "off")
+        except HwError:
+            if os.geteuid() == 0: return touchpad.set_enabled(on)
+            raise
+    tri(a.action, lambda: touchpad.enabled(), set_, "touchpad")
+
+
+def h_service(a):
+    v = a.verb or "status"
+    if v == "status": subprocess.run(["systemctl", "--no-pager", "status", "truesense.service"])
+    elif v == "restart": subprocess.run(["sudo", "systemctl", "restart", "truesense.service"])
+    elif v == "logs": subprocess.run(["journalctl", "-u", "truesense.service", "-b", "--no-pager", "-n", "60"])
+
+
+def h_config(a):
+    from . import config
+    v = a.verb or "show"
+    if v == "path": emit([config.SYSTEM_PATH, config.USER_PATH])
+    elif v == "validate":
+        p = config.validate(config.load()); emit(p, "configuration valid" if not p else "\n".join(p)); return 1 if p else 0
+    else: emit(config.load(), config.dumps(config.load()))
+
+
+def h_completion(a):
+    from . import completion
+    print(completion.generate(build(), a.shell))
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="truesense", description="Acer Predator Helios 16 (PH16-71) control")
-    sp = ap.add_subparsers(dest="cmd", required=True)
-    sp.add_parser("status"); sp.add_parser("sensors")
-    p = sp.add_parser("mode"); p.add_argument("value", nargs="?", choices=list(hw.MODES))
-    p = sp.add_parser("fan"); p.add_argument("action", nargs="?", choices=["auto", "max", "set", "curve", "status"], default="status")
-    p.add_argument("cpu", nargs="?", type=int); p.add_argument("gpu", nargs="?", type=int); p.add_argument("--curve"); p.add_argument("--delay", type=float, default=2.0)
-    for n in ("overdrive", "battery", "boot-sound", "kb-timeout"):
-        p = sp.add_parser(n); p.add_argument("value", nargs="?", choices=list(ONOFF))
-    p = sp.add_parser("usb-charge"); p.add_argument("value", nargs="?", type=int, choices=hw.USB_LEVELS)
-    p = sp.add_parser("gpu"); p.add_argument("value", nargs="?", choices=list(hw.GPU_MODES))
-    p = sp.add_parser("rear"); p.add_argument("mode", nargs="?", choices=list(hw.REAR_MODES) + ["off", "get"]); p.add_argument("--color", default="ffffff")
-    p.add_argument("--speed", type=int, default=3); p.add_argument("--brightness", type=int, default=100)
-    p = sp.add_parser("keyboard", help="keyboard lighting"); p.add_argument("action", choices=["effect", "brightness", "off", "restore", "fill", "keys", "gradient", "rainbow", "profile", "list-keys", "get"]); p.add_argument("value", nargs="*")
-    p.add_argument("--color", default="ffffff"); p.add_argument("--base", default="000000"); p.add_argument("--speed", type=int, default=5); p.add_argument("--brightness", type=int, default=30)
-    p = sp.add_parser("mic", help="microphone: toggle | mode off|conference|personal | status"); p.add_argument("action", choices=["toggle", "mode", "status"]); p.add_argument("value", nargs="?"); p.add_argument("--target")
-    p = sp.add_parser("output", help="speakers / headphones (works while the aux jack is plugged in)"); p.add_argument("value", nargs="?", choices=["speakers", "headphones", "toggle", "cycle", "status"])
-    p = sp.add_parser("voice", help="Purified Voice per input: voice [status|apply|headset MODE|array MODE]"); p.add_argument("action", nargs="?", default="status", choices=["status", "apply", "headset", "array", "watch"]); p.add_argument("mode", nargs="?", choices=["off", "conference", "personal"])
-    p = sp.add_parser("speaker", help="speaker noise reduction"); p.add_argument("value", choices=["on", "off"]); p.add_argument("--target")
-    p = sp.add_parser("cpu", help="power limits / undervolt"); p.add_argument("action", choices=["info", "limits", "nvidia-limit", "uv-get", "uv-set", "uv-reset"]); p.add_argument("value", nargs="*", type=int)
-    p.add_argument("--plane", type=int, default=0, choices=[0, 2], help="0 core, 2 cache"); p.add_argument("--confirm", action="store_true")
-    sp.add_parser("keys", help="run the Fn/PREDATOR key service (user service)")
-    sp.add_parser("daemon", help="run the fan/governor/profile daemon (systemd service)")
-    p = sp.add_parser("selftest"); p.add_argument("--skip-fans", action="store_true")
-    a = ap.parse_args(argv)
+    global JSON
+    argv = list(sys.argv[1:] if argv is None else argv)
+    JSON = "--json" in argv; argv = [x for x in argv if x != "--json"]        # --json works anywhere on the line
+    ap = build(); a = ap.parse_args(argv); a.json = JSON
+    if not a.area: ap.print_help(); return 0
     try:
-        if a.cmd == "status": status()
-        elif a.cmd == "sensors": _show(hw.sensors())
-        elif a.cmd == "mode":
-            if a.value:
-                from . import daemon_ctl; res = hw.set_mode(a.value); daemon_ctl.hold_profile(30); _show(res)
-            else: _show({"mode": hw.get_mode(), "supported": hw.supported_modes()})
-        elif a.cmd == "fan":
-            if a.action == "auto": hw.fan_auto(); _show(hw.fan_state())
-            elif a.action == "max": hw.fan_max(); _show(hw.fan_state())
-            elif a.action == "set":
-                if a.cpu is None: sys.exit("usage: fan set CPU% [GPU%]")
-                hw.fan_manual(a.cpu, a.gpu if a.gpu is not None else a.cpu); _show(hw.fan_state())
-            elif a.action == "curve": fancurve.run(fancurve.parse_curve(a.curve) if a.curve else None, a.delay)
-            else: _show({**hw.fan_state(), **hw.sensors()})
-        elif a.cmd in ("overdrive", "battery", "boot-sound", "kb-timeout"):
-            g, s = {"overdrive": (hw.get_overdrive, hw.set_overdrive), "battery": (hw.get_battery_limit, hw.set_battery_limit),
-                    "boot-sound": (hw.get_boot_sound, hw.set_boot_sound), "kb-timeout": (hw.get_kb_timeout, hw.set_kb_timeout)}[a.cmd]
-            _show("on" if (s(ONOFF[a.value]) if a.value else g()) else "off")
-        elif a.cmd == "usb-charge": _show(hw.set_usb_charge(a.value) if a.value is not None else hw.get_usb_charge())
-        elif a.cmd == "gpu":
-            if a.value: print("GPU mode change takes effect after reboot.")
-            _show(hw.set_gpu_mode(a.value) if a.value else hw.get_gpu_mode())
-        elif a.cmd == "rear":
-            if a.mode in (None, "get"): _show(hw.rear_get())
-            elif a.mode == "off": _show(hw.rear_set("static", brightness=0))
-            else: _show(hw.rear_set(a.mode, a.color, a.speed, a.brightness))
-        elif a.cmd == "keyboard":
-            from . import keyboard as kb
-            from . import keymap as km, keyprofiles
-            V = a.value; B = a.brightness if "--brightness" in (argv or sys.argv) else None   # default: keep the current (Fn-set) brightness
-            if a.action == "get": _show({"brightness": kb.get_brightness(), "max": kb.MAX_BRIGHT})
-            elif a.action == "list-keys": _show({"keys": sorted(km.NAMES), "groups": sorted(km.GROUPS)})
-            elif a.action == "fill": kb.per_key(km.to_list(km.canvas(km.hexcolor(V[0]))), B)
-            elif a.action == "gradient": kb.per_key(km.to_list(km.gradient(km.hexcolor(V[0]), km.hexcolor(V[1]))), B)
-            elif a.action == "rainbow": kb.per_key(km.to_list(km.rainbow()), B)
-            elif a.action == "keys":                       # keys "wasd=ff0000" "esc=00ff00" [--base 101010]
-                cv = km.canvas(km.hexcolor(a.base))
-                for item in V:
-                    k_, _, col = item.partition("=")
-                    for c in km.cells_for(k_): cv[c] = km.hexcolor(col)
-                kb.per_key(km.to_list(cv), B)
-            elif a.action == "profile": keyprofiles.cli(V, B)
-            elif a.action == "off": kb.set_effect("off")
-            elif a.action == "restore": kb.restore_default(B)
-            elif a.action == "brightness": kb.set_brightness(int(V[0]))
-            elif a.action == "effect": kb.set_effect(V[0], a.color, a.speed, a.brightness)
-            if a.action in ("effect", "off", "restore", "brightness", "fill", "keys", "gradient", "rainbow"): print("sent")
-        elif a.cmd == "mic":
-            from . import audio
-            if a.action == "toggle": print(audio.mic_toggle())
-            elif a.action == "mode": print(audio.set_mic(a.value, a.target))
-            else: _show(audio.status())
-        elif a.cmd == "output":
-            from . import audio
-            if a.value in (None, "status"): _show(audio.output_status())
-            elif a.value == "cycle":
-                lab, icon = audio.cycle_output(); print("output:", lab)      # the instant notification was shown before the switch
-            elif a.value == "toggle":
-                tgt = "headphones" if audio.output_status()["active"] == "speakers" else "speakers"
-                audio.announce("Laptop speakers" if tgt == "speakers" else "Headphones (3.5 mm jack)")
-                print("output:", audio.set_output(tgt))
-            else:
-                audio.announce("Laptop speakers" if a.value == "speakers" else "Headphones (3.5 mm jack)")
-                print("output:", audio.set_output(a.value))
-        elif a.cmd == "voice":
-            from . import audio, config
-            if a.action == "status": _show({"modes": audio.pv_modes(), "plugged": audio.amixer_on("Headset Mic Jack"), "default_source": audio._run(["pactl", "get-default-source"]).stdout.strip()})
-            elif a.action == "apply": _show(audio.apply_mic_policy())
-            elif a.action == "watch": audio.watch_mic(config.load(os.path.expanduser("~/.config/truesense/config.toml")))
-            else: print(a.action, "->", audio.pv_set(a.action, a.mode or "off"))
-        elif a.cmd == "speaker":
-            from . import audio; print(audio.set_speaker(a.value == "on", target=a.target))
-        elif a.cmd == "cpu":
-            from . import cpu
-            if a.action == "info": _show(cpu.info())
-            elif a.action == "limits": _show(cpu.set_limits(*a.value) if len(a.value) == 2 else cpu.info())
-            elif a.action == "nvidia-limit": print(cpu.set_nvidia_limit(a.value[0]))
-            elif a.action == "uv-get": _show({"plane": a.plane, "offset_mv": cpu.uv_get(a.plane)})
-            elif a.action == "uv-set": _show({"plane": a.plane, "offset_mv": cpu.uv_set(a.plane, a.value[0], a.confirm)})
-            else: _show(cpu.uv_reset())
-        elif a.cmd == "keys":
-            from . import fnkeys, config; fnkeys.main(config.load(os.path.expanduser("~/.config/truesense/config.toml")))
-        elif a.cmd == "daemon":
-            from . import daemon; daemon.main()
-        elif a.cmd == "selftest": sys.exit(0 if selftest.run(a.skip_fans) else 1)
-    except hw.HwError as e:
-        sys.exit(f"error: {e}")
-
-
-if __name__ == "__main__":
-    main()
+        if a.area == "doctor":
+            from . import doctor; return doctor.run(JSON)
+        if a.area == "selftest":
+            from . import selftest; return 0 if selftest.run(a.skip_fans) else 1
+        if a.area == "gui":
+            from . import gui; return gui.main() or 0
+        if a.area == "daemon":
+            from . import daemon; daemon.main(); return 0
+        if a.area == "version": emit({"truesense": __version__}, f"truesense {__version__}"); return 0
+        r = globals()["h_" + a.area.replace("-", "_")](a)
+        return r or 0
+    except HwError as e:
+        print(f"error: {e}", file=sys.stderr); return 1
+    except KeyboardInterrupt: return 130
+    except BrokenPipeError: return 0

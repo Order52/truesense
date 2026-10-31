@@ -4,13 +4,14 @@ Safety: limits are range-checked; the undervolt is read-only unless --confirm is
 and `uv reset` writes 0. Nothing here runs automatically; the daemon only touches PL1/PL2 (config [cpu] pl_*_w).
 """
 import glob, os, struct, subprocess
+from . import util
 from .backend import HwError
 
 RAPL = "/sys/class/powercap/intel-rapl:0/"
 PL_MIN_W, PL_MAX_W = 25, 120          # this 13700HX laptop: stock 80 W; refuse anything outside
 
 def _rd(p):
-    try: return open(p).read().strip()
+    try: return util.read(p).strip()
     except OSError: return None
 
 def info():
@@ -31,11 +32,11 @@ def set_limits(pl1, pl2):
     if not (PL_MIN_W <= pl1 <= PL_MAX_W and PL_MIN_W <= pl2 <= PL_MAX_W and pl2 >= pl1): raise HwError(f"PL1/PL2 must be {PL_MIN_W}..{PL_MAX_W} W with PL2 >= PL1")
     old = (_rd(RAPL + "constraint_0_power_limit_uw"), _rd(RAPL + "constraint_1_power_limit_uw"))
     try:
-        for n, w in (("constraint_0_power_limit_uw", pl1), ("constraint_1_power_limit_uw", pl2)): open(RAPL + n, "w").write(str(int(w * 1e6)))
+        for n, w in (("constraint_0_power_limit_uw", pl1), ("constraint_1_power_limit_uw", pl2)): util.write(RAPL + n, str(int(w * 1e6)))
     except OSError as e: raise HwError(f"cannot write RAPL (needs root, or the daemon): {e}")
     got = (int(_rd(RAPL + "constraint_0_power_limit_uw")) / 1e6, int(_rd(RAPL + "constraint_1_power_limit_uw")) / 1e6)
     if got != (pl1, pl2):
-        for n, v in zip(("constraint_0_power_limit_uw", "constraint_1_power_limit_uw"), old): open(RAPL + n, "w").write(v)
+        for n, v in zip(("constraint_0_power_limit_uw", "constraint_1_power_limit_uw"), old): util.write(RAPL + n, v)
         raise HwError(f"readback {got} != requested; restored previous limits")
     return {"pl1_w": got[0], "pl2_w": got[1]}
 

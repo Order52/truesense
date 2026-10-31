@@ -1,19 +1,25 @@
-"""Saved keyboard lighting profiles: ~/.config/truesense/profiles/<name>.json (128 colours)."""
+"""Saved keyboard lighting profiles: ~/.config/truesense/lighting/<name>.json (128 colours)."""
 import json, os
-from . import keyboard as kb, keymap as km
+from . import keyboard as kb, keymap as km, util
 from .backend import HwError
 
-DIR = os.path.expanduser("~/.config/truesense/profiles")
+DIR = os.path.expanduser("~/.config/truesense/lighting")
 
 def _path(n):
     if not n.replace("-", "").replace("_", "").isalnum(): raise HwError("profile names: letters, digits, - and _")
     return f"{DIR}/{n}.json"
 
 def save(name, cells):
-    os.makedirs(DIR, exist_ok=True); json.dump({"cells": [list(c) for c in cells]}, open(_path(name), "w"))
+    os.makedirs(DIR, exist_ok=True); util.write(_path(name), json.dumps({"cells": [list(c) for c in cells]}))
+
+def exists(name):
+    try: return os.path.exists(_path(name))
+    except HwError: return False
+
+def names(): return sorted(f[:-5] for f in os.listdir(DIR)) if os.path.isdir(DIR) else []
 
 def load(name, brightness=None):
-    try: cells = [tuple(c) for c in json.load(open(_path(name)))["cells"]]
+    try: cells = [tuple(c) for c in json.loads(util.read(_path(name)))["cells"]]
     except FileNotFoundError: raise HwError(f"no profile '{name}' (truesense keyboard profile list)")
     kb.per_key(cells, brightness)
 

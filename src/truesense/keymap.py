@@ -2,8 +2,9 @@
 Corrections vs the community map (verified by key presses): cell 2 = Esc, cell 5 = CapsLock, cell 70 = main-row minus."""
 import json, os, re
 from .backend import HwError
+from . import util
 
-_D = json.load(open(os.path.join(os.path.dirname(__file__), "data", "keymap_ph16-71_verified.json")))
+_D = json.loads(util.read(os.path.join(os.path.dirname(__file__), "data", "keymap_ph16-71_verified.json")))
 OVERRIDE = {2: "esc", 5: "caps", 70: "minus"}
 ALIAS = {"oemminus": "minus", "capsl": "caps", "lshif": "lshift", "rshif": "rshift", "windo": "win", "optio": "menu", "retur": "enter", "backs": "backspace",
          "preda": "predator", "forwa": "next", "backw": "prev", "playp": "playpause", "numlk": "numlock", "numen": "numenter", "num.": "num.", "oemplus": "="}
