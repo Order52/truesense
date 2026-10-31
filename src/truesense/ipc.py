@@ -64,5 +64,8 @@ def call(cmd, timeout=3, path=SOCK, **args):
     except FileNotFoundError: raise HwError("the TrueSense daemon is not running (sudo systemctl start truesense)")
     except PermissionError: raise HwError("no permission to reach the TrueSense daemon socket")
     except (OSError, ValueError) as e: raise HwError(f"daemon not answering: {e}")
-    if not reply.get("ok"): raise HwError(reply.get("error", "daemon error"))
+    if not reply.get("ok"):
+        err = reply.get("error", "daemon error")
+        if err.startswith("unknown command"): raise HwError(f"unknown command '{cmd}': the running TrueSense service is older than this app. Update it with: sudo tools/install.sh (it restarts the service)")
+        raise HwError(err)
     return reply.get("result")
