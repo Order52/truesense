@@ -204,43 +204,111 @@ class ColorButton(QPushButton if Qt else object):
         if c.isValid(): self.hex = "%02x%02x%02x" % (c.red(), c.green(), c.blue()); self._paint(); self.changed.emit(self.hex)
 
 
-class KeyboardView(QWidget if Qt else object):
-    """The keyboard as a grid (column = cell // 6, row = cell % 6): click or drag to choose keys, Ctrl adds to the choice."""
+KB_LAYOUT = [   # physical layout, top to bottom: (key name, width in key units); "_" = gap; heights are 1 except where noted below
+    [("esc", 1)] + [(f"f{i}", 1) for i in range(1, 13)] + [("prtsc", 1), ("ins", 1), ("del", 1), ("_", .5), ("power", 1)],
+    [(k, 1) for k in "`1234567890"] + [("minus", 1), ("=", 1), ("backspace", 2), ("predator", 1), ("_", .5), ("numlock", 1), ("num/", 1), ("*", 1), ("-", 1)],
+    [("tab", 1.5)] + [(k, 1) for k in "qwertyuiop"] + [("[", 1), ("]", 1), ("\\", 1.5), ("playpause", 1), ("_", .5), ("num7", 1), ("num8", 1), ("num9", 1), ("+", 1)],
+    [("caps", 1.75)] + [(k, 1) for k in "asdfghjkl"] + [(";", 1), ("'", 1), ("return", 2.25), ("backward", 1), ("_", .5), ("num4", 1), ("num5", 1), ("num6", 1), ("_", 1)],
+    [("lshift", 2.25)] + [(k, 1) for k in "zxcvbnm"] + [(",", 1), (".", 1), ("/", 1), ("rshift", 1.75), ("up", 1), ("forward", 1), ("_", .5), ("num1", 1), ("num2", 1), ("num3", 1), ("numenter", 1)],
+    [("ctrl", 1.25), ("fn", 1.25), ("windows", 1.25), ("lalt", 1.25), ("space", 5), ("ralt", 1), ("options", 1), ("rctrl", 1), ("left", 1), ("down", 1), ("right", 1), ("_", 1.5), ("num0", 2), ("num.", 1)],
+]
+KB_LABELS = {"backspace": "⌫", "return": "↵", "lshift": "Shift", "rshift": "Shift", "caps": "Caps", "windows": "Win", "options": "Opt", "lalt": "Alt", "ralt": "Alt", "ctrl": "Ctrl", "rctrl": "Ctrl",
+             "space": "", "up": "↑", "down": "↓", "left": "←", "right": "→", "prtsc": "PrtSc", "predator": "P", "power": "⏻", "playpause": "▶", "backward": "⏮", "forward": "⏭", "numlock": "Num",
+             "numenter": "↵", "num/": "/", "num.": ".", "minus": "-", "tab": "Tab", "esc": "Esc", "ins": "Ins", "del": "Del", "fn": "Fn", "num0": "0", "num1": "1", "num2": "2", "num3": "3",
+             "num4": "4", "num5": "5", "num6": "6", "num7": "7", "num8": "8", "num9": "9"}
+KB_GROUPS = [("All keys", "all"), ("WASD", "wasd"), ("Arrows", "arrows"), ("F1 to F12", "fkeys"), ("Number row", "numrow"), ("Letters", "letters"), ("Numpad", "numpad")]
+PALETTE = ["ff3b30", "ff9500", "ffcc00", "34c759", "00c7be", "32ade6", "007aff", "5856d6", "af52de", "ff2d55", "ffffff", "c7c7cc", "8e8e93", "3a3a3c", "00aec7", "000000"]
+
+
+class PerKeyBoard(QWidget if Qt else object):
+    """The keyboard as a picture in its real layout. Click a key, Ctrl+click to add or remove, drag a box to select several, right-click a key to pick up its colour."""
     selection_changed = pyqtSignal() if Qt else None
-    KW, KH = 30, 32
+    picked = pyqtSignal(str) if Qt else None
+    UNITS_W, UNITS_H = 20.5, 6.45
 
     def __init__(self):
-        super().__init__(); self.cells = ["00aec7"] * 126 + ["000000"] * 2; self.sel = set(); self.labels = {}
-        for name, cs in keymap.NAMES.items():
-            for c in cs: self.labels[c] = name
-        self.setFixedSize(22 * self.KW + 2, 6 * self.KH + 2); self.setMouseTracking(False)
+        super().__init__(); self.cells = ["00aec7"] * 126 + ["000000"] * 2; self.sel = set(); self.keys = []; self.hover = None; self.band = None; self.base = set(); self.press_pos = None
+        self.setMouseTracking(True); self.setFocusPolicy(Qt.FocusPolicy.StrongFocus); self.setMinimumHeight(150); self._layout()
 
-    def _cell_at(self, pos):
-        c, r = int(pos.x() // self.KW), int(pos.y() // self.KH)
-        return c * 6 + r if 0 <= c < 22 and 0 <= r < 6 else None
+    def _layout(self):
+        seen, y = set(), 0.0
+        for r, row in enumerate(KB_LAYOUT):
+            x = 0.0
+            for name, w in row:
+                if name != "_":
+                    cs = keymap.NAMES.get(name) or []; h = 2 if name in ("+", "numenter") else 1
+                    if cs and not seen.intersection(cs): self.keys.append((name, cs, x, y, w, h)); seen.update(cs)
+                x += w
+            y += 1.0 if r else 1.3
+        extra = [(n, cs) for n, cs in keymap.NAMES.items() if cs and not seen.intersection(cs) and n not in ("enter", "win")]          # anything the picture does not know still gets a key
+        for i, (n, cs) in enumerate(extra): self.keys.append((n, cs, i * 1.0, y, 1, 1)); seen.update(cs); self.UNITS_H = max(self.UNITS_H, y + 1.1)
 
-    def mousePressEvent(self, e):
-        c = self._cell_at(e.position())
-        if c is None: return
-        if not (e.modifiers() & Qt.KeyboardModifier.ControlModifier): self.sel = set()
-        self.sel.add(c); self.update(); self.selection_changed.emit()
+    def unit(self): return self.width() / self.UNITS_W
+    def hit_rect(self, k, u): return QRectF(k[2] * u + 1, k[3] * u + 1, k[4] * u - 2, k[5] * u - 2)
+    def sizeHint(self): return QSize(430, int(430 / self.UNITS_W * self.UNITS_H))
+    def heightForWidth(self, w): return int(w / self.UNITS_W * self.UNITS_H)
+    def resizeEvent(self, e): self.setFixedHeight(self.heightForWidth(self.width()))
 
-    def mouseMoveEvent(self, e):
-        c = self._cell_at(e.position())
-        if c is not None and c not in self.sel: self.sel.add(c); self.update(); self.selection_changed.emit()
+    def key_at(self, pos):
+        u = self.unit()
+        for k in self.keys:
+            if self.hit_rect(k, u).contains(pos): return k
+        return None
 
-    def select_group(self, name):
-        self.sel = set(keymap.cells_for(name)); self.update(); self.selection_changed.emit()
+    def set_cells(self, cells): self.cells = list(cells); self.update()
+    def selected_names(self): return sorted(k[0] for k in self.keys if self.sel.intersection(k[1]))
 
     def paintEvent(self, _):
-        p = QPainter(self); f = QFont(); f.setPointSize(7); p.setFont(f)
-        for c in range(126):
-            col, row = divmod(c, 6); rect = QRectF(col * self.KW + 1, row * self.KH + 1, self.KW - 2, self.KH - 2)
-            if c not in self.labels: continue
-            color = QColor("#" + self.cells[c]); p.setBrush(color); p.setPen(QPen(QColor("#ffffff" if c in self.sel else "#444444"), 3 if c in self.sel else 1))
-            p.drawRoundedRect(rect, 4, 4)
-            lum = 0.3 * color.red() + 0.59 * color.green() + 0.11 * color.blue(); p.setPen(QColor("#000" if lum > 140 else "#fff"))
-            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.labels[c][:5])
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing); u = self.unit(); f = QFont(); f.setPixelSize(max(7, int(u * .36))); p.setFont(f)
+        p.setBrush(QColor("#141519")); p.setPen(Qt.PenStyle.NoPen); p.drawRoundedRect(QRectF(self.rect()).adjusted(0, 0, 0, 0), 10, 10)
+        for k in self.keys:
+            name, cs, *_ = k; r = self.hit_rect(k, u); col = QColor("#" + self.cells[cs[0]]); on = bool(self.sel.intersection(cs)); hov = self.hover == name
+            p.setBrush(col.lighter(118) if hov else col); p.setPen(QPen(QColor("#ffffff") if on else QColor("#0e0f12"), 2.2 if on else 1)); p.drawRoundedRect(r, 4, 4)
+            lum = .3 * col.red() + .59 * col.green() + .11 * col.blue(); p.setPen(QColor("#10131a" if lum > 150 else "#f2f5fa"))
+            p.drawText(r, Qt.AlignmentFlag.AlignCenter, KB_LABELS.get(name, name.upper() if len(name) == 1 else name[:3].capitalize()))
+        if self.band: p.setBrush(QColor(88, 166, 255, 40)); p.setPen(QPen(QColor("#58a6ff"), 1, Qt.PenStyle.DashLine)); p.drawRect(self.band)
+        if self.hasFocus(): p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(ACCENT), 1)); p.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 10, 10)
+
+    def _emit(self): self.update(); self.selection_changed.emit()
+
+    def mousePressEvent(self, e):
+        self.setFocus(); pos = e.position(); k = self.key_at(pos); mods = e.modifiers()
+        if e.button() == Qt.MouseButton.RightButton:
+            if k: self.picked.emit(self.cells[k[1][0]])
+            return
+        self.press_pos = pos; self.base = set(self.sel) if mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier) else set()
+        if k:
+            if mods & Qt.KeyboardModifier.ControlModifier and self.sel.issuperset(k[1]): self.sel -= set(k[1])
+            else: self.sel = self.base | set(k[1])
+        elif not self.base: self.sel = set()
+        self._emit()
+
+    def mouseMoveEvent(self, e):
+        pos = e.position(); k = self.key_at(pos); name = k[0] if k else None
+        if name != self.hover: self.hover = name; self.setToolTip(name or ""); self.update()
+        if e.buttons() & Qt.MouseButton.LeftButton and self.press_pos is not None and (pos - self.press_pos).manhattanLength() > 6:
+            self.band = QRectF(self.press_pos, pos).normalized(); u = self.unit()
+            self.sel = self.base | {c for kk in self.keys if self.band.intersects(self.hit_rect(kk, u)) for c in kk[1]}; self._emit()
+
+    def mouseReleaseEvent(self, e): self.band = None; self.press_pos = None; self.update()
+    def leaveEvent(self, e): self.hover = None; self.update()
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_A and e.modifiers() & Qt.KeyboardModifier.ControlModifier: self.sel = {c for kk in self.keys for c in kk[1]}; self._emit()
+        elif e.key() == Qt.Key.Key_Escape: self.sel = set(); self._emit()
+        else: super().keyPressEvent(e)
+
+    def select_group(self, group):
+        if group == "all": self.sel = {c for kk in self.keys for c in kk[1]}
+        elif group == "none": self.sel = set()
+        elif group == "invert": every = {c for kk in self.keys for c in kk[1]}; self.sel = every - self.sel
+        else: self.sel = set(keymap.cells_for(group))
+        self._emit()
+
+    def x_of(self, cell):
+        for kk in self.keys:
+            if cell in kk[1]: return kk[2] + kk[4] / 2
+        return 0
 
 
 ACTION_TYPES = [   # (label, kind, base spec / prefix)
@@ -548,14 +616,16 @@ class Window(QMainWindow if Qt else object):
         self.kb_fx.activated.connect(lambda i: self.do(lambda: keyboard.set_effect(KB_EFFECTS[i], self.kb_color.hex, self.kb_speed.value() or 5, max(self.kb_level.value(), 50 if KB_EFFECTS[i] == "neon" else 10)), "Effect applied", refresh=False) or QTimer.singleShot(300, lambda: self.sync_enabled()))
         self.kb_color.changed.connect(lambda h_: self.live("kbc", lambda: keyboard.set_color(h_)))
         self.sep(v); self.line(v, "Lighting mode", self.kb_fx); self.line(v, "Colour", self.kb_color)
-        self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x))); v.addStretch(); stack.addWidget(kb)
+        self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x))); self.sep(v)
+        self.line(v, "Default", self.btn("Reset to default", lambda: self.do(lambda: keyboard.restore_default(None), "Keyboard back to the stock look"))); v.addStretch(); stack.addWidget(kb)
         rr = QWidget(); v = QVBoxLayout(rr); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
         self.rear_on = self.switch(v, "Light", lambda x: self.do(lambda: actions.run("rear:on" if x else "rear:off"), lambda r: r, refresh=False)); self.sep(v)
         self.rear_fx = Segmented([m.capitalize() for m in hw.REAR_MODES]); self.rear_fx.picked.connect(lambda i: self.rear_apply()); self.line(v, "Effect", self.rear_fx)
         self.zc = [ColorButton("00aec7") for _ in range(3)]; self.rear_color = ColorButton("00aec7")
         for b in self.zc + [self.rear_color]: b.changed.connect(lambda h_: self.rear_apply())
         self.sep(v); self.line(v, "Static: left, middle, right", *self.zc); self.line(v, "Colour (other effects)", self.rear_color)
-        self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply(), suffix=" %"); v.addStretch(); stack.addWidget(rr)
+        self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply(), suffix=" %"); self.sep(v)
+        self.line(v, "Default", self.btn("Reset to default", lambda: self.do(lambda: hw.rear_set("static", "00aec7", 3, 100, 1), "Rear light back to the stock look"))); v.addStretch(); stack.addWidget(rr)
         stack.addWidget(self.looks_tab()); lay.addStretch()
 
     def looks_tab(self):
@@ -618,29 +688,103 @@ class Window(QMainWindow if Qt else object):
 
     # ---- Per-key -------------------------------------------------------------------------------------------------------------------------
     def p_keys(self):
-        lay = self.page("Per-key colours"); lay.addWidget(self.hint("Click or drag to choose keys (Ctrl adds more), then pick a colour."))
-        self.kv = KeyboardView(); self.kv.selection_changed.connect(self.sel_changed); hk = QHBoxLayout(); hk.addWidget(self.kv); hk.addStretch(); lay.addLayout(hk)
-        for chunk in (KEY_GROUPS[:4], KEY_GROUPS[4:8], KEY_GROUPS[8:]):
-            h = QHBoxLayout(); h.setSpacing(6)
-            for g in chunk: h.addWidget(self.btn(g, lambda g=g: self.kv.select_group(g)))
-            h.addStretch(); lay.addLayout(h)
-        self.pk_color = ColorButton("ff0000"); self.pk_color.changed.connect(lambda h_: self.paint_sel()); self.sel_lbl = QLabel("no keys chosen"); self.sel_lbl.setObjectName("hint")
-        v = self.card(lay, "Colour of the chosen keys")
-        self.line(v, "Colour", self.pk_color, self.btn("Paint", self.paint_sel, True), self.btn("Black", lambda: (self.pk_color.set_hex("000000"), self.paint_sel()))); v.addWidget(self.sel_lbl)
+        lay = self.page("Per-key colours"); self.history, self.redo_stack, self.recent = [], [], []
+        lay.addWidget(self.hint("Click a key, drag a box around several, or Ctrl+click to add. Right-click a key to pick up its colour. Changes show on the keyboard as you make them."))
+        self.board = PerKeyBoard(); self.board.selection_changed.connect(self.sel_changed); self.board.picked.connect(lambda h: self.set_colour(h, apply=False)); lay.addWidget(self.board)
+        self.sel_cb = QComboBox(); self.sel_cb.addItem("Select…", None); [self.sel_cb.addItem(l, g) for l, g in KB_GROUPS]; self.sel_cb.addItem("Nothing", "none"); self.sel_cb.addItem("Invert selection", "invert")
+        self.sel_cb.activated.connect(lambda i: (self.board.select_group(self.sel_cb.currentData()), self.sel_cb.setCurrentIndex(0)) if self.sel_cb.currentData() else None)
+        self.sel_lbl = QLabel("No keys selected"); self.sel_lbl.setObjectName("hint"); h = QHBoxLayout(); h.addWidget(self.sel_lbl, 1); h.addWidget(self.sel_cb); lay.addLayout(h)
+        v = self.card(lay, "Colour")
+        self.cur_hex = "ff3b30"; self.cur_btn = ColorButton(self.cur_hex); self.cur_btn.changed.connect(lambda h_: self.set_colour(h_)); self.hex_edit = QLineEdit(self.cur_hex); self.hex_edit.setMaxLength(7); self.hex_edit.setFixedWidth(90)
+        self.hex_edit.editingFinished.connect(lambda: self.set_colour(self.hex_edit.text().lstrip("#")))
+        self.line(v, "Selected colour", self.cur_btn, self.hex_edit)
+        g = QGridLayout(); g.setSpacing(6)
+        for i, c in enumerate(PALETTE):
+            b_ = QPushButton(); b_.setFixedSize(34, 26); b_.setStyleSheet(f"background:#{c}; border:2px solid #2e3239; border-radius:7px;"); b_.setCursor(Qt.CursorShape.PointingHandCursor)
+            b_.clicked.connect(lambda _, c=c: self.set_colour(c)); g.addWidget(b_, i // 8, i % 8)
+        v.addLayout(g); self.recent_row = QHBoxLayout(); self.recent_row.setSpacing(6); rl = QLabel("Recent"); rl.setObjectName("hint"); self.recent_row.addWidget(rl); self.recent_row.addStretch(); v.addLayout(self.recent_row)
+        v = self.card(lay, "Tools")
+        self.g1, self.g2 = ColorButton("ff2d55"), ColorButton("5856d6")
+        self.line(v, "Gradient across the selection", self.g1, self.g2, self.btn("Apply", self.apply_gradient))
+        self.line(v, "Selection", self.btn("Rainbow", self.apply_rainbow), self.btn("Clear (off)", lambda: self.set_colour("000000")))
+        self.undo_btn = self.btn("Undo", self.undo); self.redo_btn = self.btn("Redo", self.redo); self.line(v, "History", self.undo_btn, self.redo_btn); self.undo_btn.setEnabled(False); self.redo_btn.setEnabled(False)
         v = self.card(lay, "Whole keyboard")
-        self.line(v, "Presets", self.btn("Rainbow", lambda: self.do(lambda: keyboard.per_key(keymap.to_list(keymap.rainbow()), None), "Rainbow")),
-                  self.btn("Fill", lambda: self.do(lambda: keyboard.per_key(keymap.to_list(keymap.canvas(keymap.hexcolor(self.pk_color.hex))), None), "Filled")),
-                  self.btn("Stock", lambda: self.do(lambda: keyboard.restore_default(None), "Stock look")))
+        self.pk_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("pkb", lambda: keyboard.set_brightness(x)))
+        self.line(v, "Fill and presets", self.btn("Fill all", self.fill_all), self.btn("Rainbow", self.rainbow_all))
+        self.line(v, "Reset", self.btn("Reset to stock", self.reset_keys))
+        self.pk_name = QLineEdit(); self.pk_name.setPlaceholderText("name, e.g. my-keys"); self.pk_name.setMinimumWidth(130); self.line(v, "Save as a look", self.pk_name, self.btn("Save", self.save_perkey_look))
         lay.addStretch()
 
     def sel_changed(self):
-        names = sorted({self.kv.labels[c] for c in self.kv.sel if c in self.kv.labels}); self.sel_lbl.setText(f"{len(self.kv.sel)} key(s): " + ", ".join(names[:8]) + ("…" if len(names) > 8 else ""))
+        n = len(self.board.sel); names = self.board.selected_names()
+        self.sel_lbl.setText("No keys selected" if not n else f"{len(names)} key{'s' if len(names) != 1 else ''}: " + ", ".join(names[:6]) + ("…" if len(names) > 6 else ""))
 
-    def paint_sel(self):
-        if not self.kv.sel or self.loading: return
-        hexc = self.pk_color.hex; ch = {c: hexc for c in self.kv.sel}
-        for c in self.kv.sel: self.kv.cells[c] = hexc
-        self.kv.update(); self.live("paint", lambda: keyboard.paint_cells(ch))
+    def snapshot(self): return list(self.board.cells)
+
+    def commit(self, cells):
+        """Show new colours on the picture, remember them for undo, and send them to the keyboard (newest wins while you drag)."""
+        self.history.append(self.snapshot()); self.history = self.history[-40:]; self.redo_stack.clear(); self.board.set_cells(cells); self.sync_history(); self.upload()
+
+    def upload(self):
+        cells = [tuple(bytes.fromhex(c)) for c in self.board.cells]; self.live("paint", lambda: keyboard.per_key(cells, None))
+
+    def sync_history(self): self.undo_btn.setEnabled(bool(self.history)); self.redo_btn.setEnabled(bool(self.redo_stack))
+
+    def undo(self):
+        if not self.history: return
+        self.redo_stack.append(self.snapshot()); self.board.set_cells(self.history.pop()); self.sync_history(); self.upload()
+
+    def redo(self):
+        if not self.redo_stack: return
+        self.history.append(self.snapshot()); self.board.set_cells(self.redo_stack.pop()); self.sync_history(); self.upload()
+
+    def set_colour(self, hexc, apply=True):
+        hexc = (hexc or "").strip().lstrip("#").lower()
+        if len(hexc) != 6 or any(c not in "0123456789abcdef" for c in hexc): self.hex_edit.setText(self.cur_hex); return
+        self.cur_hex = hexc; self.cur_btn.set_hex(hexc); self.hex_edit.setText(hexc)
+        if hexc not in PALETTE and hexc not in self.recent: self.recent = ([hexc] + self.recent)[:8]; self.refresh_recent()
+        if apply and self.board.sel:
+            cells = self.snapshot()
+            for c in self.board.sel: cells[c] = hexc
+            self.commit(cells)
+
+    def refresh_recent(self):
+        while self.recent_row.count() > 2: w = self.recent_row.takeAt(1).widget(); w and w.deleteLater()
+        for c in self.recent:
+            b_ = QPushButton(); b_.setFixedSize(26, 22); b_.setStyleSheet(f"background:#{c}; border:2px solid #2e3239; border-radius:6px;"); b_.clicked.connect(lambda _, c=c: self.set_colour(c)); self.recent_row.insertWidget(self.recent_row.count() - 1, b_)
+
+    def _selected_by_x(self): return sorted(self.board.sel, key=self.board.x_of)
+
+    def apply_gradient(self):
+        s = self._selected_by_x()
+        if len(s) < 2: self.say("Error: select two or more keys for a gradient"); return
+        a_, b_ = keymap.hexcolor(self.g1.hex), keymap.hexcolor(self.g2.hex); cells = self.snapshot(); xs = [self.board.x_of(c) for c in s]; lo, hi = min(xs), max(xs) or 1
+        for c, x in zip(s, xs): cells[c] = "%02x%02x%02x" % keymap.lerp(a_, b_, (x - lo) / (hi - lo) if hi > lo else 0)
+        self.commit(cells)
+
+    def apply_rainbow(self):
+        s = self._selected_by_x()
+        if not s: self.say("Error: select some keys first"); return
+        cells = self.snapshot(); xs = [self.board.x_of(c) for c in s]; lo, hi = min(xs), max(xs)
+        for c, x in zip(s, xs): cells[c] = "%02x%02x%02x" % keymap.hsv(0.85 * ((x - lo) / (hi - lo) if hi > lo else 0))
+        self.commit(cells)
+
+    def fill_all(self):
+        cells = self.snapshot()
+        for k in self.board.keys:
+            for c in k[1]: cells[c] = self.cur_hex
+        self.commit(cells)
+
+    def rainbow_all(self):
+        self.board.sel_backup = set(self.board.sel); self.board.select_group("all"); self.apply_rainbow(); self.board.sel = self.board.sel_backup; self.board.update(); self.sel_changed()
+
+    def reset_keys(self):
+        self.commit(["00aec7"] * 126 + ["000000"] * 2); self.do(lambda: keyboard.restore_default(None), "Keyboard back to the stock look", refresh=False)
+
+    def save_perkey_look(self):
+        name = self.pk_name.text().strip()
+        def go(): looks.save(name, {"keyboard": {"mode": "perkey", "brightness": keyboard.get_brightness() or 25, "cells": list(self.board.cells)}, "rear": None}); return name
+        self.do(go, lambda n: f"Saved look '{n}' (apply it in Lighting, Profiles)", refresh=False)
 
     # ---- Battery and screen ------------------------------------------------------------------------------------------------------------
     def p_battery(self):
@@ -692,7 +836,7 @@ class Window(QMainWindow if Qt else object):
         self.kp_list = QComboBox(); self.kp_list.setMinimumWidth(150); self.kp_list.activated.connect(lambda i: self.load_keyprofile(self.kp_list.currentText()))
         self.line(v, "Bindings", self.kp_list, self.btn("Use", self.kp_use, True)); self.kp_copy = self.btn("Copy to edit", self.kp_copy_do); self.kp_del = self.btn("Delete", self.kp_delete)
         self.line(v, "Edit", self.kp_copy, self.kp_del); self.kp_name = QLineEdit(); self.kp_name.setPlaceholderText("name"); self.kp_name.setMinimumWidth(120); self.kp_save = self.btn("Save", self.kp_save_do)
-        self.line(v, "Save as", self.kp_name, self.kp_save); self.kp_msg = self.hint(""); v.addWidget(self.kp_msg)
+        self.line(v, "Save as", self.kp_name, self.kp_save); self.line(v, "Default", self.btn("Reset to default", self.kp_reset)); self.kp_msg = self.hint(""); v.addWidget(self.kp_msg)
         self.kp_edit = {}
         for g in keybinds.GESTURES:
             v = self.card(lay, keybinds.LABELS[g]); ed = ActionEditor(); v.addWidget(ed); self.kp_edit[g] = ed
@@ -733,6 +877,9 @@ class Window(QMainWindow if Qt else object):
         except Exception as e: self.kp_msg.setText(str(e)); self.say(f"Error: {e}"); return
         self.reload_keyprofiles(name); self.kp_msg.setText(f"Saved '{name}'. Press Use to switch the key to it."); self.say(f"Saved key profile '{name}'")
 
+    def kp_reset(self):
+        self.do(lambda: keybinds.use("default"), "PREDATOR key reset to the default bindings", refresh=False); self.reload_keyprofiles("default")
+
     def kp_copy_do(self):
         src = self.kp_list.currentText()
         try: n = keybinds.copy(src, self.kp_name.text().strip() or None)
@@ -758,7 +905,7 @@ class Window(QMainWindow if Qt else object):
         self.uv_core = self.slider(v, "Core offset", 0, undervolt.MAX_MV, 5, lambda x: None, suffix=" mV", prefix="-"); self.uv_cache = self.slider(v, "Cache offset", 0, undervolt.MAX_MV, 5, lambda x: None, suffix=" mV", prefix="-")
         self.uv_name = QLineEdit(); self.uv_name.setPlaceholderText("name"); self.uv_name.setMinimumWidth(120); self.uv_save = self.btn("Save", self.uv_save_do)
         self.line(v, "Save as", self.uv_name, self.uv_save); self.uv_msg = self.hint(""); v.addWidget(self.uv_msg)
-        self.line(v, "Back to stock", self.btn("Reset to stock (0 mV)", lambda: self.do(lambda: ipc.call("undervolt", action="reset"), "Undervolt reset to stock", refresh=False)))
+        self.line(v, "Default", self.btn("Reset to default (stock)", self.uv_reset))
         v = self.card(lay, "At boot")
         self.uv_boot = self.switch(v, "Apply the selected profile at boot", self.uv_boot_set, "Off by default. Guarded: if the laptop does not stay up for 10 minutes after applying it, the next boot skips it and turns this off.")
         self.reload_uv(); lay.addStretch()
@@ -783,6 +930,9 @@ class Window(QMainWindow if Qt else object):
                                  "A reboot always returns to stock. Save your work first.", QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
         if ok != QMessageBox.StandardButton.Apply: return
         self.do(lambda: ipc.call("undervolt", action="apply", core=vals["core"], cache=vals["cache"], confirm=True, name=name), lambda r: f"Undervolt applied: core {r['core_mv']} mV, cache {r['cache_mv']} mV", refresh=False); QTimer.singleShot(900, self.uv_refresh)
+
+    def uv_reset(self):
+        self.do(lambda: (ipc.call("undervolt", action="boot_clear"), ipc.call("undervolt", action="reset"))[1], "Undervolt reset to stock (no undervolt at boot)", refresh=False); self.reload_uv("stock"); QTimer.singleShot(900, self.uv_refresh)
 
     def uv_boot_set(self, on):
         if self.loading: return
@@ -854,7 +1004,8 @@ class Window(QMainWindow if Qt else object):
         self.copy_btn = self.btn("Copy to edit", self.curve_copy)
         self.line(v, "Curve", self.curve_list, self.btn("Use", self.curve_use, True)); self.curve_name = QLineEdit(); self.curve_name.setPlaceholderText("name"); self.curve_name.setMinimumWidth(120)
         self.curve_save_btn = self.btn("Save", self.curve_save); self.del_btn = self.btn("Delete", self.curve_delete)
-        self.line(v, "Edit", self.copy_btn, self.del_btn); self.line(v, "Save as", self.curve_name, self.curve_save_btn); self.curve_msg = self.hint(""); v.addWidget(self.curve_msg)
+        self.line(v, "Edit", self.copy_btn, self.del_btn); self.line(v, "Save as", self.curve_name, self.curve_save_btn)
+        self.line(v, "Default", self.btn("Reset to default", self.curve_reset)); self.curve_msg = self.hint(""); v.addWidget(self.curve_msg)
         self.reload_curves(); lay.addStretch()
 
     def reload_curves(self, select=None):
@@ -888,6 +1039,10 @@ class Window(QMainWindow if Qt else object):
         except Exception as e: self.curve_msg.setText(str(e)); self.say(f"Error: {e}"); return
         self.curve_msg.setText(f"Saved '{name}'. Press Use this curve to run it."); self.reload_curves(name); self.say(f"Saved fan curve '{name}'")
 
+    def curve_reset(self):
+        """Back to the built-in default curve (ours), in use and in the editor."""
+        self.do(lambda: ipc.call("fan_curve", action="use", name="truesense"), "Fan curve reset to the default (truesense)", refresh=False); self.reload_curves("truesense")
+
     def curve_copy(self):
         """A built-in curve is read-only; copying it makes an editable one under a free name."""
         src = self.curve_list.currentText(); base = (self.curve_name.text().strip() or src + "-copy"); name, n = base, 2
@@ -919,7 +1074,7 @@ class Window(QMainWindow if Qt else object):
         v = self.card(lay, "Profiles"); self.sm_list = QComboBox(); self.sm_list.setMinimumWidth(150); self.sm_list.activated.connect(lambda i: self.load_smart_in_editor(self.sm_list.currentText()))
         self.sm_copy = self.btn("Copy to edit", self.smart_copy); self.line(v, "Profile", self.sm_list, self.btn("Use", self.smart_use, True))
         self.sm_name = QLineEdit(); self.sm_name.setPlaceholderText("name"); self.sm_name.setMinimumWidth(120); self.sm_save = self.btn("Save", self.smart_save); self.sm_del = self.btn("Delete", self.smart_delete)
-        self.line(v, "Edit", self.sm_copy, self.sm_del); self.line(v, "Save as", self.sm_name, self.sm_save); self.sm_msg = self.hint(""); v.addWidget(self.sm_msg); self.reload_smart(); lay.addStretch()
+        self.line(v, "Edit", self.sm_copy, self.sm_del); self.line(v, "Save as", self.sm_name, self.sm_save); self.line(v, "Default", self.btn("Reset to default", self.smart_reset)); self.sm_msg = self.hint(""); v.addWidget(self.sm_msg); self.reload_smart(); lay.addStretch()
 
     def reload_smart(self, select=None):
         ns = smartprofiles.names(); self.sm_list.clear(); self.sm_list.addItems(ns); self.smart_cb.clear(); self.smart_cb.addItems(ns)
@@ -951,6 +1106,9 @@ class Window(QMainWindow if Qt else object):
         except Exception as e: self.sm_msg.setText(str(e)); self.say(f"Error: {e}"); return
         self.reload_smart(name); self.sm_msg.setText(f"Saved '{name}'. Press Use this profile to run it."); self.say(f"Saved smart profile '{name}'")
 
+    def smart_reset(self):
+        self.do(lambda: ipc.call("smart_profile", action="use", name="truesense"), "Smart auto reset to the default profile (truesense)", refresh=False); self.reload_smart("truesense")
+
     def smart_copy(self):
         src = self.sm_list.currentText()
         try: n = smartprofiles.copy(src, self.sm_name.text().strip() or None)
@@ -979,7 +1137,7 @@ class Window(QMainWindow if Qt else object):
         except HwError: pass
         self.ticks += 1
         idle = time.monotonic() - self.last_action > 2.0 and not any(self.busy.values()) and not self.pending
-        dragging = any(s.isSliderDown() for s in (self.kb_level, self.kb_speed, self.rear_bright, self.rear_speed, self.fan_pct, self.boost))
+        dragging = any(s.isSliderDown() for s in (self.kb_level, self.kb_speed, self.rear_bright, self.rear_speed, self.fan_pct, self.boost, self.pk_level))
         popup = any(c.view().isVisible() for c in (self.kb_fx,))
         if self.ticks % 2 == 0 and idle and not dragging and not popup and not self.refreshing: self.full_refresh("audio_fast" if self.pages.currentIndex() == PAGES["audio"] else "home")
 
@@ -1032,7 +1190,8 @@ class Window(QMainWindow if Qt else object):
             if look.get("mode") == "effect" and look.get("name") in KB_EFFECTS: self.kb_fx.setCurrentIndex(KB_EFFECTS.index(look["name"])); self.kb_color.set_hex(look.get("color", "00aec7")); self._set(self.kb_speed, look.get("speed", 5))
             self.sync_enabled(look)
             if d.get("kbtimeout") is not None: self.kb_timeout.setChecked(bool(d["kbtimeout"]))
-            if "cells" in d and not self.kv.sel: self.kv.cells = ["%02x%02x%02x" % tuple(c) for c in d["cells"]]; self.kv.update()
+            if "cells" in d and not self.board.sel and not self.busy.get("paint") and not self.pending.get("paint"): self.board.set_cells(["%02x%02x%02x" % tuple(c) for c in d["cells"]])
+            if "kb" in d: self._set(self.pk_level, d["kb"])
             for k, w in (("limit", self.limit), ("calib", self.calib), ("od", self.od), ("boot", self.boot), ("dts", self.dts)):
                 if d.get(k) is not None: w.setChecked(bool(d[k]))
             if "usb" in d: self.usb.set_index(hw.USB_LEVELS.index(d["usb"]) if d["usb"] in hw.USB_LEVELS else -1)

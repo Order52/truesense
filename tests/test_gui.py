@@ -90,3 +90,15 @@ class TestWindowLogic(unittest.TestCase):
         w.kp_edit["tap"].set_spec("power:turbo"); w.kp_name.setText(n); w.kp_save_do(); self.assertEqual(keybinds.load(n)["tap"], "power:turbo")
         keybinds.use(n); k = config.load()["keys"]; self.assertEqual((k["tap"], k["profile"]), ("power:turbo", n))
         keybinds.use("default"); self.assertEqual(config.load()["keys"]["tap"], "power-next"); keybinds.delete(n); w.close()
+
+    def test_per_key_picture_covers_every_key_and_edits_are_undoable(self):
+        from truesense import keymap
+        w = gui.Window(); b = w.board
+        every = {c for n, cs in keymap.NAMES.items() if n not in ("enter", "win") for c in cs}
+        self.assertEqual({c for k in b.keys for c in k[1]}, every, "every key must have a place on the picture")
+        b.select_group("wasd"); self.assertEqual(len(b.sel), 4); before = list(b.cells)
+        w.set_colour("ff0000"); self.assertTrue(all(b.cells[c] == "ff0000" for c in b.sel)); self.assertEqual(b.cells[keymap.NAMES["esc"][0]], before[keymap.NAMES["esc"][0]])
+        w.undo(); self.assertEqual(b.cells, before); w.redo(); self.assertEqual(b.cells[list(b.sel)[0]], "ff0000")
+        b.select_group("arrows"); w.g1.set_hex("000000"); w.g2.set_hex("ffffff"); w.apply_gradient(); vals = sorted(int(b.cells[c][:2], 16) for c in b.sel); self.assertLess(vals[0], vals[-1])
+        w.set_colour("zzzzzz"); self.assertEqual(w.hex_edit.text(), w.cur_hex)                                  # a bad colour is ignored
+        b.select_group("all"); b.select_group("invert"); self.assertEqual(b.sel, set()); w.close()
