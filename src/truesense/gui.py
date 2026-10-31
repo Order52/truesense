@@ -1320,9 +1320,10 @@ class Window(QMainWindow if Qt else object):
                           "you will be asked for your password. The service restarts for a moment (the fans go back to the firmware meanwhile).", QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, self)
         box.setDefaultButton(QMessageBox.StandardButton.Cancel); box.button(QMessageBox.StandardButton.Apply).setText("Update")
         if box.exec() != QMessageBox.StandardButton.Apply: return
-        self.upd_btn.setEnabled(False); self.upd_lbl.setText("Downloading and installing… (enter your password when asked)")
+        self.upd_btn.setEnabled(False)
+        self.upd_lbl.setText("Downloading and installing… (enter your password when asked)" if update.polkit_agent_running() else "A terminal window opens: type your password there to finish the update.")
         def work():
-            try: res = update.apply(r["info"]["tag"], gui=True); out = {"ok": res["returncode"] == 0, "version": res["version"], "code": res["returncode"]}
+            try: res = update.apply(r["info"]["tag"], gui=True); out = {"ok": res["returncode"] == 0, "version": res["version"], "code": res["returncode"], "via": res.get("via")}
             except Exception as e: out = {"ok": False, "error": str(e)}
             try: self.bus.upd.emit({"done": out, **r})
             except RuntimeError: pass
@@ -1335,6 +1336,7 @@ class Window(QMainWindow if Qt else object):
             box = QMessageBox(QMessageBox.Icon.Information, "Updated", f"TrueSense {out['version']} is installed.\n\nRestart the window to use it.", QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel, self)
             box.button(QMessageBox.StandardButton.Ok).setText("Restart the window"); box.button(QMessageBox.StandardButton.Cancel).setText("Later")
             if box.exec() == QMessageBox.StandardButton.Ok: subprocess.Popen(["sh", "-c", "sleep 1; truesense gui"], start_new_session=True); self.close()
+        elif out.get("via") == "terminal": self.upd_lbl.setText("The terminal window closed before the update finished. Try again, or run this in a terminal: truesense update apply"); self.say("The update did not finish: run `truesense update apply` in a terminal")
         else: self.upd_lbl.setText("The update did not finish: " + (out.get("error") or f"the installer exited with code {out.get('code')} (see /var/log/truesense-install.log)")); self.say("Error: the update did not finish")
 
     def run_doctor(self):

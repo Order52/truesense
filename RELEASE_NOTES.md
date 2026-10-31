@@ -1,5 +1,9 @@
 # Release notes
 
+## Unreleased
+
+- **Update from the window works on desktops with no polkit agent** (Hyprland, sway and other minimal setups): `pkexec` needs an agent to show a password prompt, and without one the Update button failed with only "installer exited with code 127". The updater now checks for an agent first; with none it opens a terminal window (`$TERMINAL`, kitty, foot, alacritty, ghostty, wezterm, konsole, ...) that runs `sudo truesense update apply`, and says plainly what to run if no terminal exists. Whether the update really installed is decided by the installed version, not by the terminal closing.
+
 ## 0.3.6 (2026-10-31): polish, a settings-file race fixed, clearer Profiles page
 
 - **Fixed:** the per-user settings file could lose a setting when two things wrote at once (the window, the key service, the command line, or threads inside the window). It is now locked across threads and processes.

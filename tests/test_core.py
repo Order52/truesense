@@ -647,3 +647,49 @@ class TestUserStateLocking(unittest.TestCase):
             ts = [threading.Thread(target=w, args=(n,)) for n in range(6)]; [t.start() for t in ts]; [t.join() for t in ts]
             data = userstate.load(); self.assertEqual(len(data), 6 * 25, "every key written by every thread is still there")
         finally: userstate.PATH = old
+
+
+class TestUpdateWithoutPolkitAgent(unittest.TestCase):
+    def fake_proc(self, *cmds):
+        import tempfile, os as _os
+        d = tempfile.mkdtemp()
+        for i, c in enumerate(cmds, 100):
+            _os.makedirs(f"{d}/{i}"); open(f"{d}/{i}/cmdline", "wb").write(c.replace(" ", "\0").encode() + b"\0")
+        return d
+
+    def test_polkitd_alone_is_not_a_password_prompt(self):
+        from truesense import update
+        self.assertFalse(update.polkit_agent_running(self.fake_proc("/usr/lib/polkit-1/polkitd --no-debug", "/usr/bin/zsh -c source snapshot polkit-gnome")))
+        self.assertTrue(update.polkit_agent_running(self.fake_proc("/usr/bin/hyprpolkitagent")))
+        self.assertTrue(update.polkit_agent_running(self.fake_proc("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")))
+
+    def test_terminal_is_chosen_from_env_then_the_usual_ones(self):
+        from truesense import update
+        have = {"foot", "xterm"}
+        which = lambda n: "/usr/bin/" + n if n in have else None
+        self.assertEqual(update.terminal_command("echo hi", {"TERMINAL": "/usr/bin/foot"}, which), ["foot", "sh", "-c", "echo hi"])
+        self.assertEqual(update.terminal_command("echo hi", {}, which)[0], "foot"); self.assertEqual(update.terminal_command("x", {"TERMINAL": "xterm"}, which)[0], "xterm")
+        self.assertIsNone(update.terminal_command("x", {}, lambda n: None))
+
+    def test_pkexec_only_with_an_agent_and_the_window_falls_back_to_a_terminal(self):
+        import os as _os
+        from truesense import update
+        if _os.geteuid() == 0: self.skipTest("root")
+        _w = _os.environ.get("WAYLAND_DISPLAY"); _os.environ["WAYLAND_DISPLAY"] = "wayland-test"
+        try:
+            self.assertEqual(update.elevate_command("/x/install.sh", gui=True, agent=True)[0], "pkexec")
+            self.assertEqual(update.elevate_command("/x/install.sh", gui=True, agent=False)[0], "sudo", "no agent: pkexec would fail without a prompt")
+            ran = []; run = lambda cmd: (ran.append(cmd), type("R", (), {"returncode": 0})())[1]
+            info = {"error": None, "info": {"tag": "v9.9.9"}}; real_check, real_iv = update.check, update.installed_version
+            update.check = lambda force=False, hours=None: info; update.installed_version = lambda path=None: "9.9.9"
+            try:
+                r = update.apply(None, gui=True, run=run, agent=False, term=lambda inner: ["myterm", "-e", "sh", "-c", inner])
+                self.assertEqual(r["via"], "terminal"); self.assertEqual(r["returncode"], 0); self.assertEqual(ran[0][:4], ["myterm", "-e", "sh", "-c"]); self.assertIn("truesense update apply --yes --version 9.9.9", ran[0][-1])
+                update.installed_version = lambda path=None: "0.3.5"                               # the terminal closed but nothing was installed: not a success
+                self.assertNotEqual(update.apply(None, gui=True, run=run, agent=False, term=lambda inner: ["t", inner])["returncode"], 0)
+                with self.assertRaises(device.HwError) as cm: update.apply(None, gui=True, run=run, agent=False, term=lambda inner: None)
+                self.assertIn("truesense update apply", str(cm.exception))
+            finally: update.check, update.installed_version = real_check, real_iv
+        finally:
+            if _w is None: _os.environ.pop("WAYLAND_DISPLAY", None)
+            else: _os.environ["WAYLAND_DISPLAY"] = _w

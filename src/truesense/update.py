@@ -119,22 +119,64 @@ def download(tag, r=None, opener=urllib.request.urlopen):
         shutil.rmtree(work, ignore_errors=True); raise
 
 
-def elevate_command(script, gui=False):
-    """How to run the installer as root: pkexec (graphical prompt) when there is a desktop and the caller wants it, else sudo; None if we already are root."""
+AGENTS = ("polkit-gnome-authentication-agent", "polkit-kde-authentication-agent", "polkit-mate-authentication-agent", "lxqt-policykit-agent", "xfce-polkit", "hyprpolkitagent",
+          "soteria", "lxpolkit", "pantheon-agent-polkit", "ukui-polkit", "cosmic-osd", "polkit-ukui-authentication-agent", "gnome-shell")
+# terminal emulators and how each runs "sh -c COMMAND" and waits until it ends
+TERMINALS = {"kitty": ["kitty", "sh", "-c"], "foot": ["foot", "sh", "-c"], "alacritty": ["alacritty", "-e", "sh", "-c"], "ghostty": ["ghostty", "-e", "sh", "-c"],
+             "wezterm": ["wezterm", "start", "--always-new-process", "--", "sh", "-c"], "konsole": ["konsole", "-e", "sh", "-c"], "gnome-terminal": ["gnome-terminal", "--wait", "--", "sh", "-c"],
+             "xfce4-terminal": ["xfce4-terminal", "--disable-server", "-x", "sh", "-c"], "xterm": ["xterm", "-e", "sh", "-c"]}
+
+
+def polkit_agent_running(proc="/proc"):
+    """True if some graphical password prompt for pkexec exists. polkitd alone is not enough: pkexec needs an AGENT to ask for the password."""
+    try: pids = [p for p in os.listdir(proc) if p.isdigit()]
+    except OSError: return False
+    for pid in pids:
+        try:
+            with open(f"{proc}/{pid}/cmdline", "rb") as f: cmd = f.read(512).replace(b"\0", b" ").decode("utf-8", "replace").lower()
+        except OSError: continue
+        if any(a in cmd.split(" ")[0] or ("/" + a) in cmd.split(" ")[0] for a in AGENTS): return True
+    return False
+
+
+def terminal_command(inner, env=None, which=shutil.which):
+    """A command that opens a terminal window, runs the shell command `inner` in it and waits. $TERMINAL first, then the usual ones. None if there is no terminal."""
+    env = os.environ if env is None else env; names = [os.path.basename(env.get("TERMINAL", "") or "")] + list(TERMINALS)
+    for n in names:
+        if n in TERMINALS and which(n): return TERMINALS[n] + [inner]
+    return None
+
+
+def elevate_command(script, gui=False, agent=None):
+    """How to run the installer as root: pkexec (graphical prompt) only when there is a desktop AND a polkit agent to ask for the password, else sudo; None if we already are root."""
     if os.geteuid() == 0: return [script]
-    if gui and shutil.which("pkexec") and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")): return ["pkexec", script]
+    agent = polkit_agent_running() if agent is None else agent
+    if gui and agent and shutil.which("pkexec") and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")): return ["pkexec", script]
     if shutil.which("sudo"): return ["sudo", script]
-    if shutil.which("pkexec"): return ["pkexec", script]
-    raise HwError("need sudo or pkexec to install the update")
+    if agent and shutil.which("pkexec"): return ["pkexec", script]
+    raise HwError("need sudo, or pkexec with a polkit agent, to install the update")
 
 
-def apply(tag=None, gui=False, run=subprocess.run, fetch=download):
-    """Download the release and run its installer. Returns {"version", "sha256", "returncode"}."""
+def installed_version(path="/usr/local/lib/truesense/truesense/__init__.py"):
+    try:
+        with open(path) as f: m = re.search(r'__version__\s*=\s*"([^"]+)"', f.read())
+        return m.group(1) if m else None
+    except OSError: return None
+
+
+def apply(tag=None, gui=False, run=subprocess.run, fetch=download, agent=None, term=None):
+    """Download the release and run its installer. Returns {"version", "sha256", "returncode", "via"}.
+    From the window (gui=True) with no polkit agent there is no way to ask for a password, so a terminal window runs `sudo truesense update apply` instead."""
     info = check(force=True)
     if info["error"] and not info["info"]: raise HwError(info["error"])
-    tag = tag or info["info"]["tag"]
+    tag = tag or info["info"]["tag"]; version = ".".join(map(str, parse(tag)))
+    if gui and os.geteuid() != 0 and not (polkit_agent_running() if agent is None else agent):
+        cmd = (term or terminal_command)('truesense update apply --yes --version %s; echo; printf "Press Enter to close this window... "; read _' % version)
+        if not cmd: raise HwError("this desktop has no password prompt for the window (no polkit agent) and no terminal was found. Run this in a terminal instead: truesense update apply")
+        r = run(cmd); ok = installed_version() == version
+        return {"version": version, "sha256": "", "returncode": 0 if ok else (r.returncode or 1), "via": "terminal", "installed": installed_version()}
     root, sha = fetch(tag)
     try:
-        r = run(elevate_command(os.path.join(root, "tools/install.sh"), gui))
-        return {"version": ".".join(map(str, parse(tag))), "sha256": sha, "returncode": r.returncode}
+        r = run(elevate_command(os.path.join(root, "tools/install.sh"), gui, agent))
+        return {"version": version, "sha256": sha, "returncode": r.returncode, "via": "installer"}
     finally: shutil.rmtree(os.path.dirname(os.path.dirname(root)), ignore_errors=True)
