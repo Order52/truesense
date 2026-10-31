@@ -208,13 +208,13 @@ class TestWindowLogic(unittest.TestCase):
         for name in ("kb_oper", "spk", "micvol", "tp_sw", "pm_sw"): self.assertTrue(hasattr(w, name), name)
         self.assertEqual((w.micvol.minimum(), w.micvol.maximum()), (0, 150)); w.show_config(); w.check_config(); w.close()
 
-    def test_profiles_page_explains_what_a_profile_changes_and_home_has_a_compact_picker(self):
+    def test_profiles_page_explains_what_a_profile_changes_and_home_has_no_duplicate_picker(self):
         from truesense import profiles
         w = gui.Window(); w.show(); self.assertIn("profiles", gui.PAGES)
-        self.assertGreater(w.hp_cb.count(), 0); self.assertEqual(w.hp_cb.count(), w.prof_cb.count(), "the Home picker and the Profiles page list the same profiles")
+        self.assertFalse(hasattr(w, "hp_cb"), "Home has no second profile picker: the Profiles page is the one place")
+        self.assertTrue(any(b.text() == "Profiles" for b in w.findChildren(gui.QPushButton)), "Home still has the Profiles tile")
+        self.assertGreater(w.prof_cb.count(), 0)
         w.prof_cb.setCurrentIndex(w.prof_cb.findData("gaming")); w.prof_changed(); txt = w.prof_info.text(); self.assertIn("Maximum performance", txt); self.assertIn("Turbo", txt); self.assertIn("Fans: smart curve", txt); self.assertIn("overdrive on", txt)
-        self.assertEqual(w.hp_cb.currentData(), "gaming", "choosing on the page moves the Home picker too")
-        w.hp_cb.setCurrentIndex(w.hp_cb.findData("quiet")); calls = []; w.prof_apply = lambda: calls.append(w.prof_cb.currentData()); w.hp_apply(); self.assertEqual(calls, ["quiet"])
         d = profiles.load("battery-saver"); lines = profiles.describe(d); self.assertTrue(any("Eco" in l for l in lines) and any("80 % limit on" in l for l in lines) and any("Rear light: off" in l for l in lines), lines)
         self.assertEqual(profiles.describe({}), ["(nothing)"])
         w.go("profiles"); self.assertEqual(w.pages.currentIndex(), gui.PAGES["profiles"]); w.close()

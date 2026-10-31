@@ -770,8 +770,6 @@ class Window(QMainWindow if Qt else object):
         lay = self.page("TrueSense", back=False)
         self.banner = QFrame(); self.banner.setObjectName("banner"); bl = QHBoxLayout(self.banner); bl.setContentsMargins(14, 10, 10, 10); self.banner_lbl = QLabel(""); self.banner_lbl.setWordWrap(True); bl.addWidget(self.banner_lbl, 1)
         bl.addWidget(self.btn("Update", self.update_now, True)); bl.addWidget(self.btn("Later", lambda: self.banner.setVisible(False))); lay.addWidget(self.banner); self.banner.setVisible(False)
-        self.hp_cb = QComboBox(); self.hp_cb.setMinimumWidth(150); self.hp_cb.setToolTip("A profile sets power, fans, lighting, battery and audio in one click. Manage them under Profiles.")
-        self.line(lay, "Profile", self.hp_cb, self.btn("Apply", self.hp_apply, True), self.btn("Manage…", lambda: self.go("profiles")), name_min=56)
         v = self.card(lay, "Performance Mode", "performance", True); self.stat_cpu = v.right
         try: self.modes = hw.supported_modes()
         except Exception: self.modes = list(hw.MODES)
@@ -835,7 +833,7 @@ class Window(QMainWindow if Qt else object):
 
     def prof_reload(self, select=None):
         cur = select or userstate.get("profile") or (self.prof_cb.currentData() if self.prof_cb.count() else "")
-        for cb in (self.prof_cb, self.hp_cb):
+        for cb in (self.prof_cb,):
             cb.blockSignals(True); cb.clear()
             for n in profiles.names(): cb.addItem(f"{n}  ({profiles.source(n)})" if cb is self.prof_cb else n, n)
             if cur: cb.setCurrentIndex(max(0, cb.findData(cur)))
@@ -848,11 +846,6 @@ class Window(QMainWindow if Qt else object):
         try: d = profiles.load(n); self.prof_info.setText((d.get("description") or "") + "\n\n" + "\n".join("• " + line for line in profiles.describe(d)))
         except Exception as e: self.prof_info.setText(f"Could not read this profile: {e}")
         cur = userstate.get("profile"); self.prof_now.setText(f"Last applied: {cur}" if cur else "No profile applied yet.")
-        self.hp_cb.blockSignals(True); self.hp_cb.setCurrentIndex(max(0, self.hp_cb.findData(n))); self.hp_cb.blockSignals(False)
-
-    def hp_apply(self):
-        n = self.hp_cb.currentData()
-        if n: self.prof_cb.setCurrentIndex(max(0, self.prof_cb.findData(n))); self.prof_changed(); self.prof_apply()
 
     def prof_apply(self):
         n = self.prof_cb.currentData()

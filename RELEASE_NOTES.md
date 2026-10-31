@@ -1,5 +1,9 @@
 # Release notes
 
+## Unreleased
+
+- **Home:** removed the profile picker at the top. It duplicated the Profiles page, which stays as the single place to pick, apply, save and delete profiles (Home keeps the Profiles tile).
+
 ## 0.3.8 (2026-10-31): layout fixes on the Lighting and Undervolt pages
 
 - **Fixed:** on tabs shorter than the tallest tab (Lighting: Rear bar and Profiles) the settings rows stretched, leaving a huge empty gap, for example around the Effect buttons on the Rear bar tab. Rows now take exactly the height they need.
