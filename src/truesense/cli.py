@@ -50,13 +50,31 @@ def add_onoff(sub, name, help_, extra=()):
     p = sub.add_parser(name, help=help_); p.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status", *extra]); return p
 
 
-def build():
+class _Sink:
+    """Swallows the parser set-up of every area that is not being run: building the other 100+ parsers cost about 18 ms of every command."""
+    def __getattr__(self, _): return self
+    def __call__(self, *a, **k): return self
+    def __iter__(self): return iter(())
+
+
+class _OnlyArea:
+    def __init__(self, real, only): self.real, self.only = real, only
+    def add_parser(self, name, **kw): return self.real.add_parser(name, **kw) if name == self.only else _Sink()
+
+
+AREAS = ("status", "sensors", "power", "fan", "battery", "display", "boot", "gpu", "rear", "update", "look", "startup", "keyboard", "audio", "keys", "profile", "cpu", "touchpad",
+         "service", "config", "doctor", "selftest", "completion", "gui", "daemon", "version")       # a test keeps this in step with build()
+
+
+def build(only=None):
+    """The whole argument parser. `only` = one area name builds just that area (everything else is skipped): enough to run a command, not for --help or completion."""
     from . import backend as hw
     ap = argparse.ArgumentParser(prog="truesense", description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog="Examples:\n  truesense status\n  truesense power set turbo\n  truesense fan set 60\n  truesense rear set breathing --color 00ff88\n  truesense keyboard effect wave --brightness 50\n"
                                         "  truesense keys set double output-toggle\n  truesense profile apply gaming\n  truesense doctor")
     ap.add_argument("--json", action="store_true", help="machine-readable output"); ap.add_argument("-V", "--version", action="version", version=f"truesense {__version__}")
     sub = ap.add_subparsers(dest="area", metavar="area")
+    if only in AREAS: sub = _OnlyArea(sub, only)
 
     p = sub.add_parser("status", help="everything at a glance"); p = sub.add_parser("sensors", help="temperatures and fan RPM")
     # power
@@ -178,7 +196,8 @@ def build():
 
 # ---- handlers ----------------------------------------------------------------------------------------------------------------------------
 def h_status(a):
-    from . import audio, backend as hw, ipc, touchpad
+    from . import audio, backend as hw, ipc, keyboard, touchpad
+    keyboard.prewarm()                                  # the keyboard takes ~50 ms to open: do it while the firmware reads below run
     out = {}
     def put(k, f):
         try: out[k] = f()
@@ -639,7 +658,8 @@ def main(argv=None):
     global JSON
     argv = list(sys.argv[1:] if argv is None else argv)
     JSON = "--json" in argv; argv = [x for x in argv if x != "--json"]        # --json works anywhere on the line
-    ap = build(); a = ap.parse_args(argv); a.json = JSON
+    if argv[:1] in (["-V"], ["--version"]): print(f"truesense {__version__}"); return 0               # no need to build a parser for that
+    ap = build(only=argv[0] if argv and argv[0] in AREAS else None); a = ap.parse_args(argv); a.json = JSON
     if not a.area: ap.print_help(); return 0
     try:
         if a.area == "doctor":

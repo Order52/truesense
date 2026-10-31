@@ -2157,6 +2157,7 @@ def main(page=None):
             try: w_.say(f"Error: {value}")
             except Exception: pass
     sys.excepthook = hook; threading.excepthook = lambda a: hook(a.exc_type, a.exc_value, a.exc_traceback)
+    keyboard.prewarm()                                                    # opens the keyboard interface (about 50 ms) while Qt starts up
     app = QApplication(sys.argv[:1]); app.setApplicationName("TrueSense"); app.setWindowIcon(_icon()); app.setDesktopFileName("truesense"); app.setStyle("Fusion"); app.setStyleSheet(STYLE)
     name = "truesense-gui-" + str(__import__("os").getuid())
     probe = QLocalSocket(); probe.connectToServer(name)

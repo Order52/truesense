@@ -223,11 +223,13 @@ CHECKS = [("Model", c_model), ("Python", c_python), ("Kernel", c_kernel), ("Kern
 
 
 def run(as_json=False, out=sys.stdout):
-    res = []
-    for title, fn in CHECKS:
+    def one(item):
+        title, fn = item
         try: st, detail, fix = fn()
         except Exception as e: st, detail, fix = WARN, f"check crashed: {type(e).__name__}: {e}", ""
-        res.append({"check": title, "status": st, "detail": detail, "fix": fix})
+        return {"check": title, "status": st, "detail": detail, "fix": fix}
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as ex: res = list(ex.map(one, CHECKS))        # the checks only read and mostly wait for other programs: run them side by side, report in the usual order
     fails = sum(r["status"] == FAIL for r in res); warns = sum(r["status"] == WARN for r in res)
     if as_json: print(json.dumps({"version": __version__, "kernel": kver(), "ok": fails == 0, "failures": fails, "warnings": warns, "checks": res}, indent=2), file=out)
     else:

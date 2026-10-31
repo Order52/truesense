@@ -7,6 +7,7 @@ The packet formats are in docs/PROTOCOL.md; what was checked on the real keyboar
 import fcntl
 import glob
 import os
+import threading
 import time
 from . import util, userstate
 from .backend import HwError
@@ -34,20 +35,66 @@ SIM = {"brightness": 25, "packets": [], "frames": 0, "timeout": True}      # TRU
 
 def _sim(): return bool(os.environ.get("TRUESENSE_SIM"))
 
+# The keyboard's vendor interface. Opening it costs about 50 ms (measured on the PH16-71; the USB transfers themselves take 0.3 ms), so a process opens it ONCE and keeps the
+# handle. Every sequence of transfers runs under one lock (a brightness read can never land in the middle of a frame upload), and a stale handle (the keyboard re-enumerates
+# after suspend) is dropped and reopened once. The tiny wrappers below are what the tests replace.
+_HID_LOCK = threading.RLock()
+_HID = {"fd": None}
+_dev_open, _dev_close, _dev_ioctl, _dev_write = os.open, os.close, fcntl.ioctl, os.write
+
+
+def _hid_open():
+    node = _hidraw()
+    try: fd = _dev_open(node, os.O_RDWR)
+    except PermissionError: raise HwError(f"no permission on {node}: add yourself to group plugdev and install the udev rule") from None
+    _HID["fd"] = fd
+    return fd
+
+
+def _hid_drop():
+    fd, _HID["fd"] = _HID["fd"], None
+    if fd is not None:
+        try: _dev_close(fd)
+        except OSError: pass
+
+
+def _hid_call(fn):
+    """fn(fd) on the keyboard interface, serialised, on the kept handle; one reopen-and-retry if the handle has gone stale."""
+    with _HID_LOCK:
+        for attempt in (0, 1):
+            fd = _HID["fd"] if _HID["fd"] is not None else _hid_open()
+            try: return fn(fd)
+            except OSError:
+                _hid_drop()
+                if attempt: raise
+    return None
+
+
+def prewarm():
+    """Open the keyboard interface in the background (it takes about 50 ms): call it early in a process that will talk to the keyboard soon, so that time overlaps other work."""
+    if _sim(): return
+
+    def go():
+        try: _hid_call(lambda fd: None)
+        except (HwError, OSError): pass
+    threading.Thread(target=go, daemon=True, name="hid-prewarm").start()
+
+
+def _set_feature(fd, payload):
+    buf = bytearray(b"\x00" + bytes(payload))                          # report id 0 + 8 data bytes
+    _dev_ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x06, buf)       # HIDIOCSFEATURE(len)
+
+
 def _send(pkts):
     if _sim():
         for p in pkts:
             SIM["packets"].append(bytes(p))
             if p[0] == 0x08: SIM["brightness"] = p[4]
         return
-    node = _hidraw()
-    try: fd = os.open(node, os.O_RDWR)
-    except PermissionError: raise HwError(f"no permission on {node}: add yourself to group plugdev and install the udev rule")
-    try:
-        for p in pkts:
-            buf = bytearray(b"\x00" + p)                              # report id 0 + 8 data bytes
-            fcntl.ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x06, buf)   # HIDIOCSFEATURE(len)
-    finally: os.close(fd)
+
+    def body(fd):
+        for p in pkts: _set_feature(fd, p)
+    _hid_call(body)
 
 # The keyboard stores the speed byte 0 (fastest) .. 11 (slowest) and reads it back (byte 3 of the `88` report); 12 and above are refused and become 6 (measured on the PH16-71).
 # The UI scale runs the other way round: 1 = slowest .. 12 = fastest, byte = 12 - speed. (Before 0.3.10 it was 1..11 with byte = 10 - speed: the two slowest steps were
@@ -75,17 +122,13 @@ def last():
 
 def _get_feature(fd, n=8):
     buf = bytearray(b"\x00" + bytes(n))
-    fcntl.ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x07, buf)   # HIDIOCGFEATURE(len)
+    _dev_ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x07, buf)   # HIDIOCGFEATURE(len)
     return bytes(buf[1:])
 
 def get_brightness():
     """Current keyboard brightness (0..50) as the firmware reports it: byte 4 of the GET_REPORT after the `88` packet (verified: tracks writes)."""
     if _sim(): return SIM["brightness"]
-    fd = os.open(_hidraw(), os.O_RDWR)
-    try:
-        buf = bytearray(b"\x00" + bytes([0x88, 0, 0, 0, 0, 0, 0, 0x77])); fcntl.ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x06, buf)
-        return _get_feature(fd)[4]
-    finally: os.close(fd)
+    return _hid_call(lambda fd: (_set_feature(fd, [0x88, 0, 0, 0, 0, 0, 0, 0x77]), _get_feature(fd)[4])[1])
 
 def per_key(colors, brightness=None, remember=True):
     """Direct/per-key upload (docs/PROTOCOL.md): 128 cells, 4 bytes each (00 R G B), 8 x 64-byte output reports.
@@ -99,19 +142,14 @@ def per_key(colors, brightness=None, remember=True):
         SIM["frames"] += 8; SIM["brightness"] = brightness
         if remember: userstate.set("keyboard", {"mode": "perkey", "brightness": brightness, "cells": _hexcells(cells)})
         return
-    node = _hidraw()
-    try: fd = os.open(node, os.O_RDWR)
-    except PermissionError: raise HwError(f"no permission on {node}: group plugdev + udev rule")
-    try:
-        def feat(p):
-            buf = bytearray(b"\x00" + p); fcntl.ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x06, buf)
-        feat(bytes([0x88, 0, 0, 0, 0, 0, 0, 0x77])); _get_feature(fd)
-        feat(bytes([0x12, 0, 0, 0x08, 0, 0, 0, 0xE5]))
+    def frame(fd):
+        _set_feature(fd, [0x88, 0, 0, 0, 0, 0, 0, 0x77]); _get_feature(fd)
+        _set_feature(fd, [0x12, 0, 0, 0x08, 0, 0, 0, 0xE5])
         for i in range(8):
-            os.write(fd, b"\x00" + data[i * 64:(i + 1) * 64]); time.sleep(0.016)   # leading 0 = report id: hidraw strips it, so the device gets exactly 64 data bytes     # Windows spaces frames ~15 ms apart; unpaced writes lose the last frame
+            _dev_write(fd, b"\x00" + data[i * 64:(i + 1) * 64]); time.sleep(0.016)   # leading 0 = report id: hidraw strips it, so the device gets exactly 64 data bytes     # Windows spaces frames ~15 ms apart; unpaced writes lose the last frame
         time.sleep(0.05)
-        feat(_pkt(0x08, 0x02, 0x33, 0x05, brightness, 0x08, 0x01))
-    finally: os.close(fd)
+        _set_feature(fd, _pkt(0x08, 0x02, 0x33, 0x05, brightness, 0x08, 0x01))
+    _hid_call(frame)
     if remember: userstate.set("keyboard", {"mode": "perkey", "brightness": brightness, "cells": _hexcells(cells)})
 
 def restore_default(brightness=12):
@@ -219,11 +257,11 @@ def paint_cells(changes, brightness=None):
 # Its factory state is ON, which is why the lights went dark after 30 s while the firmware flag read "off".
 def hid_timeout_get():
     if _sim(): return bool(SIM["timeout"])
-    fd = os.open(_hidraw(), os.O_RDWR)
-    try:
-        buf = bytearray(b"\x00" + bytes([0xB0, 0, 0, 0, 0, 0, 0, 0x4F])); fcntl.ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x06, buf)
-        r = _get_feature(fd); return bool(r[2]) if r[0] == 0xB0 else None
-    finally: os.close(fd)
+
+    def read(fd):
+        _set_feature(fd, [0xB0, 0, 0, 0, 0, 0, 0, 0x4F]); r = _get_feature(fd)
+        return bool(r[2]) if r[0] == 0xB0 else None
+    return _hid_call(read)
 
 def hid_timeout_set(on):
     _send([_pkt(0x30, 0x01, 1 if on else 0, 0, 0, 0, 0)])

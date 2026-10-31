@@ -113,7 +113,7 @@ Verified on the real laptop, partly verified, and not yet verified features are 
 
 ## Documentation
 
-[USAGE](docs/USAGE.md) · [SAFETY](docs/SAFETY.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) · [STATUS](docs/STATUS.md) · [LEGAL](docs/LEGAL.md) · [CREDITS](docs/CREDITS.md) · [CONTRIBUTING](CONTRIBUTING.md) · [CODE OF CONDUCT](CODE_OF_CONDUCT.md) · [SECURITY](SECURITY.md) · [Release notes](RELEASE_NOTES.md) · hardware interface notes in [PROTOCOL](docs/PROTOCOL.md) and measurements in [docs/hardware-data](docs/hardware-data)
+[USAGE](docs/USAGE.md) · [SAFETY](docs/SAFETY.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [PERFORMANCE](docs/PERFORMANCE.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) · [STATUS](docs/STATUS.md) · [LEGAL](docs/LEGAL.md) · [CREDITS](docs/CREDITS.md) · [CONTRIBUTING](CONTRIBUTING.md) · [CODE OF CONDUCT](CODE_OF_CONDUCT.md) · [SECURITY](SECURITY.md) · [Release notes](RELEASE_NOTES.md) · hardware interface notes in [PROTOCOL](docs/PROTOCOL.md) and measurements in [docs/hardware-data](docs/hardware-data)
 
 ## Credits and licence
 

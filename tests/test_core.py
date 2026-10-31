@@ -732,3 +732,110 @@ class TestKeyboardSpeedScale(unittest.TestCase):
         for bad in (0, 13, -1, 99):
             with self.assertRaises(device.HwError): keyboard.set_effect("wave", "00aec7", bad, 25, 0)
         with self.assertRaises(device.HwError): keyboard.set_speed(13)
+
+
+class TestKeyboardHandle(unittest.TestCase):
+    """Opening the keyboard's HID interface costs ~50 ms and a transfer 0.3 ms (measured), so a process keeps one handle. Everything here runs against fake device calls."""
+    def setUp(self):
+        import threading
+        from truesense import keyboard as k
+        self.k = k; self.opens = []; self.closes = []; self.calls = []; self.fail_next = []; self.threading = threading
+        self.saved = (k._sim, k._hidraw, k._dev_open, k._dev_close, k._dev_ioctl, k._dev_write, k._HID["fd"])
+        k._sim = lambda: False; k._hidraw = lambda: "/dev/fake"; k._HID["fd"] = None
+
+        def op(node, flags): fd = 100 + len(self.opens); self.opens.append(fd); return fd
+
+        def ioctl(fd, req, buf):
+            if self.fail_next: self.fail_next.pop(); raise OSError(5, "stale handle")
+            self.calls.append((req & 0xFF, threading.get_ident()))
+            if req & 0xFF == 0x07: buf[1:9] = bytes([0x88, 0, 3, 9, 25, 1, 1, 0x50])
+        k._dev_open = op; k._dev_close = lambda fd: self.closes.append(fd); k._dev_ioctl = ioctl; k._dev_write = lambda fd, b: len(b)
+
+    def tearDown(self):
+        k = self.k; k._sim, k._hidraw, k._dev_open, k._dev_close, k._dev_ioctl, k._dev_write, k._HID["fd"] = self.saved
+
+    def test_the_device_is_opened_once_and_kept(self):
+        k = self.k
+        for _ in range(3): self.assertEqual(k.get_brightness(), 25)
+        k.hid_timeout_get(); k.hid_timeout_get(); k._send([k._pkt(0x30, 0x01, 1, 0, 0, 0, 0)]); k.per_key([(1, 2, 3)] * 128, 20, remember=False)
+        self.assertEqual(self.opens, [100], "one open for all of that, not one per operation"); self.assertEqual(self.closes, [])
+
+    def test_a_stale_handle_is_reopened_once_and_the_call_still_succeeds(self):
+        k = self.k; k.get_brightness(); self.fail_next = [1]
+        self.assertEqual(k.get_brightness(), 25); self.assertEqual(self.opens, [100, 101]); self.assertEqual(self.closes, [100])
+
+    def test_a_second_failure_is_raised_and_the_handle_is_dropped(self):
+        k = self.k; k.get_brightness(); self.fail_next = [1, 1]
+        with self.assertRaises(OSError): k.get_brightness()
+        self.assertIsNone(k._HID["fd"], "nothing stale is kept"); self.assertEqual(k.get_brightness(), 25, "and the next call opens a fresh handle")
+
+    def test_no_permission_gives_a_clear_message(self):
+        k = self.k
+        def deny(node, flags): raise PermissionError(13, "denied")
+        k._dev_open = deny
+        with self.assertRaises(device.HwError) as cm: k.get_brightness()
+        self.assertIn("no permission", str(cm.exception)); self.assertIn("plugdev", str(cm.exception))
+
+    def test_transfers_of_different_threads_never_interleave(self):
+        k = self.k; th = self.threading
+        def work():
+            for _ in range(150): k.get_brightness()
+        ts = [th.Thread(target=work) for _ in range(4)]; [t.start() for t in ts]; [t.join() for t in ts]
+        self.assertEqual(len(self.calls), 4 * 150 * 2)
+        for i in range(0, len(self.calls), 2): self.assertEqual((self.calls[i][0], self.calls[i + 1][0], self.calls[i][1] == self.calls[i + 1][1]), (0x06, 0x07, True), "a request is always followed by its own reply")
+        self.assertEqual(self.opens, [100])
+
+    def test_prewarm_opens_in_the_background_without_a_second_open(self):
+        import time as _t
+        k = self.k; k.prewarm(); end = _t.time() + 3
+        while not self.opens and _t.time() < end: _t.sleep(0.01)
+        self.assertEqual(self.opens, [100]); self.assertEqual(k.get_brightness(), 25); self.assertEqual(self.opens, [100], "the foreground call reuses what the background open made")
+
+
+class TestCliSpeed(unittest.TestCase):
+    def test_the_area_list_matches_the_real_parser(self):
+        from truesense import cli
+        full = cli.build(); areas = next(a for a in full._actions if a.dest == "area").choices
+        self.assertEqual(set(cli.AREAS), set(areas), "cli.AREAS must list exactly the areas build() defines")
+
+    def test_building_only_one_area_parses_exactly_like_the_full_parser(self):
+        from truesense import cli
+        for argv in (["fan", "status"], ["fan", "set", "60", "80"], ["power", "set", "turbo"], ["keyboard", "effect", "wave", "--speed", "3"], ["battery", "limit", "on"],
+                     ["status"], ["doctor"], ["rear", "set", "breathing", "--color", "00ff88"], ["keys", "set", "double", "output-toggle"], ["cpu", "undervolt", "list"]):
+            self.assertEqual(vars(cli.build().parse_args(argv)), vars(cli.build(only=argv[0]).parse_args(argv)), argv)
+        with self.assertRaises(SystemExit): cli.build(only="fan").parse_args(["power", "status"])        # the other areas are really skipped
+
+    def test_version_needs_no_parser_at_all(self):
+        import io
+        import contextlib
+        from truesense import cli, __version__
+        real = cli.build
+        def boom(*a, **k): raise AssertionError("the parser must not be built for --version")
+        cli.build = boom
+        try:
+            for flag in ("--version", "-V"):
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf): rc = cli.main([flag])
+                self.assertEqual((rc, buf.getvalue().strip()), (0, f"truesense {__version__}"))
+        finally: cli.build = real
+
+
+class TestDoctorParallel(unittest.TestCase):
+    def test_checks_run_side_by_side_and_are_reported_in_order(self):
+        import io
+        import json as _json
+        import time as _t
+        from truesense import doctor
+        saved = doctor.CHECKS
+
+        def slow(i): return lambda: (_t.sleep(0.2), (doctor.OK, f"c{i}", ""))[1]
+
+        def broken(): raise RuntimeError("boom")
+        doctor.CHECKS = [(f"T{i}", slow(i)) for i in range(5)] + [("Broken", broken), ("Last", slow(9))]
+        try:
+            buf = io.StringIO(); t = _t.perf_counter(); doctor.run(True, buf); dt = _t.perf_counter() - t
+        finally: doctor.CHECKS = saved
+        data = _json.loads(buf.getvalue())
+        self.assertEqual([c["check"] for c in data["checks"]], [f"T{i}" for i in range(5)] + ["Broken", "Last"], "the report keeps its order")
+        self.assertLess(dt, 0.8, f"6 checks of 0.2 s ran in {dt:.2f} s: they overlap (one after another would be 1.2 s)")
+        broken_entry = [c for c in data["checks"] if c["check"] == "Broken"][0]; self.assertEqual(broken_entry["status"], doctor.WARN); self.assertIn("boom", broken_entry["detail"])

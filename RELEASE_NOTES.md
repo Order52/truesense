@@ -1,5 +1,14 @@
 # Release notes
 
+## Unreleased
+
+**Much faster, measured** (details and the full table in docs/PERFORMANCE.md)
+- The keyboard's HID interface took 50 ms to open and was opened for every single operation. Each process now opens it once and keeps it (a read costs 0.5 ms instead of 52 ms), safely: one lock so transfers never interleave, one automatic reopen if the handle goes stale, and a clear message when you lack permission. `truesense status` 241 to 137 ms, `truesense keyboard status` 170 to 108 ms, the window's full refresh 212 to 115 ms, per-key frames about 235 to 188 ms.
+- `truesense doctor` runs its checks side by side: 691 to 272 ms.
+- Commands build only the part of the argument parser they need, and `--version` needs none: `--version` 44 to 20 ms, `fan status` 65 to 56 ms.
+- The window pre-opens the keyboard while Qt starts.
+- New page docs/PERFORMANCE.md: what costs what (the kernel module itself takes about 2 microseconds per command, a firmware call 5 ms, a keyboard open 50 ms), what was fixed, and why a rewrite in C++ or Rust would not make these waits shorter.
+
 ## 0.3.12 (2026-10-31): much faster launch
 
 **Much faster launch** (measured from process start to a visible window: 266 ms before, 92 ms now)
