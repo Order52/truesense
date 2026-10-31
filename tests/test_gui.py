@@ -103,3 +103,15 @@ class TestWindowLogic(unittest.TestCase):
         b.select_group("arrows"); w.g1.set_hex("000000"); w.g2.set_hex("ffffff"); w.apply_gradient(); vals = sorted(int(b.cells[c][:2], 16) for c in b.sel); self.assertLess(vals[0], vals[-1])
         w.set_colour("zzzzzz"); self.assertEqual(w.hex_edit.text(), w.cur_hex)                                  # a bad colour is ignored
         b.select_group("all"); b.select_group("invert"); self.assertEqual(b.sel, set()); w.close()
+
+    def test_manual_fans_one_slider_when_linked_two_when_not(self):
+        from truesense import device
+        w = gui.Window(); w.show(); w.fan.btns[3].click(); self.app.processEvents(); time.sleep(0.4); self.app.processEvents()
+        self.assertTrue(w.fan_link.isChecked()); self.assertTrue(w.fan_one.isVisible()); self.assertFalse(w.fan_two.isVisible())
+        w.fan_pct.setValue(70); time.sleep(0.5); self.app.processEvents(); self.assertEqual(device.SIM.fan_duty, [70, 70])
+        w.fan_link.setChecked(False); self.app.processEvents()
+        self.assertTrue(w.fan_two.isVisible()); self.assertFalse(w.fan_one.isVisible()); self.assertEqual((w.fan_cpu.value(), w.fan_gpu.value()), (70, 70))
+        w.fan_cpu.setValue(50); time.sleep(0.5); self.app.processEvents(); self.assertEqual(device.SIM.fan_duty[0], 50)
+        w.fan_gpu.setValue(90); time.sleep(0.5); self.app.processEvents(); self.assertEqual(device.SIM.fan_duty, [50, 90])
+        w.fan_link.setChecked(True); self.app.processEvents(); self.assertEqual(w.fan_pct.value(), 90); time.sleep(0.5); self.app.processEvents(); self.assertEqual(device.SIM.fan_duty, [90, 90])
+        w.fan.btns[1].click(); self.app.processEvents(); self.assertFalse(w.fan_box.isVisible()); w.close()

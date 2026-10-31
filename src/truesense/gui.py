@@ -599,8 +599,15 @@ class Window(QMainWindow if Qt else object):
         self.line(cb, "Smart curve", self.curve_cb, self.btn("Edit", lambda: self.go("curves"))); v.addWidget(self.curve_box)
         self.fan_hint = self.hint("Smart follows your fan curve. Auto is the firmware's own control, exactly like Auto in PredatorSense on Windows (fans stop when cool)."); v.addWidget(self.fan_hint)
         self.fan_box = QWidget(); fb = QVBoxLayout(self.fan_box); fb.setContentsMargins(0, 0, 0, 0); fb.setSpacing(8)      # only shown while Manual is chosen
-        self.fan_pct = self.slider(fb, "Manual speed", 20, 100, 5, lambda x: self.live("fanpct", lambda: control.fan("manual", x)), lambda x: None, suffix=" %")
-        self.loading = True; self.fan_pct.setValue(40); self.loading = False; v.addWidget(self.fan_box); self.fan_box.setVisible(False)
+        self.fan_link = self.switch(fb, "Control both fans together", self.fan_link_changed)
+        self.fan_one = QWidget(); o = QVBoxLayout(self.fan_one); o.setContentsMargins(0, 0, 0, 0); o.setSpacing(8)
+        self.fan_pct = self.slider(o, "Fan speed", 20, 100, 5, lambda x: self.fan_manual_live(), suffix=" %"); fb.addWidget(self.fan_one)
+        self.fan_two = QWidget(); w2 = QVBoxLayout(self.fan_two); w2.setContentsMargins(0, 0, 0, 0); w2.setSpacing(8)
+        self.fan_cpu = self.slider(w2, "CPU fan", 20, 100, 5, lambda x: self.fan_manual_live(), suffix=" %"); self.fan_gpu = self.slider(w2, "GPU fan", 20, 100, 5, lambda x: self.fan_manual_live(), suffix=" %"); fb.addWidget(self.fan_two)
+        self.loading = True
+        for s_ in (self.fan_pct, self.fan_cpu, self.fan_gpu): s_.setValue(40)
+        self.fan_link.setChecked(bool(userstate.get("fan_link", True))); self.loading = False; self.fan_two.setVisible(not self.fan_link.isChecked()); self.fan_one.setVisible(self.fan_link.isChecked())
+        v.addWidget(self.fan_box); self.fan_box.setVisible(False)
         g = QGridLayout(); g.setSpacing(8)
         for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Per-key colours", "palette", "keys"), ("PREDATOR key", "settings", "predator"), ("Undervolt", "performance", "undervolt"),
                                                ("Battery and Screen", "battery", "battery"), ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
@@ -615,9 +622,26 @@ class Window(QMainWindow if Qt else object):
         if self.loading: return
         self.fan_box.setVisible(i == 3); self.curve_box.setVisible(i == 0); self.fan_apply(i)
 
+    def manual_duty(self):
+        """(cpu %, gpu %) from whichever sliders are showing."""
+        return (self.fan_pct.value(), self.fan_pct.value()) if self.fan_link.isChecked() else (self.fan_cpu.value(), self.fan_gpu.value())
+
+    def fan_manual_live(self):
+        if self.loading: return
+        c, g = self.manual_duty(); self.live("fanpct", lambda: control.fan("manual", c, g))
+
+    def fan_link_changed(self, on):
+        """One slider for both fans, or one each. Switching keeps the speeds you have: both sliders start from the same value."""
+        userstate.set("fan_link", bool(on)); self.fan_one.setVisible(on); self.fan_two.setVisible(not on); self.loading = True
+        if on: self.fan_pct.setValue(max(self.fan_cpu.value(), self.fan_gpu.value()))
+        else: self.fan_cpu.setValue(self.fan_pct.value()); self.fan_gpu.setValue(self.fan_pct.value())
+        self.loading = False
+        if self.fan.group.checkedId() == 3: self.fan_manual_live()
+
     def fan_apply(self, i):
-        mode = ("smart", "auto", "max", "manual")[i]; p = self.fan_pct.value()
-        self.do(lambda: control.fan(mode, p if mode == "manual" else None), lambda r: {"smart": "Fans: smart", "auto": "Fans: firmware auto", "max": "Fans: MAX", "manual": f"Fans: manual {p} %"}[mode], refresh=False)
+        mode = ("smart", "auto", "max", "manual")[i]; c, g = self.manual_duty()
+        self.do(lambda: control.fan(mode, c if mode == "manual" else None, g if mode == "manual" else None),
+                lambda r: {"smart": "Fans: smart", "auto": "Fans: firmware auto", "max": "Fans: MAX", "manual": f"Fans: manual CPU {c} % / GPU {g} %" if c != g else f"Fans: manual {c} %"}[mode], refresh=False)
 
     # ---- Lighting: keyboard and rear bar on one page, one at a time ------------------------------------------------------------------------
     def p_lighting(self):
@@ -1287,7 +1311,7 @@ class Window(QMainWindow if Qt else object):
         except HwError: pass
         self.ticks += 1
         idle = time.monotonic() - self.last_action > 2.0 and not any(self.busy.values()) and not self.pending
-        dragging = any(s.isSliderDown() for s in (self.kb_level, self.kb_speed, self.rear_bright, self.rear_speed, self.fan_pct, self.boost, self.pk_level))
+        dragging = any(s.isSliderDown() for s in (self.kb_level, self.kb_speed, self.rear_bright, self.rear_speed, self.fan_pct, self.fan_cpu, self.fan_gpu, self.boost, self.pk_level))
         popup = any(c.view().isVisible() for c in (self.kb_fx,))
         if self.ticks % 2 == 0 and idle and not dragging and not popup and not self.refreshing: self.full_refresh("audio_fast" if self.pages.currentIndex() == PAGES["audio"] else "home")
 
@@ -1326,7 +1350,9 @@ class Window(QMainWindow if Qt else object):
                 hl = d["state"].get("hold_left_s", 0); self.hold_box.setVisible(bool(hl) and am != "off"); self.hold_lbl.setText(f"Your pick stays until something changes (plug, a game starting or stopping, heat) or {max(1, hl // 60)} more min. Then {am} auto takes over by itself.")
                 fc = d["state"]["live"].get("fan_curve")
                 if fc and self.curve_cb.currentText() != fc and not self.curve_cb.view().isVisible(): self.curve_cb.setCurrentIndex(max(0, self.curve_cb.findText(fc)))
-                if d.get("fan", {}).get("mode") == "manual": self._set(self.fan_pct, max(20, d["fan"]["duty_register_pct"]["cpu"]))
+                if d.get("fan", {}).get("mode") == "manual":
+                    dp = d["fan"]["duty_register_pct"]; c_, g_ = max(20, dp["cpu"]), max(20, dp["gpu"])
+                    self._set(self.fan_cpu, c_); self._set(self.fan_gpu, g_); self._set(self.fan_pct, max(c_, g_))
                 fi = 0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1); self.fan.set_index(fi); self.fan_box.setVisible(fi == 3); self.curve_box.setVisible(fi == 0)
             if "ac" in d: self.src = "AC" if d["ac"] else "Battery"
             if d.get("mode") in self.modes: self.power.set_index(self.modes.index(d["mode"]))
