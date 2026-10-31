@@ -199,6 +199,20 @@ class WheelGuard(QObject if Qt else object):
         return False
 
 
+class NavFilter(QObject if Qt else object):
+    """The mouse's back button (and Alt+Left) goes back one page, like a browser; the forward button goes forward again."""
+    def __init__(self, win):
+        super().__init__(win); self.win = win
+
+    def eventFilter(self, obj, ev):
+        t = ev.type()
+        if t == QEvent.Type.MouseButtonPress and self.win.isActiveWindow():
+            if ev.button() == Qt.MouseButton.BackButton: self.win.nav_back(); return True
+            if ev.button() == Qt.MouseButton.ForwardButton: self.win.nav_forward(); return True
+        elif t == QEvent.Type.MouseButtonRelease and ev.button() in (Qt.MouseButton.BackButton, Qt.MouseButton.ForwardButton): return True      # the press was ours
+        return False
+
+
 class Bus(QObject if Qt else object):
     message = pyqtSignal(str) if Qt else None
     boot_text = pyqtSignal(str) if Qt else None
@@ -501,8 +515,10 @@ class Window(QMainWindow if Qt else object):
         self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.bus.game.connect(lambda r: self.game_show(r)); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
+        self.nav = [0]; self.nav_fwd = []; self.navigating = False; self.nav_filter = NavFilter(self); QApplication.instance().installEventFilter(self.nav_filter)
         for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
         self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else (self.battery_refresh() if i == PAGES["battery"] else None))
+        self.pages.currentChanged.connect(self.nav_changed); QShortcut(QKeySequence("Alt+Left"), self, activated=self.nav_back); QShortcut(QKeySequence("Alt+Right"), self, activated=self.nav_forward)
         QShortcut(QKeySequence("Escape"), self, activated=lambda: self.pages.setCurrentIndex(0) if self.pages.currentIndex() else None); QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
         if self.cfg["update"]["auto_check"]: QTimer.singleShot(6000, lambda: self.check_updates(False))
@@ -511,7 +527,7 @@ class Window(QMainWindow if Qt else object):
     # ---- plumbing --------------------------------------------------------------------------------------------------------------------
     def closeEvent(self, e):
         """Stop the timer and cut the worker threads off from the widgets: a late result must never land in a window that is going away."""
-        self.closing = True; self.timer.stop(); QApplication.instance().removeEventFilter(self.wheel_guard)
+        self.closing = True; self.timer.stop(); QApplication.instance().removeEventFilter(self.wheel_guard); QApplication.instance().removeEventFilter(self.nav_filter)
         for sig in (self.bus.message, self.bus.refreshed, self.bus.boot_text, self.bus.uv, self.bus.batt, self.bus.report, self.bus.upd):
             try: sig.disconnect()
             except TypeError: pass
@@ -532,6 +548,24 @@ class Window(QMainWindow if Qt else object):
     def _msg(self, t):
         self.statusBar().setStyleSheet("QStatusBar { color: #ff7b72; }" if t.startswith("Error") else "")
         self.statusBar().showMessage(t, 9000 if t.startswith("Error") else 6000)
+
+    def nav_changed(self, i):
+        if self.navigating: return
+        if not self.nav or self.nav[-1] != i: self.nav.append(i); self.nav = self.nav[-30:]; self.nav_fwd.clear()
+
+    def nav_back(self):
+        """Back: first out of a sub-tab (Lighting's Per-key tab), then to the page you came from."""
+        if self.pages.currentIndex() == PAGES["lighting"] and self.light_stack.currentIndex() > 0: self.light_tabs.set_index(0); self.light_stack.setCurrentIndex(0); return
+        if len(self.nav) < 2: return
+        self.nav_fwd.append(self.nav.pop()); self.navigating = True
+        try: self.pages.setCurrentIndex(self.nav[-1])
+        finally: self.navigating = False
+
+    def nav_forward(self):
+        if not self.nav_fwd: return
+        i = self.nav_fwd.pop(); self.nav.append(i); self.navigating = True
+        try: self.pages.setCurrentIndex(i)
+        finally: self.navigating = False
 
     def go(self, name):
         if name == "keys": self.pages.setCurrentIndex(PAGES["lighting"]); self.light_tabs.set_index(1); self.light_stack.setCurrentIndex(1); return

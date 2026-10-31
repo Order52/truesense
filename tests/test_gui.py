@@ -133,6 +133,22 @@ class TestWindowLogic(unittest.TestCase):
         fx = perkeyfx.get(); self.assertEqual((fx["mode"], fx["speed"], len(fx["keys"]), len(fx["base"])), ("wave", 4, 4, 128))
         w.fx_cb.setCurrentIndex(0); w.fx_push(); self.assertTrue(self._wait(lambda: perkeyfx.get().get("mode") == "off")); w.close()
 
+    def test_back_button_goes_back_through_pages_and_subtabs(self):
+        from PyQt6.QtCore import QEvent, QPointF, Qt
+        from PyQt6.QtGui import QMouseEvent
+        w = gui.Window(); w.show(); w.go("audio"); w.go("smart"); w.go("keys")
+        self.assertEqual(w.pages.currentIndex(), gui.PAGES["lighting"]); self.assertEqual(w.light_stack.currentIndex(), 1)
+        w.nav_back(); self.assertEqual(w.pages.currentIndex(), gui.PAGES["lighting"]); self.assertEqual(w.light_stack.currentIndex(), 0)       # out of the sub-tab first
+        w.nav_back(); self.assertEqual(w.pages.currentIndex(), gui.PAGES["smart"]); w.nav_back(); self.assertEqual(w.pages.currentIndex(), gui.PAGES["audio"])
+        w.nav_forward(); self.assertEqual(w.pages.currentIndex(), gui.PAGES["smart"])
+        w.go("battery"); w.nav_forward(); self.assertEqual(w.pages.currentIndex(), gui.PAGES["battery"], "a new page clears the forward history")
+        def press(btn): return QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(5, 5), QPointF(5, 5), btn, btn, Qt.KeyboardModifier.NoModifier)
+        w.activateWindow(); self.app.processEvents()
+        if w.isActiveWindow(): self.assertTrue(w.nav_filter.eventFilter(w, press(Qt.MouseButton.BackButton))); self.assertEqual(w.pages.currentIndex(), gui.PAGES["smart"])
+        self.assertFalse(w.nav_filter.eventFilter(w, press(Qt.MouseButton.LeftButton)))
+        for _ in range(40): w.nav_back()
+        self.assertEqual(w.pages.currentIndex(), 0); w.close()
+
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
         w = gui.Window(); w.go("keys"); names = [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]; self.assertIn("gaming", names)

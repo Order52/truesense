@@ -1,6 +1,6 @@
 # Release notes
 
-## 0.3.5 (unreleased)
+## 0.3.5
 
 Ideas gathered from four related projects (Venator, jma-studio, acer-predator-helios-rgb, PreySense); everything was written from scratch.
 
@@ -8,6 +8,7 @@ Ideas gathered from four related projects (Venator, jma-studio, acer-predator-he
 - `keyboard design` (built-in gaming, coding, ice, ember, stealth, arrows; your own JSON files) and `keyboard image` (picture across the keys).
 - Game rules: `power game add PROGRAM MODE` raises the power mode while a program runs.
 - The "too hot" state now releases 5 degrees below its line (no flapping).
+- Window: Designs and pictures on the Per-key tab, Game rules on the Smart page, hardware self-test and service log in Settings; the mouse back and forward buttons (and Alt+Left / Alt+Right) move through pages.
 - `doctor` lists other power managers (tuned, tlp, auto-cpufreq, ...) that can fight the power modes.
 
 ## 0.3.4 (2026-10-31): one-line, multi-distribution installer; AUR package
