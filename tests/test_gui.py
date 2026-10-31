@@ -168,7 +168,7 @@ class TestWindowLogic(unittest.TestCase):
     def test_fan_sliders_are_20_to_100_and_the_off_button_asks(self):
         w = gui.Window(); self.assertTrue(hasattr(w, "fan_off_btn"), "the Turn fans off button is there")
         for sl in (w.fan_pct, w.fan_cpu, w.fan_gpu): self.assertEqual((sl.minimum(), sl.maximum()), (20, 100))
-        self.assertEqual(w.manual_duty()[0] >= 20, True); w.fan_link.setChecked(False); w.fan_cpu.setValue(20); w.fan_gpu.setValue(65); self.assertEqual(w.manual_duty(), (20, 65)); w.fan_link.setChecked(True)
+        self.assertEqual(w.manual_duty()[0] >= 20, True); w.fan_link.setChecked(False); w.loading = True; w.fan_cpu.setValue(20); w.fan_gpu.setValue(65); w.loading = False; self.assertEqual(w.manual_duty(), (20, 65)); w.fan_link.setChecked(True); time.sleep(0.4)   # (loading above: no live fan write from the slider moves; this saves the setting again)
         from PyQt6.QtWidgets import QMessageBox
         import truesense.control as control_mod
         calls = []; orig_exec, orig_fan = QMessageBox.exec, control_mod.fan

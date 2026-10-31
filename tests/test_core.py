@@ -634,3 +634,16 @@ class TestPowerManagers(unittest.TestCase):
         for n in range(3): open(f"{sysd}/cpu{n}/cpufreq/scaling_governor", "w").write("schedutil")
         self.assertEqual(len(pm.ceiling_low(sysd)), 3); r = pm.takeover(run, sysd, rec)
         self.assertEqual(r["found"], []); self.assertTrue(r["ceiling_fixed"]); self.assertEqual(pm.cpu_state(sysd)["governor"], "schedutil", "your governor is not touched when nothing was in charge and turbo is on")
+
+
+class TestUserStateLocking(unittest.TestCase):
+    def test_concurrent_writers_never_lose_a_key(self):
+        import threading, tempfile, os as _os
+        from truesense import userstate
+        d = tempfile.mkdtemp(); old = userstate.PATH; userstate.PATH = d + "/user.json"
+        try:
+            def w(n):
+                for i in range(25): userstate.set(f"k{n}_{i}", i)
+            ts = [threading.Thread(target=w, args=(n,)) for n in range(6)]; [t.start() for t in ts]; [t.join() for t in ts]
+            data = userstate.load(); self.assertEqual(len(data), 6 * 25, "every key written by every thread is still there")
+        finally: userstate.PATH = old
