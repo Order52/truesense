@@ -128,6 +128,7 @@ QComboBox QAbstractItemView { background: #1d1f24; border: 1px solid #222b37; se
 QLineEdit { background: #1b1d22; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; }
 QLineEdit:focus { border-color: #58a6ff; }
 QPushButton:focus { border: 1px solid #58a6ff; }
+QPushButton:disabled { color: #5d646e; background: #17191d; border-color: #20242a; }
 QComboBox:focus { border-color: #58a6ff; }
 QToolTip { background: #202328; color: #e8edf3; border: 1px solid #2e3239; padding: 6px; }
 QCheckBox { spacing: 12px; background: transparent; }
@@ -707,39 +708,57 @@ class Window(QMainWindow if Qt else object):
         stack.addWidget(self.looks_tab()); lay.addStretch()
 
     def looks_tab(self):
-        """Saved looks (a named keyboard effect/brightness/colours plus rear light) and what is applied at boot."""
-        w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
-        v.addWidget(self.hint("Set the keyboard and rear light the way you like (effect, speed, brightness), then save it as a look."))
-        self.look_cb = QComboBox(); self.look_cb.setMinimumWidth(150)
-        self.line(v, "Saved looks", self.look_cb, self.btn("Apply", self.look_apply, True), self.btn("Delete", self.look_delete))
-        self.look_name = QLineEdit(); self.look_name.setPlaceholderText("name, e.g. wave-dim"); self.look_name.setMinimumWidth(150)
-        self.line(v, "Save what is on now", self.look_name, self.btn("Save", self.look_save)); self.sep(v)
-        self.boot_cb = QComboBox(); self.boot_cb.setMinimumWidth(150)
-        self.line(v, "Use at boot", self.boot_cb, self.btn("Set", self.boot_set), self.btn("Clear", lambda: self.do(lambda: ipc.call("boot_look", action="clear"), "Nothing is applied at boot now", refresh=False)))
-        self.boot_lbl = self.hint("…"); v.addWidget(self.boot_lbl)
-        v.addWidget(self.hint("Applied by the TrueSense service when the laptop starts (before you log in) and again after every resume from suspend."))
-        self.reload_looks(); v.addStretch(); return w
+        """Lighting profiles: the keyboard look (effect, speed, brightness or per-key colours) and the rear bar, saved under a name. Works like the other profile pages."""
+        w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(14)
+        v.addWidget(self.hint("A lighting profile remembers the keyboard and the rear bar as they are now. Set the lights the way you like (Keyboard, Per-key, Rear bar), then save them here."))
+        c = self.card(v, "Profile"); self.look_cb = QComboBox(); self.look_cb.setMinimumWidth(150); self.look_cb.activated.connect(lambda i: self.look_selected())
+        self.line(c, "Profile", self.look_cb, self.btn("Apply", self.look_apply, True)); self.look_copy = self.btn("Copy to edit", self.look_copy_do); self.look_del = self.btn("Delete", self.look_delete)
+        self.line(c, "Edit", self.look_copy, self.look_del); self.look_name = QLineEdit(); self.look_name.setPlaceholderText("name"); self.look_name.setMinimumWidth(120); self.look_save_btn = self.btn("Save", self.look_save)
+        self.line(c, "Save as", self.look_name, self.look_save_btn); self.look_msg = self.hint(""); c.addWidget(self.look_msg); self.line(c, "Default", self.btn("Reset to default", self.look_reset))
+        c = self.card(v, "At boot")
+        c.addWidget(self.hint("Applied by the TrueSense service when the laptop starts (before you log in) and again after every resume from suspend."))
+        self.boot_cb = QComboBox(); self.boot_cb.setMinimumWidth(150); self.line(c, "Profile", self.boot_cb, self.btn("Use", self.boot_set, True)); self.line(c, "Boot lighting", self.btn("Don't change at boot", lambda: self.do(lambda: ipc.call("boot_look", action="clear"), "Lighting is left alone at boot", refresh=False) or QTimer.singleShot(500, self.reload_looks)))
+        self.boot_lbl = self.hint("…"); c.addWidget(self.boot_lbl); self.reload_looks(); v.addStretch(); return w
 
-    def reload_looks(self):
-        ns = looks.names(); self.look_cb.clear(); self.look_cb.addItems(ns or ["(none saved)"])
-        self.boot_cb.clear(); self.boot_cb.addItem("What is on now", "__current__"); [self.boot_cb.addItem(n, n) for n in ns]
+    def reload_looks(self, select=None):
+        ns = looks.names(); sel = select or (self.look_cb.currentText() if self.look_cb.count() else "native"); self.look_cb.clear(); self.look_cb.addItems(ns); self.look_cb.setCurrentIndex(max(0, self.look_cb.findText(sel)))
+        self.boot_cb.clear(); self.boot_cb.addItem("What is on now", "__current__"); [self.boot_cb.addItem(n, n) for n in ns]; self.look_selected()
         def work():
-            try: cur = ipc.call("boot_look", action="get"); txt = ("At boot: " + looks.describe(cur)) if cur else "At boot: nothing is applied"
+            try: cur = ipc.call("boot_look", action="get"); txt = ("At boot: " + looks.describe(cur)) if cur else "At boot: the lighting is left alone"
             except Exception as e: txt = "At boot: needs the updated service (re-run the installer)" if "unknown command" in str(e) else f"At boot: unknown ({e})"
             self.say_boot(txt)
         threading.Thread(target=work, daemon=True).start()
 
+    def look_selected(self):
+        name = self.look_cb.currentText(); builtin = name in looks.BUILTIN
+        self.look_copy.setVisible(builtin); self.look_del.setEnabled(not builtin); self.look_save_btn.setEnabled(not builtin or bool(self.look_name.text().strip()))
+        try: d = looks.describe(looks.load(name))
+        except Exception: d = ""
+        self.look_msg.setText((f"Built in, read-only: PredatorSense's own lighting. Press Copy to edit to make your own.   {d}" if builtin else d))
+
     def look_save(self):
-        name = self.look_name.text().strip()
+        name = self.look_name.text().strip() or self.look_cb.currentText()
         def go(): looks.save(name); return name
-        self.do(go, lambda n: f"Saved look '{n}'", refresh=False); QTimer.singleShot(400, self.reload_looks)
+        self.do(go, lambda n: f"Saved lighting profile '{n}'", refresh=False); QTimer.singleShot(500, lambda: (self.reload_looks(name), self.look_name.clear()))
+
+    def look_copy_do(self):
+        src = self.look_cb.currentText()
+        try: n = looks.copy(src, self.look_name.text().strip() or None)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_looks(n); self.look_name.clear(); self.say(f"Copied '{src}' to '{n}'. Change the lights, then Save to update it.")
 
     def look_apply(self):
         n = self.look_cb.currentText()
-        self.do(lambda: looks.apply(looks.load(n)), lambda r: f"Look '{n}': " + ", ".join(r), refresh=False)
+        self.do(lambda: looks.apply(looks.load(n)), lambda r: f"Lighting profile '{n}' applied", refresh=True)
 
     def look_delete(self):
-        n = self.look_cb.currentText(); self.do(lambda: looks.delete(n), f"Deleted look '{n}'", refresh=False); QTimer.singleShot(400, self.reload_looks)
+        n = self.look_cb.currentText()
+        try: looks.delete(n)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_looks("native"); self.say(f"Deleted lighting profile '{n}'")
+
+    def look_reset(self):
+        self.do(lambda: looks.apply(looks.load("native")), "Lighting back to the default (native)", refresh=True); self.reload_looks("native")
 
     def boot_set(self):
         sel = self.boot_cb.currentData()
@@ -795,7 +814,7 @@ class Window(QMainWindow if Qt else object):
         self.pk_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("pkb", lambda: keyboard.set_brightness(x)))
         self.line(v, "Fill and presets", self.btn("Fill all", self.fill_all), self.btn("Rainbow", self.rainbow_all))
         self.line(v, "Reset", self.btn("Reset to stock", self.reset_keys))
-        self.pk_name = QLineEdit(); self.pk_name.setPlaceholderText("name, e.g. my-keys"); self.pk_name.setMinimumWidth(130); self.line(v, "Save as a look", self.pk_name, self.btn("Save", self.save_perkey_look))
+        self.pk_name = QLineEdit(); self.pk_name.setPlaceholderText("name, e.g. my-keys"); self.pk_name.setMinimumWidth(130); self.line(v, "Save as a lighting profile", self.pk_name, self.btn("Save", self.save_perkey_look))
         lay.addStretch(); return w
 
     def sel_changed(self):
@@ -875,7 +894,7 @@ class Window(QMainWindow if Qt else object):
     def save_perkey_look(self):
         name = self.pk_name.text().strip()
         def go(): looks.save(name, {"keyboard": {"mode": "perkey", "brightness": keyboard.get_brightness() or 25, "cells": list(self.board.cells)}, "rear": None}); return name
-        self.do(go, lambda n: f"Saved look '{n}' (apply it in Lighting, Profiles)", refresh=False)
+        self.do(go, lambda n: f"Saved lighting profile '{n}' (Lighting, Profiles)", refresh=False); QTimer.singleShot(500, lambda: self.reload_looks(self.pk_name.text().strip() or None))
 
     # ---- Battery and screen ------------------------------------------------------------------------------------------------------------
     def p_battery(self):

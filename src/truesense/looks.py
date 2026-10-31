@@ -54,6 +54,12 @@ def delete(name):
     except FileNotFoundError: raise HwError(f"no look '{name}'")
 
 
+def copy(name, new=None):
+    base = new or name + "-copy"; n, target = 2, base
+    while target in names(): target = f"{base}-{n}"; n += 1
+    save(target, load(name)); return target
+
+
 def describe(look):
     k, r = look.get("keyboard") or {}, look.get("rear") or {}
     kd = (f"keyboard {k.get('name', k.get('mode'))} brightness {k.get('brightness', '?')}" + (f" speed {k['speed']}" if k.get("speed") else "")) if k else "keyboard unchanged"

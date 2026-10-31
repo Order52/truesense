@@ -122,3 +122,13 @@ class TestWindowLogic(unittest.TestCase):
         w.board.select_group("wasd"); w.fx_cb.setCurrentIndex(w.fx_cb.findData("wave")); w.fx_speed.setValue(4); w.fx_push(); time.sleep(0.4); self.app.processEvents()
         fx = perkeyfx.get(); self.assertEqual((fx["mode"], fx["speed"], len(fx["keys"]), len(fx["base"])), ("wave", 4, 4, 128))
         w.fx_cb.setCurrentIndex(0); w.fx_push(); time.sleep(0.4); self.app.processEvents(); self.assertEqual(perkeyfx.get()["mode"], "off"); w.close()
+
+    def test_lighting_profiles_work_like_the_other_profile_pages(self):
+        from truesense import looks
+        w = gui.Window(); w.look_cb.setCurrentIndex(w.look_cb.findText("native")); w.look_selected()
+        self.assertFalse(w.look_del.isEnabled()); self.assertFalse(w.look_copy.isHidden())                     # native: read-only, copy to edit
+        w.look_name.setText("my-lights"); w.look_selected(); w.look_copy_do(); self.assertIn("my-lights", looks.names()); self.assertTrue(w.look_copy.isHidden()); self.assertTrue(w.look_del.isEnabled())
+        looks.save("my-lights", {"keyboard": {"mode": "effect", "name": "wave", "color": "00ff00", "speed": 4, "brightness": 20, "direction": 0}, "rear": None})
+        w.look_cb.setCurrentIndex(w.look_cb.findText("my-lights")); w.look_delete(); self.assertNotIn("my-lights", looks.names()); self.assertEqual(w.look_cb.currentText(), "native")
+        with self.assertRaises(__import__('truesense.device', fromlist=['HwError']).HwError): looks.save("native", {"keyboard": None, "rear": None})
+        w.close()

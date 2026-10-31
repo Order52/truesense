@@ -40,7 +40,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `gpu status`, `gpu set optimus\|nvidia\|auto` | MUX mode (reboot to apply) |
 | `rear on\|off\|toggle`, `rear set EFFECT --color RRGGBB --speed 1..5 --brightness 0..100` | static breathing neon wave twinkling |
 | `rear set static --zones L,M,R` | the light bar has three parts; static can colour each (one colour = all three) |
-| `look list\|save NAME\|show NAME\|apply NAME\|delete NAME` | saved lighting looks: the keyboard effect, speed, brightness (or per-key colours) and the rear light, e.g. `look save wave-dim` |
+| `look list\|save NAME\|show NAME\|apply NAME\|delete NAME` | saved lighting profiles ("looks"; the window's Lighting, Profiles tab works like the other profile pages, with a read-only `native` profile and Copy to edit): the keyboard effect, speed, brightness (or per-key colours) and the rear light, e.g. `look save wave-dim` |
 | `startup boot [NAME\|current\|clear]` | the look applied at BOOT (before login) and after every resume from suspend, by the root service; no argument shows it |
 | `startup show`, `startup set keyboard\|rear\|profile VALUE`, `startup apply` | what comes back at login: `last` (default, saved automatically), `default`, `off`, `none`; keyboard also `profile:NAME`; profile = a full profile applied first |
 | `keyboard on\|off\|toggle`, `restore`, `brightness N` (0-50), `timeout on\|off` | backlight |
