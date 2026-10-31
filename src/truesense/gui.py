@@ -247,6 +247,18 @@ class Window(QMainWindow if Qt else object):
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(2000); self.full_refresh(); self.tick()
 
     # ---- plumbing --------------------------------------------------------------------------------------------------------------------
+    def say(self, t):
+        try: self.bus.message.emit(t)
+        except RuntimeError: pass                      # the window closed while a worker thread was finishing
+
+    def say_refresh(self, d):
+        try: self.bus.refreshed.emit(d)
+        except RuntimeError: pass
+
+    def say_boot(self, s):
+        try: self.bus.boot_text.emit(s)
+        except RuntimeError: pass
+
     def _msg(self, t):
         self.statusBar().setStyleSheet("QStatusBar { color: #ff7b72; }" if t.startswith("Error") else "")
         self.statusBar().showMessage(t, 9000 if t.startswith("Error") else 6000)
@@ -256,8 +268,8 @@ class Window(QMainWindow if Qt else object):
     def do(self, fn, ok="done", refresh=True):
         """Run a backend call off the UI thread; show its result or its error."""
         def work():
-            try: r = fn(); self.bus.message.emit(ok(r) if callable(ok) else ok)
-            except Exception as e: self.bus.message.emit(f"Error: {e}")
+            try: r = fn(); self.say(ok(r) if callable(ok) else ok)
+            except Exception as e: self.say(f"Error: {e}")
             if refresh: self.full_refresh()
         threading.Thread(target=work, daemon=True).start()
 
@@ -267,7 +279,7 @@ class Window(QMainWindow if Qt else object):
         self.busy[key] = True
         def work():
             try: fn()
-            except Exception as e: self.bus.message.emit(f"Error: {e}")
+            except Exception as e: self.say(f"Error: {e}")
             self.busy[key] = None; nxt = self.pending.pop(key, None)
             if nxt: self.live(key, nxt)
         threading.Thread(target=work, daemon=True).start()
@@ -394,7 +406,7 @@ class Window(QMainWindow if Qt else object):
         def work():
             try: cur = ipc.call("boot_look", action="get"); txt = ("At boot: " + looks.describe(cur)) if cur else "At boot: nothing is applied"
             except Exception as e: txt = "At boot: needs the updated service (re-run the installer)" if "unknown command" in str(e) else f"At boot: unknown ({e})"
-            self.bus.boot_text.emit(txt)
+            self.say_boot(txt)
         threading.Thread(target=work, daemon=True).start()
 
     def look_save(self):
@@ -547,7 +559,7 @@ class Window(QMainWindow if Qt else object):
                 get("state", lambda: ipc.call("state")); get("mode", hw.get_mode); get("fan", hw.fan_state); get("rear", hw.rear_get); get("kb", keyboard.get_brightness)
                 get("kbtimeout", hw.get_kb_timeout); get("limit", hw.get_battery_limit); get("calib", hw.get_calibration); get("usb", hw.get_usb_charge); get("od", hw.get_overdrive)
                 get("boot", hw.get_boot_sound); get("gpu", hw.get_gpu_mode); get("look", keyboard.last); get("cells", keyboard.current_cells); get("ac", hw.on_ac)
-            self.bus.refreshed.emit(d)
+            self.say_refresh(d)
         threading.Thread(target=work, daemon=True).start()
 
     @staticmethod
