@@ -174,6 +174,16 @@ class TestWindowLogic(unittest.TestCase):
         w.fan_cpu.setValue(70); w.fan_gpu.setValue(0); self.assertEqual(w.manual_duty(), (70, 0), "so can the GPU fan alone"); w.fan_gpu.setValue(10); self.assertEqual(w.manual_duty(), (70, 20))
         w.fan_released(); self.assertEqual(w.fan_gpu.value(), 20); w.fan_link.setChecked(True); w.close()
 
+    def test_every_page_fits_the_smallest_window_and_esc_closes(self):
+        w = gui.Window(); w.show(); self.assertFalse(w.minimumSize() == w.maximumSize(), "the window can be resized"); self.assertLessEqual(w.minimumWidth(), 400)
+        for name, i in gui.PAGES.items():
+            need = w.pages.widget(i).widget().minimumSizeHint().width()
+            self.assertLessEqual(need, w.minimumWidth() - 28, f"the {name} page needs {need} px, more than the smallest window gives it (it would be cut off)")
+        w.resize(w.minimumWidth(), 560); self.app.processEvents(); self.assertEqual(w.width(), w.minimumWidth())
+        w.apply_size_mode(True); self.assertEqual(w.minimumSize(), w.maximumSize()); w.apply_size_mode(False); self.assertNotEqual(w.minimumSize(), w.maximumSize())
+        from PyQt6.QtGui import QShortcut, QKeySequence
+        esc = [sc for sc in w.findChildren(QShortcut) if sc.key() == QKeySequence("Escape")]; self.assertEqual(len(esc), 1); esc[0].activated.emit(); self.assertFalse(w.isVisible(), "Esc closes the app"); w.close()
+
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
         w = gui.Window(); w.go("keys"); names = [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]; self.assertIn("gaming", names)

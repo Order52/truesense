@@ -14,7 +14,7 @@ try:
     from PyQt6.QtCore import QByteArray, QSize
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap, QImage, QShortcut, QKeySequence
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                                 QPushButton, QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
+                                 QPushButton, QScrollArea, QSlider, QBoxLayout, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QAbstractSpinBox, QDoubleSpinBox, QGridLayout, QFileDialog, QMessageBox, QInputDialog)
     from PyQt6.QtGui import QDesktopServices
     from PyQt6.QtCore import QUrl
 except ImportError as _e:
@@ -78,6 +78,9 @@ class TileButton(QPushButton if Qt else object):
         super().__init__(); self.label, self.icon_name, self.fill = label, icon, fill
         self.setCheckable(True); self.setCursor(Qt.CursorShape.PointingHandCursor); self.setMinimumHeight(66); self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
+    def minimumSizeHint(self): return QSize(50, 66)
+    def sizeHint(self): return QSize(76, 66)
+
     def paintEvent(self, _):
         p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing); r = QRectF(self.rect()).adjusted(1, 1, -1, -1); on = self.isChecked(); hot = self.underMouse()
         if on and self.fill: bg, fg, border = QColor(self.fill), "#06121f", QColor(self.fill)
@@ -85,7 +88,12 @@ class TileButton(QPushButton if Qt else object):
         else: bg, fg, border = QColor("#272b32" if hot else "#202328"), "#aab3c0", QColor("#1f2733")
         p.setBrush(bg); p.setPen(QPen(border, 1.4)); p.drawRoundedRect(r, 12, 12)
         px = icon_pixmap(self.icon_name, fg, 22); p.drawPixmap(int(r.center().x() - 11), int(r.top() + 10), px)
-        f = QFont(self.font()); f.setBold(on); f.setPixelSize(12); p.setFont(f); p.setPen(QColor(fg)); p.drawText(QRectF(r.left(), r.top() + 36, r.width(), r.height() - 38), Qt.AlignmentFlag.AlignCenter, self.label)
+        f = QFont(self.font()); f.setBold(on); px_ = 12
+        while px_ > 8:                                                   # a long label shrinks to fit a narrow tile
+            f.setPixelSize(px_); p.setFont(f)
+            if p.fontMetrics().horizontalAdvance(self.label) <= r.width() - 6: break
+            px_ -= 1
+        f.setPixelSize(px_); p.setFont(f); p.setPen(QColor(fg)); p.drawText(QRectF(r.left(), r.top() + 36, r.width(), r.height() - 38), Qt.AlignmentFlag.AlignCenter, self.label)
 
 
 ACCENT = "#58a6ff"
@@ -165,6 +173,55 @@ JACK_HINT = {"auto": "Uses what the codec detects when you plug something in.",
 
 AUTOSTART = os.path.expanduser("~/.config/autostart/truesense.desktop")
 PAGES = {"home": 0, "lighting": 1, "battery": 2, "audio": 3, "settings": 4, "curves": 5, "smart": 6, "predator": 7, "undervolt": 8}      # "keys" opens Lighting on its Per-key tab
+
+
+class Row(QWidget if Qt else object):
+    """A settings row: the name on the left, the controls on the right. When the window is too narrow for both, the controls move under the name (and text boxes and drop-downs stretch), so nothing is ever cut off."""
+    NAME_MIN = 120
+
+    def __init__(self, label, widgets, gap=10):
+        super().__init__(); self.label = label; self.widgets = list(widgets); self.gap = gap; self.stacked = None
+        self.box = QBoxLayout(QBoxLayout.Direction.LeftToRight, self); self.box.setContentsMargins(0, 2, 0, 2); self.box.setSpacing(6)
+        self.inner = QHBoxLayout(); self.inner.setSpacing(gap); self.inner.setContentsMargins(0, 0, 0, 0)
+        self.box.addWidget(label, 1); self.box.addLayout(self.inner); self.pref = {}; self.policy = {}
+        for w in self.widgets:
+            self.inner.addWidget(w)
+            if isinstance(w, (QComboBox, QLineEdit)): self.pref[w] = w.minimumWidth(); self.policy[w] = w.sizePolicy()
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+
+    def minimumSizeHint(self): return QSize(60, super().minimumSizeHint().height())
+
+    def need(self): return self.NAME_MIN + self.box.spacing() + sum(max(w.sizeHint().width(), self.pref.get(w, 0)) for w in self.widgets) + self.gap * max(0, len(self.widgets) - 1)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e); stack = bool(self.widgets) and self.need() > self.width()
+        if stack == self.stacked: return
+        self.stacked = stack; self.box.setDirection(QBoxLayout.Direction.TopToBottom if stack else QBoxLayout.Direction.LeftToRight)
+        for w, m in self.pref.items():
+            w.setMinimumWidth(min(m, 80) if stack else m)
+            if stack: w.setSizePolicy(QSizePolicy.Policy.Expanding, w.sizePolicy().verticalPolicy())
+            else: w.setSizePolicy(self.policy[w])
+        self.updateGeometry()
+
+
+class FlowGrid(QWidget if Qt else object):
+    """Buttons in a grid that uses two columns when there is room and one when there is not."""
+    def __init__(self, items, two_at=340):
+        super().__init__(); self.items = list(items); self.two_at = two_at; self.cols = None; self.grid = QGridLayout(self); self.grid.setContentsMargins(0, 0, 0, 0); self.grid.setSpacing(8)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum); self._fill(2 if two_at else 1)
+
+    def minimumSizeHint(self): return QSize(60, super().minimumSizeHint().height())
+
+    def _fill(self, cols):
+        self.cols = cols
+        for w in self.items: self.grid.removeWidget(w)
+        for n, w in enumerate(self.items): self.grid.addWidget(w, n // cols, n % cols)
+        for c in range(2): self.grid.setColumnStretch(c, 1 if c < cols else 0)
+        self.updateGeometry()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e); cols = 2 if self.width() >= self.two_at else 1
+        if cols != self.cols: self._fill(cols)
 
 
 class Segmented(QWidget if Qt else object):
@@ -347,6 +404,10 @@ class PerKeyBoard(QWidget if Qt else object):
     def mouseReleaseEvent(self, e): self.band = None; self.press_pos = None; self.update()
     def leaveEvent(self, e): self.hover = None; self.update()
 
+    def event(self, e):
+        if e.type() == QEvent.Type.ShortcutOverride and e.key() == Qt.Key.Key_Escape and self.sel: e.accept(); return True        # Esc clears a selection first; the next Esc closes the window
+        return super().event(e)
+
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_A and e.modifiers() & Qt.KeyboardModifier.ControlModifier: self.sel = {c for kk in self.keys for c in kk[1]}; self._emit()
         elif e.key() == Qt.Key.Key_Escape: self.sel = set(); self._emit()
@@ -455,8 +516,9 @@ class CurveEditor(QWidget if Qt else object):
     T0, T1 = 30, 100
 
     def __init__(self):
-        super().__init__(); self.setFixedSize(432, 250); self.setMouseTracking(True); self.curve = curves.load("truesense"); self.side = "cpu"; self.drag = None; self.locked = False; self.marks = {"cpu": None, "gpu": None}
+        super().__init__(); self.setMinimumWidth(280); self.setFixedHeight(250); self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed); self.setMouseTracking(True); self.curve = curves.load("truesense"); self.side = "cpu"; self.drag = None; self.locked = False; self.marks = {"cpu": None, "gpu": None}
 
+    def sizeHint(self): return QSize(432, 250)
     def set_curve(self, c): self.curve = c; self.update()
     def pts(self): return self.curve[self.side]
     def _xy(self, t, p): return 38 + (t - self.T0) / (self.T1 - self.T0) * (self.width() - 52), 14 + (1 - p / 100) * (self.height() - 44)
@@ -510,7 +572,7 @@ class CurveEditor(QWidget if Qt else object):
 class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
-        geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
+        self.apply_size_mode(bool(userstate.get("gui_fixed", False)), save=False)
         self.wheel_guard = WheelGuard(self); QApplication.instance().installEventFilter(self.wheel_guard)
         self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.bus.game.connect(lambda r: self.game_show(r)); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
@@ -519,7 +581,7 @@ class Window(QMainWindow if Qt else object):
         for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
         self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else (self.battery_refresh() if i == PAGES["battery"] else None))
         self.pages.currentChanged.connect(self.nav_changed); QShortcut(QKeySequence("Alt+Left"), self, activated=self.nav_back); QShortcut(QKeySequence("Alt+Right"), self, activated=self.nav_forward)
-        QShortcut(QKeySequence("Escape"), self, activated=lambda: self.pages.setCurrentIndex(0) if self.pages.currentIndex() else None); QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
+        QShortcut(QKeySequence("Escape"), self, activated=self.close); QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
         if self.cfg["update"]["auto_check"]: QTimer.singleShot(6000, lambda: self.check_updates(False))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(1000); self.full_refresh(); self.tick()
@@ -548,6 +610,13 @@ class Window(QMainWindow if Qt else object):
     def _msg(self, t):
         self.statusBar().setStyleSheet("QStatusBar { color: #ff7b72; }" if t.startswith("Error") else "")
         self.statusBar().showMessage(t, 9000 if t.startswith("Error") else 6000)
+
+    def apply_size_mode(self, fixed, save=True):
+        """Resizable by default (fits any window size). "Fixed size" gives the old 480 pixel window, which tiling desktops (Hyprland, sway) keep floating."""
+        if save: userstate.set("gui_fixed", bool(fixed))
+        h = min(760, QApplication.primaryScreen().availableGeometry().height() - 60)
+        if fixed: self.setFixedSize(480, h)
+        else: self.setMinimumSize(380, 480); self.setMaximumSize(16777215, 16777215); self.resize(max(self.width(), 480) if self.isVisible() else 480, h)
 
     def nav_changed(self, i):
         if self.navigating: return
@@ -592,8 +661,8 @@ class Window(QMainWindow if Qt else object):
         threading.Thread(target=work, daemon=True).start()
 
     def page(self, heading, back=True):
-        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(24, 18, 24, 20); lay.setSpacing(14)
-        sc = QScrollArea(); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); sc.setWidget(w); self.pages.addWidget(sc)
+        w = QWidget(); w.setMaximumWidth(860); lay = QVBoxLayout(w); lay.setContentsMargins(24, 18, 24, 20); lay.setSpacing(14)
+        sc = QScrollArea(); sc.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); sc.setWidget(w); self.pages.addWidget(sc)
         h = QHBoxLayout(); h.setSpacing(10)
         if back:
             b = self.btn(" Back", lambda: self.pages.setCurrentIndex(0)); b.setIcon(make_icon("back")); b.setObjectName("quiet"); h.addWidget(b)
@@ -608,7 +677,7 @@ class Window(QMainWindow if Qt else object):
         if icon:
             il = QLabel(); il.setPixmap(icon_pixmap(icon, "#dfe5ee", 20)); il.setFixedSize(22, 22); h.addWidget(il)
         t_ = QLabel(title); t_.setObjectName("cardtitle"); h.addWidget(t_); h.addStretch(); v.right = None
-        if right: v.right = QLabel(""); v.right.setObjectName("stats"); v.right.setMinimumWidth(190); v.right.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter); h.addWidget(v.right)
+        if right: v.right = QLabel(""); v.right.setObjectName("stats"); v.right.setWordWrap(True); v.right.setMinimumWidth(0); v.right.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred); v.right.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter); h.addWidget(v.right)
         v.addLayout(h); lay.addWidget(c); return v
 
     @staticmethod
@@ -620,10 +689,8 @@ class Window(QMainWindow if Qt else object):
         f = QFrame(); f.setObjectName("sep"); v.addWidget(f)
 
     def line(self, v, text, *widgets, sub=None):
-        """One settings row: the name on the left, the control on the right."""
-        h = QHBoxLayout(); h.setSpacing(10); h.setContentsMargins(0, 2, 0, 2); lab = QLabel(text); lab.setWordWrap(True); h.addWidget(lab, 1)
-        for w in widgets: h.addWidget(w)
-        v.addLayout(h)
+        """One settings row: the name on the left, the control on the right (under the name when the window is narrow)."""
+        lab = QLabel(text); lab.setWordWrap(True); v.addWidget(Row(lab, widgets))
         if sub: v.addWidget(self.hint(sub))
         return lab
 
@@ -688,11 +755,11 @@ class Window(QMainWindow if Qt else object):
         for s_ in (self.fan_pct, self.fan_cpu, self.fan_gpu): s_.setValue(40)
         self.fan_link.setChecked(bool(userstate.get("fan_link", True))); self.loading = False; self.fan_two.setVisible(not self.fan_link.isChecked()); self.fan_one.setVisible(self.fan_link.isChecked())
         v.addWidget(self.fan_box); self.fan_box.setVisible(False)
-        g = QGridLayout(); g.setSpacing(8)
+        btns = []
         for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Fan curves", "fan", "curves"), ("PREDATOR key", "settings", "predator"), ("Undervolt", "performance", "undervolt"),
                                                ("Battery and Screen", "battery", "battery"), ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
-            b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); g.addWidget(b_, n // 2, n % 2)
-        lay.addSpacing(4); lay.addLayout(g); lay.addStretch()
+            b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); btns.append(b_)
+        lay.addSpacing(4); lay.addWidget(FlowGrid(btns)); lay.addStretch()
 
     def auto_picked(self, i):
         if self.loading: return
@@ -888,7 +955,7 @@ class Window(QMainWindow if Qt else object):
         self.line(v, "Selected colour", self.cur_btn, self.hex_edit)
         g = QGridLayout(); g.setSpacing(6)
         for i, c in enumerate(PALETTE):
-            b_ = QPushButton(); b_.setFixedSize(34, 26); b_.setStyleSheet(f"background:#{c}; border:2px solid #2e3239; border-radius:7px;"); b_.setCursor(Qt.CursorShape.PointingHandCursor)
+            b_ = QPushButton(); b_.setMinimumSize(20, 26); b_.setFixedHeight(26); b_.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed); b_.setStyleSheet(f"background:#{c}; border:2px solid #2e3239; border-radius:7px;"); b_.setCursor(Qt.CursorShape.PointingHandCursor)
             b_.clicked.connect(lambda _, c=c: self.set_colour(c)); g.addWidget(b_, i // 8, i % 8)
         v.addLayout(g); self.recent_row = QHBoxLayout(); self.recent_row.setSpacing(6); rl = QLabel("Recent"); rl.setObjectName("hint"); self.recent_row.addWidget(rl); self.recent_row.addStretch(); v.addLayout(self.recent_row)
         v = self.card(lay, "Tools")
@@ -1101,6 +1168,7 @@ class Window(QMainWindow if Qt else object):
         v = self.card(lay, "About")
         lg = QLabel(); lg.setPixmap(logo_pixmap(40)); lg.setFixedSize(42, 42); self.line(v, f"TrueSense {__version__}", lg)
         self.line(v, "Credits and licence", self.btn("Credits", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense/blob/main/docs/CREDITS.md"))), self.btn("Source", lambda: QDesktopServices.openUrl(QUrl("https://github.com/Order52/truesense"))))
+        self.size_sw = self.switch(v, "Fixed-size window", lambda x: self.apply_size_mode(x), sub="Off: resize the window freely (it tiles on tiling desktops). On: the compact 480 pixel window that floats on Hyprland and sway."); self.size_sw.setChecked(bool(userstate.get("gui_fixed", False)))
         self.line(v, "System check", self.btn("Run check…", self.run_doctor)); self.line(v, "Support", self.btn("Copy report", self.copy_report))
         self.line(v, "Hardware self-test", self.btn("Run self-test…", self.run_selftest), sub="Sets each firmware feature, reads it back and restores it (fans are skipped). Takes about a minute."); self.line(v, "Service log", self.btn("Show log…", self.show_log))
         v = self.card(lay, "Reset")
@@ -1501,7 +1569,7 @@ class Window(QMainWindow if Qt else object):
     def p_curves(self):
         lay = self.page("Fan curves"); lay.addWidget(self.hint("Drag a point to move it. Double-click empty space to add one, right-click a point to remove it. 0 % means the firmware runs the fans (they stop when cool)."))
         self.curve_side = Segmented(["CPU fan", "GPU fan"]); lay.addWidget(self.curve_side)
-        self.editor = CurveEditor(); hk = QHBoxLayout(); hk.addWidget(self.editor); hk.addStretch(); lay.addLayout(hk)
+        self.editor = CurveEditor(); lay.addWidget(self.editor)
         self.curve_side.picked.connect(lambda i: (setattr(self.editor, "side", ("cpu", "gpu")[i]), self.editor.update())); self.curve_side.set_index(0)
         v = self.card(lay, "Behaviour")
         self.c_pre = self.slider(v, "Early boost when heating (°C)", 0, 15, 1, lambda x: None, suffix=" °C")
