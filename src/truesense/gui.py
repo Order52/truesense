@@ -674,7 +674,7 @@ class Window(QMainWindow if Qt else object):
         for b in self.zc + [self.rear_color]: b.changed.connect(lambda h_: self.rear_apply())
         self.sep(v); self.line(v, "Static: left, middle, right", *self.zc); self.line(v, "Colour (other effects)", self.rear_color)
         self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply(), suffix=" %"); self.sep(v)
-        self.line(v, "Default", self.btn("Reset to default", lambda: self.do(lambda: hw.rear_set("static", "00aec7", 3, 100, 1), "Rear light back to the stock look"))); v.addStretch(); stack.addWidget(rr)
+        self.line(v, "Default", self.btn("Reset to default", lambda: self.do(lambda: hw.rear_set("breathing", "3723c7", 3, 100, 1), "Rear light back to the stock look"))); v.addStretch(); stack.addWidget(rr)
         stack.addWidget(self.looks_tab()); lay.addStretch()
 
     def looks_tab(self):
@@ -891,15 +891,15 @@ class Window(QMainWindow if Qt else object):
     def reset_all(self):
         if QMessageBox.question(self, "Reset to defaults", "Reset the fan curve, Smart auto profile, PREDATOR key, power limits, lighting and undervolt to their defaults?\n\nYour saved profiles are not deleted.") != QMessageBox.StandardButton.Yes: return
         def go():
-            steps = (lambda: ipc.call("fan_curve", action="use", name="truesense"), lambda: ipc.call("smart_profile", action="use", name="truesense"), lambda: control.fan("auto"),
-                     lambda: ipc.call("set", key="auto_mode", value="native"), lambda: keybinds.use("default"), lambda: ipc.call("cpu_limits", reset=True),
+            steps = (lambda: ipc.call("fan_curve", action="use", name="native"), lambda: ipc.call("smart_profile", action="use", name="native"), lambda: control.fan("auto"),
+                     lambda: ipc.call("set", key="auto_mode", value="native"), lambda: keybinds.use("native"), lambda: ipc.call("cpu_limits", reset=True),
                      lambda: ipc.call("undervolt", action="boot_clear"), lambda: ipc.call("undervolt", action="reset"), lambda: ipc.call("gpu_undervolt", action="boot_clear"), lambda: ipc.call("gpu_undervolt", action="reset"),
-                     lambda: keyboard.restore_default(None), lambda: hw.rear_set("static", "00aec7", 3, 100, 1))
+                     lambda: keyboard.restore_default(None), lambda: hw.rear_set("breathing", "3723c7", 3, 100, 1))
             for fn in steps:
                 try: fn()
                 except Exception as e: self.say(f"Error: {e}")
             return "done"
-        self.do(go, "Everything is back to its defaults"); QTimer.singleShot(1500, lambda: (self.reload_curves("truesense"), self.reload_smart("truesense"), self.reload_keyprofiles("default"), self.reload_uv("stock"), self.reload_gpu_uv("stock")))
+        self.do(go, "Everything is back to its defaults"); QTimer.singleShot(1500, lambda: (self.reload_curves("native"), self.reload_smart("native"), self.reload_keyprofiles("native"), self.reload_uv("native"), self.reload_gpu_uv("native")))
 
     # ---- PREDATOR key ------------------------------------------------------------------------------------------------------------------
     def p_predator(self):
@@ -951,7 +951,7 @@ class Window(QMainWindow if Qt else object):
         self.reload_keyprofiles(name); self.kp_msg.setText(f"Saved '{name}'. Press Use to switch the key to it."); self.say(f"Saved key profile '{name}'")
 
     def kp_reset(self):
-        self.do(lambda: keybinds.use("default"), "PREDATOR key reset to the default bindings", refresh=False); self.reload_keyprofiles("default")
+        self.do(lambda: keybinds.use("native"), "PREDATOR key reset to the default bindings", refresh=False); self.reload_keyprofiles("native")
 
     def kp_copy_do(self):
         src = self.kp_list.currentText()
@@ -983,7 +983,7 @@ class Window(QMainWindow if Qt else object):
         self.uv_core.valueChanged.connect(lambda *_: self.update_uv_risk()); self.uv_cache.valueChanged.connect(lambda *_: self.update_uv_risk())
         self.uv_name = QLineEdit(); self.uv_name.setPlaceholderText("name"); self.uv_name.setMinimumWidth(120); self.uv_save = self.btn("Save", self.uv_save_do)
         self.line(v, "Save as", self.uv_name, self.uv_save); self.uv_msg = self.hint(""); v.addWidget(self.uv_msg)
-        self.line(v, "Default", self.btn("Reset to default (stock)", self.uv_reset))
+        self.line(v, "Default", self.btn("Reset to default (native)", self.uv_reset))
         v = self.card(lay, "At boot")
         self.uv_boot = self.switch(v, "Apply the selected profile at boot", self.uv_boot_set, "Off by default. Guarded: if the laptop does not stay up for 10 minutes after applying it, the next boot skips it and turns this off.")
         v = self.card(lay, "Power limits", "", True); self.pl_now = v.right
@@ -1008,13 +1008,13 @@ class Window(QMainWindow if Qt else object):
         self.gp_risk = QLabel(""); self.gp_risk.setWordWrap(True); v.addWidget(self.gp_risk)
         self.gp_off.valueChanged.connect(lambda *_: self.update_gpu_risk()); self.gp_cap.valueChanged.connect(lambda *_: self.update_gpu_risk())
         self.gp_name = QLineEdit(); self.gp_name.setPlaceholderText("name"); self.gp_name.setMinimumWidth(120); self.gp_save = self.btn("Save", self.gpu_uv_save)
-        self.line(v, "Save as", self.gp_name, self.gp_save); self.gp_msg = self.hint(""); v.addWidget(self.gp_msg); self.line(v, "Default", self.btn("Reset to default (stock)", self.gpu_uv_reset))
+        self.line(v, "Save as", self.gp_name, self.gp_save); self.gp_msg = self.hint(""); v.addWidget(self.gp_msg); self.line(v, "Default", self.btn("Reset to default (native)", self.gpu_uv_reset))
         v = self.card(lay, "At boot")
         self.gp_boot = self.switch(v, "Apply the selected profile at boot", self.gpu_boot_set, "Off by default. Guarded: if the laptop does not stay up for 10 minutes after applying it, the next boot skips it and turns this off.")
         self.reload_gpu_uv(); lay.addStretch()
 
     def reload_gpu_uv(self, select=None):
-        ns = gpuundervolt.names(); self.gp_list.clear(); self.gp_list.addItems(ns); self.gp_list.setCurrentIndex(max(0, self.gp_list.findText(select or "truesense"))); self.load_gpu_uv(self.gp_list.currentText())
+        ns = gpuundervolt.names(); self.gp_list.clear(); self.gp_list.addItems(ns); self.gp_list.setCurrentIndex(max(0, self.gp_list.findText(select or "native"))); self.load_gpu_uv(self.gp_list.currentText())
 
     def load_gpu_uv(self, name):
         try: p = gpuundervolt.load(name)
@@ -1037,7 +1037,7 @@ class Window(QMainWindow if Qt else object):
         self.do(lambda: ipc.call("gpu_undervolt", action="apply", offset=v["offset"], cap=v["cap"], confirm=True, name=name, force=force), lambda r: f"GPU undervolt applied: offset {r['offset_mhz']:+d} MHz, cap {r['cap_mhz'] or 'none'} MHz", refresh=False); QTimer.singleShot(900, self.uv_refresh)
 
     def gpu_uv_reset(self):
-        self.do(lambda: (ipc.call("gpu_undervolt", action="boot_clear"), ipc.call("gpu_undervolt", action="reset"))[1], "GPU undervolt reset to stock (no GPU undervolt at boot)", refresh=False); self.reload_gpu_uv("stock"); QTimer.singleShot(900, self.uv_refresh)
+        self.do(lambda: (ipc.call("gpu_undervolt", action="boot_clear"), ipc.call("gpu_undervolt", action="reset"))[1], "GPU undervolt reset to stock (no GPU undervolt at boot)", refresh=False); self.reload_gpu_uv("native"); QTimer.singleShot(900, self.uv_refresh)
 
     def gpu_boot_set(self, on):
         if self.loading: return
@@ -1066,7 +1066,7 @@ class Window(QMainWindow if Qt else object):
         self.reload_gpu_uv(); self.say(f"Deleted GPU undervolt profile '{name}'")
 
     def reload_uv(self, select=None):
-        ns = undervolt.names(); self.uv_list.clear(); self.uv_list.addItems(ns); self.uv_list.setCurrentIndex(max(0, self.uv_list.findText(select or "truesense"))); self.load_uv(self.uv_list.currentText())
+        ns = undervolt.names(); self.uv_list.clear(); self.uv_list.addItems(ns); self.uv_list.setCurrentIndex(max(0, self.uv_list.findText(select or "native"))); self.load_uv(self.uv_list.currentText())
 
     def load_uv(self, name):
         try: p = undervolt.load(name)
@@ -1117,7 +1117,7 @@ class Window(QMainWindow if Qt else object):
         self.do(lambda: ipc.call("undervolt", action="apply", core=vals["core"], cache=vals["cache"], confirm=True, name=name, force=force), lambda r: f"Undervolt applied: core {r['core_mv']} mV, cache {r['cache_mv']} mV", refresh=False); QTimer.singleShot(900, self.uv_refresh)
 
     def uv_reset(self):
-        self.do(lambda: (ipc.call("undervolt", action="boot_clear"), ipc.call("undervolt", action="reset"))[1], "Undervolt reset to stock (no undervolt at boot)", refresh=False); self.reload_uv("stock"); QTimer.singleShot(900, self.uv_refresh)
+        self.do(lambda: (ipc.call("undervolt", action="boot_clear"), ipc.call("undervolt", action="reset"))[1], "Undervolt reset to stock (no undervolt at boot)", refresh=False); self.reload_uv("native"); QTimer.singleShot(900, self.uv_refresh)
 
     def uv_boot_set(self, on):
         if self.loading: return
@@ -1207,7 +1207,7 @@ class Window(QMainWindow if Qt else object):
 
     def reload_curves(self, select=None):
         self.curve_list.clear(); self.curve_list.addItems(curves.names()); self.curve_cb.clear(); self.curve_cb.addItems(curves.names())
-        sel = select or "truesense"; i = self.curve_list.findText(sel); self.curve_list.setCurrentIndex(max(0, i)); self.curve_cb.setCurrentIndex(max(0, self.curve_cb.findText(sel)))
+        sel = select or "native"; i = self.curve_list.findText(sel); self.curve_list.setCurrentIndex(max(0, i)); self.curve_cb.setCurrentIndex(max(0, self.curve_cb.findText(sel)))
         self.load_curve_in_editor(self.curve_list.currentText())
 
     def load_curve_in_editor(self, name):
@@ -1238,7 +1238,7 @@ class Window(QMainWindow if Qt else object):
 
     def curve_reset(self):
         """Back to the built-in default curve (ours), in use and in the editor."""
-        self.do(lambda: ipc.call("fan_curve", action="use", name="truesense"), "Fan curve reset to the default (truesense)", refresh=False); self.reload_curves("truesense")
+        self.do(lambda: ipc.call("fan_curve", action="use", name="native"), "Fan control reset to the default (native: the firmware)", refresh=False); self.reload_curves("native")
 
     def curve_copy(self):
         """A built-in curve is read-only; copying it makes an editable one under a free name."""
@@ -1275,7 +1275,7 @@ class Window(QMainWindow if Qt else object):
 
     def reload_smart(self, select=None):
         ns = smartprofiles.names(); self.sm_list.clear(); self.sm_list.addItems(ns); self.smart_cb.clear(); self.smart_cb.addItems(ns)
-        sel = select or "truesense"; self.sm_list.setCurrentIndex(max(0, self.sm_list.findText(sel))); self.smart_cb.setCurrentIndex(max(0, self.smart_cb.findText(sel))); self.load_smart_in_editor(self.sm_list.currentText())
+        sel = select or "native"; self.sm_list.setCurrentIndex(max(0, self.sm_list.findText(sel))); self.smart_cb.setCurrentIndex(max(0, self.smart_cb.findText(sel))); self.load_smart_in_editor(self.sm_list.currentText())
 
     def load_smart_in_editor(self, name):
         try: p = smartprofiles.load(name)
@@ -1304,7 +1304,7 @@ class Window(QMainWindow if Qt else object):
         self.reload_smart(name); self.sm_msg.setText(f"Saved '{name}'. Press Use this profile to run it."); self.say(f"Saved smart profile '{name}'")
 
     def smart_reset(self):
-        self.do(lambda: ipc.call("smart_profile", action="use", name="truesense"), "Smart auto reset to the default profile (truesense)", refresh=False); self.reload_smart("truesense")
+        self.do(lambda: ipc.call("smart_profile", action="use", name="native"), "Smart auto reset to the default profile (native)", refresh=False); self.reload_smart("native")
 
     def smart_copy(self):
         src = self.sm_list.currentText()

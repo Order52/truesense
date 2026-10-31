@@ -13,6 +13,8 @@ DEFAULTS = {"hysteresis": 4.0, "down_rate": 1.5, "predict": 5.0, "couple": 15, "
 # Tuned for the PH16-71 (i7-13700HX + RTX 4060, two fans on shared heatpipes): the CPU reaches 90 C in seconds under load while the GPU side is calmer, so the CPU
 # curve ramps from 56 C and tops out at 89 C, the GPU curve from 54 C to 78 C. Firmware Auto below the first point (silent when cool).
 BUILTIN = {
+    "native": {"description": "PredatorSense default: the firmware controls the fans exactly as it does on Windows (they stop when cool). Nothing of ours runs", "native": True,
+               "cpu": [[52, 0], [89, 100]], "gpu": [[48, 0], [78, 100]]},
     "truesense": {"description": "Our curve for this laptop: silent when cool, early and smooth ramp, full speed before throttling",
                   "cpu": [[52, 0], [56, 30], [62, 38], [68, 48], [74, 58], [80, 70], [85, 85], [89, 100]],
                   "gpu": [[48, 0], [54, 30], [60, 38], [65, 48], [70, 60], [74, 78], [78, 100]]},
@@ -45,7 +47,7 @@ def parse_points(text):
 def validate(c):
     """Raise HwError for a curve that could hurt (too cool for the load) or is malformed; return the curve with defaults filled in."""
     if not isinstance(c, dict): raise HwError("a curve is an object with 'cpu' and 'gpu' points")
-    out = {**DEFAULTS, **{k: v for k, v in c.items() if k in DEFAULTS or k in ("cpu", "gpu", "description")}}
+    out = {**DEFAULTS, **{k: v for k, v in c.items() if k in DEFAULTS or k in ("cpu", "gpu", "description", "native")}}
     for side, cap in (("cpu", 95), ("gpu", 85)):
         pts = out.get(side)
         if not isinstance(pts, list) or not 2 <= len(pts) <= 12: raise HwError(f"{side}: 2 to 12 points")

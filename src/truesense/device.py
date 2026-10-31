@@ -101,7 +101,7 @@ class _Sim:
     def c_set_fan_max(self, a): self.fan = "max"; return "ok fan=max\n"
     def c_set_fan_manual(self, a):
         c, g = (int(x) for x in a.split())
-        if not (20 <= c <= 100 and 20 <= g <= 100): return "err invalid argument\n"
+        if not (c == 0 and g == 0) and not (20 <= c <= 100 and 20 <= g <= 100): return "err invalid argument\n"
         self.fan = "manual"; self.fan_duty = [c, g]; return f"ok fan=manual cpu={c} gpu={g}\n"
     def c_get_rear(self, a): return f"ok raw={self.rear.hex()}\n"
     def c_get_slot(self, a): return "ok raw=00000564000100aec700000000000000\n"

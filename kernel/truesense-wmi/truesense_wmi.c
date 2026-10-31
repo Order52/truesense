@@ -18,7 +18,7 @@
  * Commands (reply is "ok key=value ..." or "err message"):
  *   version | caps | sensors
  *   get_mode | get_modes | set_mode <0|1|4|5|6>        (0 quiet, 1 balanced, 4 performance, 5 turbo, 6 eco)
- *   get_fan | set_fan_auto | set_fan_max | set_fan_manual <cpu%> <gpu%>   (manual duty 20..100 only)
+ *   get_fan | set_fan_auto | set_fan_max | set_fan_manual <cpu%> <gpu%>   (manual duty 20..100, or 0 0 = both fans off)
  *   get_gpu | set_gpu <1|2|3>                          (1 optimus, 2 nvidia only, 3 automatic; needs reboot)
  *   get_boot | set_boot <0|1>                          (boot animation and sound)
  *   get_overdrive | set_overdrive <0|1>                (LCD overdrive)
@@ -393,7 +393,10 @@ static int c_set_fan_manual(struct ts_file *f, char *a)
 	unsigned int cpu, gpu;
 	int ret;
 
-	if (!a || sscanf(a, "%u %u", &cpu, &gpu) != 2 || cpu < 20 || cpu > 100 || gpu < 20 || gpu > 100)
+	/* 20..100 per fan, or exactly "0 0" (both off: the daemon guards this with a temperature watchdog and returns the fans to Auto when it gets warm) */
+	if (!a || sscanf(a, "%u %u", &cpu, &gpu) != 2)
+		return -EINVAL;
+	if (!(cpu == 0 && gpu == 0) && (cpu < 20 || cpu > 100 || gpu < 20 || gpu > 100))
 		return -EINVAL;
 	ret = ts_call64(TS_GAME, M_FAN_BEHAVIOR, FAN_MANUAL_BOTH, NULL);
 	if (!ret)

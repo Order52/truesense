@@ -14,6 +14,7 @@ TIMING = {"long_ms": (300, 2000), "multi_ms": (200, 1000)}
 DEFAULT = {"tap": "power-next", "double": "output-toggle", "triple": "none", "long": "fan-max-toggle", "fn_esc": "none", "long_ms": 800, "multi_ms": 450}
 
 BUILTIN = {
+    "native": {"description": "PredatorSense default: the PREDATOR key opens the app, nothing else is bound", **DEFAULT, "tap": "exec:truesense gui", "double": "none", "long": "none"},
     "default": {"description": "The standard behaviour: tap steps the power mode, double tap switches speakers/headphones, long press toggles Max fans", **DEFAULT},
     "gaming": {"description": "Gaming: tap toggles Performance and Turbo, double tap Max fans, triple tap the next lighting effect, long press Smart auto, Fn+Esc mutes the microphone",
                **DEFAULT, "tap": "power-cycle:performance,turbo", "double": "fan-max-toggle", "triple": "keyboard-effect-next", "long": "auto-next", "fn_esc": "mic-toggle"},

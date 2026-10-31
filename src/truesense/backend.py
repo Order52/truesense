@@ -61,7 +61,7 @@ def fan_max():
     cmd("set_fan_max"); settle(lambda: fan_state()["mode"], "max", "fan max")
 
 def fan_manual(cpu, gpu):
-    if not (20 <= cpu <= 100 and 20 <= gpu <= 100): raise HwError("manual duty must be 20..100 %")
+    if not (cpu == 0 and gpu == 0) and not (20 <= cpu <= 100 and 20 <= gpu <= 100): raise HwError("manual duty must be 20..100 % (or 0 for both fans off)")
     cmd(f"set_fan_manual {cpu} {gpu}"); settle(lambda: fan_state()["mode"], "manual", "fan manual")
 
 

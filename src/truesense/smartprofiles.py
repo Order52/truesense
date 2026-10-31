@@ -19,6 +19,8 @@ DEFAULTS = {"ac_idle": "balanced", "ac_browsing": "balanced", "ac_busy": "perfor
             "up_dwell_s": 5, "down_dwell_s": 30}
 
 BUILTIN = {
+    "native": {"description": "PredatorSense default: Balanced on power, Eco on battery, nothing else (no load or heat logic, like Native auto)", **DEFAULTS, "ac_idle": "balanced", "ac_browsing": "balanced", "ac_busy": "balanced",
+               "ac_turbo": False, "battery_idle": "eco", "battery_browsing": "eco", "battery_busy": "eco", "battery_hot": "eco", "up_dwell_s": 2, "down_dwell_s": 2},
     "truesense": {"description": "Our profile for this laptop: Balanced day to day, Performance when you game, Turbo only when sustained and cool, Eco on battery", **DEFAULTS},
     "battery-first": {"description": "Longest battery and quietest: no Turbo, light modes everywhere", **DEFAULTS, "ac_idle": "quiet", "ac_browsing": "quiet", "ac_turbo": False,
                       "battery_idle": "eco", "battery_browsing": "eco", "battery_busy": "quiet", "battery_low_pct": 30, "down_dwell_s": 20},

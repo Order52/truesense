@@ -27,6 +27,6 @@ def apply(cfg=None):
     elif k.startswith("profile:"): step("keyboard", lambda: (keyprofiles.load(k[8:], None), k)[1])
     st = userstate.get("rear_state")
     if r == "last": step("rear", lambda: (hw.rear_set(st["mode"], st["color"], st["speed"], st["brightness"], st["direction"], st.get("zones")), "restored")[1] if isinstance(st, dict) else None)
-    elif r == "default": step("rear", lambda: (hw.rear_set("static", "00aec7", 3, 100, 1), "stock look")[1])
+    elif r == "default": step("rear", lambda: (hw.rear_set("breathing", "3723c7", 3, 100, 1), "stock look")[1])
     elif r == "off": step("rear", lambda: (hw.rear_set("static", "00aec7", 3, 0, 1), "off")[1])
     return done

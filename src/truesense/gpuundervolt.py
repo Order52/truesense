@@ -12,7 +12,7 @@ DIR = os.path.expanduser("~/.config/truesense/gpu-undervolt")
 OFFSET_RANGE = (-300, 250)          # MHz of curve shift; the driver reports its own limit too (about +-1000)
 CAP_RANGE = (600, 3300)             # MHz, or 0 = no cap
 BUILTIN = {
-    "stock": {"description": "No offset and no clock cap", "offset": 0, "cap": 0},
+    "native": {"description": "PredatorSense default: no offset and no clock cap", "offset": 0, "cap": 0},
     "truesense": {"description": "Our profile for the RTX 4060 Laptop: a moderate curve shift with a clock cap, aiming for less power and heat at about the same speed. Unverified on your unit: test under load", "offset": 120, "cap": 2400},
     "mild": {"description": "Very safe: small shift, high cap", "offset": 60, "cap": 2500},
     "cool": {"description": "Cooler and quieter: lower cap, bigger shift", "offset": 100, "cap": 2100},
@@ -80,6 +80,7 @@ def _path(name):
 def names(): return list(BUILTIN) + sorted(f[:-5] for f in (os.listdir(DIR) if os.path.isdir(DIR) else []) if f.endswith(".json") and f[:-5] not in BUILTIN)
 
 def load(name):
+    name = "native" if name == "stock" else name                    # the old name
     if name in BUILTIN: return validate(BUILTIN[name])
     try:
         with open(_path(name)) as f: return validate(json.load(f))

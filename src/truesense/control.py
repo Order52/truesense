@@ -17,11 +17,15 @@ def _direct_fan(mode, cpu, gpu):
     if mode == "auto": hw.fan_auto()
     elif mode == "max": hw.fan_max()
     elif mode == "manual": hw.fan_manual(cpu, gpu if gpu is not None else cpu)
+    elif mode == "off": raise HwError("turning the fans off needs the TrueSense service")
     else: raise HwError("the smart curve needs the TrueSense daemon")
 
 
-def fan(mode, cpu=None, gpu=None):
-    """mode: smart | auto | max | manual (cpu/gpu = 20..100 %)."""
+def fan(mode, cpu=None, gpu=None, confirm=False):
+    """mode: smart | auto | max | manual (cpu/gpu = 20..100 %) | off (both fans stopped: needs confirm and the service's temperature watchdog)."""
+    if mode == "off":
+        if not ipc.available(): raise HwError("turning the fans off needs the TrueSense service (it brings them back when it gets warm)")
+        return ipc.call("fan", mode="off", confirm=confirm)
     if mode == "manual" and (cpu is None or not 20 <= cpu <= 100 or (gpu is not None and not 20 <= gpu <= 100)): raise HwError("manual fan duty is 20..100 %")
     if not ipc.available(): return _direct_fan(mode, cpu, gpu)
     try: return ipc.call("fan", mode=mode, cpu=cpu, gpu=gpu)

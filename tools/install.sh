@@ -56,7 +56,7 @@ install -m755 "$ROOT/packaging/health.sh" "$PREFIX/lib/truesense/health.sh"
 printf '#!/bin/sh\nexec env PYTHONPATH=%s/lib/truesense python3 -m truesense "$@"\n' "$PREFIX" > "$PREFIX/bin/truesense"; chmod 755 "$PREFIX/bin/truesense"
 [ -d "$ROOT/packaging/profiles" ] && install -m644 "$ROOT"/packaging/profiles/*.toml "$PREFIX/share/truesense/profiles/"
 if [ ! -e /etc/truesense/config.toml ]; then
-  printf '# TrueSense system configuration (see docs/USAGE.md). Built-in defaults apply to everything not set here.\nuser = "%s"\n' "$U" > /etc/truesense/config.toml
+  printf '# TrueSense system configuration (see docs/USAGE.md). Built-in defaults apply to everything not set here.\nuser = "%s"\n\n# First install: the PREDATOR key behaves like PredatorSense on Windows (it opens the app). Change it in the app: PREDATOR key.\n[keys]\nprofile = "native"\ntap = "exec:truesense gui"\ndouble = "none"\nlong = "none"\n' "$U" > /etc/truesense/config.toml
 fi
 for sh in bash zsh fish; do
   case $sh in bash) d=/usr/share/bash-completion/completions/truesense;; zsh) d=/usr/share/zsh/site-functions/_truesense;; fish) d=/usr/share/fish/vendor_completions.d/truesense.fish;; esac

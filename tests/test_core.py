@@ -3,6 +3,14 @@ from truesense import actions, backend as hw, config, device, ipc, profiles, sta
 from truesense.fnkeys import Gestures
 
 
+def _wr(path, text):
+    with open(path, "w") as f: f.write(text)
+
+
+def _rd(path):
+    with open(path) as f: return f.read()
+
+
 class Base(unittest.TestCase):
     def setUp(self): device.SIM.reset()
 
@@ -262,18 +270,18 @@ class TestDaemonLogic(Base):
         import tempfile
         from truesense import cpu
         d = tempfile.mkdtemp() + "/"
-        for n in ("constraint_0_power_limit_uw", "constraint_1_power_limit_uw"): open(d + n, "w").write("80000000")
+        for n in ("constraint_0_power_limit_uw", "constraint_1_power_limit_uw"): _wr(d + n, "80000000")
         daemon.RAPL = d; cpu.RAPL = d
         b = self.make(); h = b.handlers()
         r = h["cpu_limits"](pl1=70, pl2=90); self.assertEqual((r["pl1_w"], r["pl2_w"]), (70, 90))
         for _ in range(5): b.step()                                                                 # the daemon must not overwrite your limits
-        self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), "70000000"); self.assertEqual(open(d + "constraint_1_power_limit_uw").read(), "90000000")
+        self.assertEqual(_rd(d + "constraint_0_power_limit_uw"), "70000000"); self.assertEqual(_rd(d + "constraint_1_power_limit_uw"), "90000000")
         self.assertEqual(h["cpu_info"]()["user"], {"pl1": 70.0, "pl2": 90.0})
         with self.assertRaises(device.HwError): h["cpu_limits"](pl1=105, pl2=118)                  # beyond the danger line: needs force
         h["cpu_limits"](pl1=105, pl2=118, force=True)
         h["cpu_limits"](reset=True)
         for _ in range(4): b.step()
-        self.assertIsNone(h["cpu_info"]()["user"]); self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), open(d + "constraint_1_power_limit_uw").read())
+        self.assertIsNone(h["cpu_info"]()["user"]); self.assertEqual(_rd(d + "constraint_0_power_limit_uw"), _rd(d + "constraint_1_power_limit_uw"))
         self.assertEqual(cpu.pl_risk(65, 80)[0], "safe"); self.assertEqual(cpu.pl_risk(90, 100)[0], "caution"); self.assertEqual(cpu.pl_risk(110, 115)[0], "danger")
 
     def test_undervolt_risk_zones(self):
@@ -298,7 +306,7 @@ class TestDaemonLogic(Base):
         import tempfile
         from truesense import cpu
         d = tempfile.mkdtemp() + "/"
-        for n in ("constraint_0_power_limit_uw", "constraint_1_power_limit_uw"): open(d + n, "w").write("95000000")          # what the firmware set
+        for n in ("constraint_0_power_limit_uw", "constraint_1_power_limit_uw"): _wr(d + n, "95000000")          # what the firmware set
         daemon.RAPL = d; cpu.RAPL = d
         cfg = config.load("/nonexistent", None); cfg["user"] = "no-such-user"
         st = state.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "native" if cfg["daemon"]["auto_profile"] else "off", "pl_user": None,
@@ -309,10 +317,10 @@ class TestDaemonLogic(Base):
         self.drive(b, 40, 88, 70, 95)                                                                  # hot and busy: still nothing of ours in the way
         self.assertEqual(device.SIM.fan, "auto", "fans stay on the firmware's own control until you choose smart")
         self.assertEqual(b.cap, cfg["cpu"]["cap_max_khz"], "no CPU clock cap")
-        self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), "95000000", "power limits stay as the firmware set them")
+        self.assertEqual(_rd(d + "constraint_0_power_limit_uw"), "95000000", "power limits stay as the firmware set them")
         self.assertEqual(device.SIM.mode, 1)                                                           # native auto: Balanced on power
-        st.set("smart_fan", True); self.drive(b, 5, 60, 55, 30); self.assertTrue(b.smart_active()); self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), "80000000")       # smart on: ours
-        st.set("smart_fan", False); self.drive(b, 5, 60, 55, 30); self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), "95000000", "switching smart off hands the firmware's limits back")
+        st.set("smart_fan", True); self.drive(b, 5, 60, 55, 30); self.assertTrue(b.smart_active()); self.assertEqual(_rd(d + "constraint_0_power_limit_uw"), "80000000")       # smart on: ours
+        st.set("smart_fan", False); self.drive(b, 5, 60, 55, 30); self.assertEqual(_rd(d + "constraint_0_power_limit_uw"), "95000000", "switching smart off hands the firmware's limits back")
 
     def test_per_key_animations_only_touch_the_chosen_keys(self):
         from truesense import perkeyfx, keymap
@@ -324,6 +332,28 @@ class TestDaemonLogic(Base):
         wave = perkeyfx.render("wave", 0.5, base, None, 5); self.assertGreater(len({wave[c] for c in range(0, 126, 6)}), 5)       # a wave over all keys shows many colours
         with self.assertRaises(device.HwError): perkeyfx.set_fx("disco")
         with self.assertRaises(device.HwError): perkeyfx.set_fx("wave", speed=50)
+
+    def test_fans_off_is_guarded(self):
+        b = self.make(); h = b.handlers(); self.drive(b, 5, 45, 45, 2)
+        with self.assertRaises(device.HwError): h["fan"](mode="off")                                   # no confirmation
+        self.drive(b, 10, 66, 50, 20)
+        with self.assertRaises(device.HwError): h["fan"](mode="off", confirm=True)                     # too warm to start
+        self.drive(b, 25, 45, 45, 2); h["fan"](mode="off", confirm=True)
+        self.assertEqual((device.SIM.fan, device.SIM.fan_duty), ("manual", [0, 0])); self.assertTrue(b.fan_off)
+        self.drive(b, 3, 50, 45, 2); self.assertEqual(device.SIM.fan_duty, [0, 0], "stays off while it is cool")
+        self.drive(b, 12, 75, 50, 20); self.assertEqual(device.SIM.fan, "auto", "the watchdog gives the fans back to the firmware when it gets warm"); self.assertFalse(b.fan_off)
+
+    def test_charge_to_full_once_restores_the_limit(self):
+        b = self.make(); h = b.handlers(); b.last_ac = True; hw = daemon.hw
+        hw.set_battery_limit(True); r = h["battery_full"](action="start"); self.assertTrue(r["active"]); self.assertFalse(hw.get_battery_limit())
+        with self.assertRaises(device.HwError): h["battery_full"](action="start") if not hw.get_battery_limit() else None
+        daemon.hw.on_ac = lambda: False; b.last_ac = False; b.charge_full_check(); self.assertTrue(hw.get_battery_limit(), "unplugging brings the 80 % limit back"); self.assertFalse(h["battery_full"](action="get")["active"])
+        daemon.hw.on_ac = lambda: True; b.last_ac = True; h["battery_full"](action="start"); h["battery_full"](action="cancel"); self.assertTrue(hw.get_battery_limit())
+
+    def test_nothing_smart_runs_by_default_and_the_pace_adapts(self):
+        b = self.make(); h = b.handlers(); h["set"](key="auto_mode", value="native"); h["set"](key="smart_fan", value=False); h["set"]  # native + no smart fan = hands off
+        b.st.set("pl_user", None); self.drive(b, 10, 45, 45, 2); self.assertEqual(b.interval, 2.0); self.assertFalse(b.gpu_started, "the GPU sampler is only started when a smart feature needs it")
+        h["set"](key="auto_mode", value="smart"); self.drive(b, 3, 45, 45, 2); self.assertEqual(b.interval, 1.0); self.assertTrue(b.gpu_started)
 
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run

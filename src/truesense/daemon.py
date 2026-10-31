@@ -8,6 +8,8 @@ import glob, os, pwd, signal, socket, subprocess, sys, threading, time
 from . import backend as hw, config, cpu, curves, gpuundervolt, ipc, looks, smartprofiles, undervolt, osd, state as statemod, touchpad
 
 RUN = os.environ.get("TRUESENSE_RUN", "/run/truesense")
+FAN_OFF_START_CPU, FAN_OFF_START_GPU = 60, 55        # fans may only be turned off below these temperatures ...
+FAN_OFF_MAX_CPU, FAN_OFF_MAX_GPU = 70, 65              # ... and the watchdog gives them back to the firmware at these
 GPU_UV_PENDING = os.environ.get("TRUESENSE_GPU_UV_PENDING", "/var/lib/truesense/gpu-uv-pending")
 UV_PENDING = os.environ.get("TRUESENSE_UV_PENDING", "/var/lib/truesense/uv-pending")      # exists while an undervolt applied at boot has not yet proven stable
 RAPL = "/sys/class/powercap/intel-rapl:0/"
@@ -54,14 +56,14 @@ class Brain:
         self.tcpu = self.tgpu = self.tchassis = None; self.rpm = (0, 0)
         self.hist_c, self.hist_g = [], []
         self.tick = self.calm = self.busy_hold = self.last_try = 0
-        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self.pl_orig = None; self.pl_touched = False; self._smart = None; self.uv_since = None; self.gpu_uv_since = None; self.hold_ctx = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
+        self.lvl = [0, 0]; self.changed = [0, 0]; self.fan_off = False; self.heavy_for = self.idle_for = 0; self.pl_orig = None; self.pl_touched = False; self._smart = None; self.uv_since = None; self.gpu_uv_since = None; self.hold_ctx = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
         self.written = None                      # (cpu, gpu) last written, (0, 0) = firmware Auto
         self.activity = "idle"; self.last_target = None; self.last_ac = None; self.cur_mode = None
         self.cap = self.p["cap_max_khz"]; self.cap_changed = 0
         self.cpus = sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_max_freq"))
         self.hw_ok = True; self._last_err = 0.0; self.live = {}; self.lock = threading.RLock(); self.last_clock = None
         self.find_hwmon()
-        threading.Thread(target=self.gpu_stream, daemon=True).start()
+        self.gpu_started = False; self.interval = 1.0                    # the GPU sampler (nvidia-smi) only starts when a smart feature needs it
 
     # ---- helpers -------------------------------------------------------------------------------------------------------------------
     def log(self, msg, every=60):
@@ -137,7 +139,7 @@ class Brain:
 
     def load_curve(self):
         data = self.st.get("fan_curve_data")
-        try: return curves.validate(data) if data else curves.load(self.st.get("fan_curve", "truesense"))
+        try: return curves.validate(data) if data else curves.load(self.st.get("fan_curve", "truesense") if self.st.get("fan_curve", "truesense") != "native" else "truesense")
         except hw.HwError as e:
             self.log(f"fan curve invalid, using the built-in: {e}", 30); return curves.load("truesense")
 
@@ -199,6 +201,9 @@ class Brain:
             v = num(p)
             if v is not None: return v
         return 100
+
+    def ensure_gpu_stream(self):
+        if not self.gpu_started: self.gpu_started = True; threading.Thread(target=self.gpu_stream, daemon=True).start()
 
     def smart_active(self):
         """TrueSense's own power management (CPU clock cap by temperature, automatic power limits) only runs when you chose a smart feature. Otherwise the firmware is left
@@ -282,7 +287,7 @@ class Brain:
         fan = "auto" if self.written in (None, (0, 0)) else f"{self.written[0]},{self.written[1]}"
         self.live = {"mode": "smart" if smart else "manual", "activity": self.activity, "fan": fan, "tcpu": round(self.tcpu or 0), "tgpu": round(self.tgpu or 0),
                      "chassis": round(self.tchassis or 0), "cpu": round(self.cpu_load), "gpu": round(self.gpu_util), "gpuw": round(self.gpu_power),
-                     "rpm1": self.rpm[0], "rpm2": self.rpm[1], "cap": self.cap // 1000, "power_mode": self.cur_mode or "?", "ac": bool(self.last_ac), "auto": self.auto_kind() != "off", "auto_mode": self.auto_kind(), "fan_curve": self.st.get("fan_curve", "truesense"), "smart_profile": self.st.get("smart_profile", "truesense"), "mode_reason": self.reason, "hw_ok": self.hw_ok}
+                     "rpm1": self.rpm[0], "rpm2": self.rpm[1], "cap": self.cap // 1000, "power_mode": self.cur_mode or "?", "ac": bool(self.last_ac), "auto": self.auto_kind() != "off", "auto_mode": self.auto_kind(), "fan_curve": self.st.get("fan_curve", "native"), "smart_profile": self.st.get("smart_profile", "native"), "mode_reason": self.reason, "fan_off": self.fan_off, "hw_ok": self.hw_ok}
         txt = "".join(f"{k}={v}\n" if not isinstance(v, bool) else f"{k}={int(v)}\n" for k, v in self.live.items())
         paths = [RUN + "/state", TMP_STATE] + (["/tmp/predator-state"] if self.c["compat"]["predator_widgets"] else [])
         for path in paths:
@@ -330,6 +335,21 @@ class Brain:
             try: os.remove(GPU_UV_PENDING)
             except OSError: pass
 
+    def charge_full_check(self):
+        """\"Charge to 100 % once\": the 80 % limit is lifted for one charge and comes back by itself when you unplug, when the battery has been full for 5 minutes, or after 24 hours."""
+        cf = self.st.get("charge_full")
+        if not cf: return
+        done = None
+        if not self.last_ac: done = "unplugged"
+        elif time.time() - cf["since"] > 86400: done = "24 hours passed"
+        elif self.battery_pct() >= 100:
+            cf["full_at"] = cf.get("full_at") or time.time(); self.st.set("charge_full", cf)
+            if time.time() - cf["full_at"] > 300: done = "the battery is full"
+        if done:
+            try: hw.set_battery_limit(True)
+            except hw.HwError as e: self.log(f"could not bring the 80 % limit back: {e}", 30); return
+            self.st.set("charge_full", None); self.log(f"80 % charge limit is back ({done})", 5); self.say(f"80 % charge limit is back ({done})", "battery")
+
     def apply_boot_look(self, why):
         """Put the look chosen for boot on the lights (the keyboard may enumerate a little after we start, so retry for ~20 s)."""
         def work():
@@ -346,6 +366,11 @@ class Brain:
 
     def step(self):
         wall, mono = time.time(), time.monotonic()
+        if self.fan_off and ((self.tcpu or 0) >= FAN_OFF_MAX_CPU or (self.tgpu or 0) >= FAN_OFF_MAX_GPU or not self.hw_ok):
+            self.fan_off = False
+            try: hw.fan_auto()
+            except hw.HwError: pass
+            self.written = None; self.log("fans back on Auto: the laptop got warm", 1); self.say("Fans back on Auto: it got warm", "fan")
         if self.gpu_uv_since and mono - self.gpu_uv_since > 600:
             self.gpu_uv_since = None
             try: os.remove(GPU_UV_PENDING)
@@ -357,6 +382,11 @@ class Brain:
         if self.last_clock and (wall - self.last_clock[0]) - (mono - self.last_clock[1]) > 5: self.apply_boot_look("resume from suspend")     # wall clock ran, monotonic did not
         self.last_clock = (wall, mono)
         with self.lock: self._step()
+        # Adaptive pace: once a second while something smart is working or the laptop is busy, every two seconds when nothing smart is on or it has been calm for a while.
+        smart = self.smart_active() or self.auto_kind() == "smart"
+        self.interval = 1.0 if (smart and (self.activity != "idle" or self.calm < 30)) or self.fan_off else 2.0
+        if smart: self.ensure_gpu_stream()
+        if self.tick % 5 == 0: self.charge_full_check()
 
     def _step(self):
         self.tick += 1
@@ -415,10 +445,15 @@ class Brain:
             if key == "smart_fan" and not value: self.written = None
             return self.st.snapshot()
 
-        def fan(mode, cpu=None, gpu=None):
+        def fan(mode, cpu=None, gpu=None, confirm=False):
             """One request = smart curve off + hardware write, atomically (the main loop takes the same lock)."""
             with self.lock:
-                if mode == "smart": self.st.set("smart_fan", True); self.log("setting smart_fan = True", 20); return "smart"
+                if mode == "smart": self.st.set("smart_fan", True); self.fan_off = False; self.log("setting smart_fan = True", 20); return "smart"
+                if mode == "off":
+                    if not confirm: raise hw.HwError("turning the fans off needs explicit confirmation")
+                    if self.tcpu is None or self.tcpu >= FAN_OFF_START_CPU or (self.tgpu or 0) >= FAN_OFF_START_GPU: raise hw.HwError(f"too warm to stop the fans (CPU {round(self.tcpu or 0)} C, GPU {round(self.tgpu or 0)} C; they may only be turned off below {FAN_OFF_START_CPU} / {FAN_OFF_START_GPU} C)")
+                    self.st.set("smart_fan", False); self.written = None; hw.fan_manual(0, 0); self.fan_off = True; self.log(f"fans turned off by you; watchdog: back to Auto at CPU {FAN_OFF_MAX_CPU} C / GPU {FAN_OFF_MAX_GPU} C", 5); return "off"
+                self.fan_off = False
                 if mode not in ("auto", "max", "manual"): raise hw.HwError(f"fan mode {mode!r}")
                 self.st.set("smart_fan", False); self.log("setting smart_fan = False (fan %s)" % mode, 20); self.written = None; self.lvl, self.calm = [0, 0], 0
                 if mode == "auto": hw.fan_auto()
@@ -438,10 +473,15 @@ class Brain:
         def fan_curve(action="get", name=None, data=None):
             """get -> the active curve; use -> switch to a built-in by name, or to a curve sent as data (kept by the daemon, so it works before login)."""
             with self.lock:
-                if action == "get": return {"name": self.st.get("fan_curve", "truesense"), "curve": self.follower.c if self.follower else self.load_curve(), "names": curves.names()}
+                if action == "get": return {"name": self.st.get("fan_curve", "native"), "curve": self.follower.c if self.follower else self.load_curve(), "names": curves.names()}
                 if action != "use": raise hw.HwError("fan_curve: get | use")
                 if data is not None: c = curves.validate(data); self.st.set("fan_curve_data", c); self.st.set("fan_curve", name or "custom")
-                else: c = curves.load(name or "truesense"); self.st.set("fan_curve_data", None if name in curves.BUILTIN else c); self.st.set("fan_curve", name)
+                else: c = curves.load(name or "native"); self.st.set("fan_curve_data", None if name in curves.BUILTIN else c); self.st.set("fan_curve", name)
+                if c.get("native"):                                                           # the native curve is no curve: the firmware runs the fans, like PredatorSense on Windows
+                    self.st.set("smart_fan", False); self.fan_off = False; self.written = None
+                    try: hw.fan_auto()
+                    except hw.HwError as e: self.log(f"fan auto: {e}", 10)
+                    return {"name": "native", "curve": c}
                 self.follower = curves.Follower(c); self.written = None; self.log(f"setting fan_curve = {name}", 20); return {"name": self.st.get("fan_curve"), "curve": c}
 
         def smart_profile(action="get", name=None, data=None):
@@ -498,6 +538,19 @@ class Brain:
                     self.st.set("gpu_uv_applied", {"name": name, **p}); self.log(f"GPU undervolt applied: offset {p['offset']} MHz, cap {p['cap']} MHz", 5); return r
                 raise hw.HwError("gpu_undervolt: get | apply | reset | boot | boot_clear")
 
+        def battery_full(action="get"):
+            """get | start | cancel: charge to 100 % once, then the 80 % limit returns by itself."""
+            with self.lock:
+                cf = self.st.get("charge_full")
+                if action == "get": return {"active": bool(cf), "limit": hw.get_battery_limit(), "capacity": self.battery_pct(), "ac": bool(self.last_ac)}
+                if action == "start":
+                    if not self.last_ac: raise hw.HwError("plug the charger in first")
+                    if not hw.get_battery_limit(): raise hw.HwError("the 80 % limit is off already: the battery charges to 100 %")
+                    hw.set_battery_limit(False); self.st.set("charge_full", {"since": time.time(), "full_at": None}); self.log("charging to 100 % once", 5); return {"active": True}
+                if action == "cancel":
+                    hw.set_battery_limit(True); self.st.set("charge_full", None); return {"active": False}
+                raise hw.HwError("battery_full: get | start | cancel")
+
         def boot_look(action="get", look=None):
             if action == "get": return looks.read_boot()
             if action == "clear": looks.write_boot(None); return None
@@ -525,7 +578,7 @@ class Brain:
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "gpu_undervolt": gpu_undervolt, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "cpu_info": cpu_info, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "gpu_undervolt": gpu_undervolt, "battery_full": battery_full, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "cpu_info": cpu_info, "touchpad": touch}
 
 
 def main():
@@ -535,7 +588,7 @@ def main():
         print("falling back to the built-in defaults for the whole configuration", flush=True)
         cfg = config.merge(config.copy.deepcopy(config.DEFAULTS), {"user": cfg["user"]})
     os.makedirs(RUN, exist_ok=True)
-    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "native" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "pl_user": None, "smart_profile": "truesense", "smart_profile_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
+    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "native" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "native", "fan_curve_data": None, "pl_user": None, "smart_profile": "native", "smart_profile_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
     st.set("uv_applied", None); st.set("gpu_uv_applied", None)                                       # offsets never survive a reboot, so nothing is applied now
     brain = Brain(cfg, st)
     uids = [brain.pw.pw_uid] if brain.pw else []
@@ -552,7 +605,7 @@ def main():
                 if brain.tcpu is None or brain.tcpu >= 80:
                     try: hw.fan_manual(100, 100)
                     except Exception: pass
-            sd_notify("WATCHDOG=1"); nxt += 1; now = time.monotonic()
+            sd_notify("WATCHDOG=1"); nxt += brain.interval; now = time.monotonic()
             if nxt < now - 5: nxt = now; brain.written = None; brain.cap_changed = brain.tick     # woke from suspend: resync
             time.sleep(max(0.0, nxt - now))
     finally:

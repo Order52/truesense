@@ -12,7 +12,7 @@ MAX_MV = 120
 SAFE_MV = {"core": 60, "cache": 50}          # up to here: usually fine on 13th-gen HX
 CAUTION_MV = {"core": 90, "cache": 70}       # beyond SAFE, up to here: may be unstable, test under load
 BUILTIN = {
-    "stock": {"description": "No undervolt (0 mV)", "core": 0, "cache": 0},
+    "native": {"description": "PredatorSense default: no undervolt (0 mV)", "core": 0, "cache": 0},
     "truesense": {"description": "Our profile for the i7-13700HX: a conservative offset that usually gives a few degrees less heat at the same speed. Unverified on your unit: test under load", "core": -50, "cache": -40},
     "mild": {"description": "Very safe: small offset", "core": -30, "cache": -30},
     "balanced": {"description": "Moderate: more heat saved, more chance of instability", "core": -70, "cache": -50},
@@ -39,6 +39,7 @@ def names(): return list(BUILTIN) + sorted(f[:-5] for f in (os.listdir(DIR) if o
 
 
 def load(name):
+    name = "native" if name == "stock" else name                    # the old name
     if name in BUILTIN: return validate(BUILTIN[name])
     try:
         with open(_path(name)) as f: return validate(json.load(f))

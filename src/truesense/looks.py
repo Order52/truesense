@@ -16,9 +16,15 @@ def _path(name):
     return os.path.join(DIR, name + ".json")
 
 
+# What PredatorSense leaves on this laptop on Windows (from the captures): keyboard cells #00aec7 at brightness 12, rear bar Breathing #3723c7 speed 3 brightness 100.
+BUILTIN = {"native": {"keyboard": {"mode": "perkey", "brightness": 12, "cells": ["00aec7"] * 126 + ["000000"] * 2},
+                      "rear": {"mode": "breathing", "color": "3723c7", "speed": 3, "brightness": 100, "direction": 1, "zones": None}}}
+
+
 def names():
-    try: return sorted(f[:-5] for f in os.listdir(DIR) if f.endswith(".json"))
-    except FileNotFoundError: return []
+    try: mine = sorted(f[:-5] for f in os.listdir(DIR) if f.endswith(".json") and f[:-5] not in BUILTIN)
+    except FileNotFoundError: mine = []
+    return list(BUILTIN) + mine
 
 
 def capture():
@@ -29,18 +35,21 @@ def capture():
 
 
 def save(name, look=None):
+    if name in BUILTIN: raise HwError(f"'{name}' is built in and read-only; save your look under another name")
     look = look or capture(); os.makedirs(DIR, exist_ok=True)
     with open(_path(name) + ".tmp", "w") as f: json.dump(look, f, indent=1)
     os.replace(_path(name) + ".tmp", _path(name)); return look
 
 
 def load(name):
+    if name in BUILTIN: return json.loads(json.dumps(BUILTIN[name]))
     try:
         with open(_path(name)) as f: return json.load(f)
     except FileNotFoundError: raise HwError(f"no look '{name}' (truesense look list)")
 
 
 def delete(name):
+    if name in BUILTIN: raise HwError(f"'{name}' is built in and cannot be deleted")
     try: os.remove(_path(name))
     except FileNotFoundError: raise HwError(f"no look '{name}'")
 

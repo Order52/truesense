@@ -67,6 +67,7 @@ def build():
     # fan
     p = sub.add_parser("fan", help="fans: firmware auto, max, manual %%, smart curve"); fs = p.add_subparsers(dest="verb")
     fs.add_parser("status"); fs.add_parser("auto", help="firmware control (0 rpm when cool)"); fs.add_parser("max")
+    q = fs.add_parser("off", help="stop both fans (needs --confirm; only when cool; the service returns them to Auto if it gets warm)"); q.add_argument("--confirm", action="store_true", help="I understand the laptop can overheat with the fans off")
     q = fs.add_parser("set", help="manual duty, 20..100 %%"); q.add_argument("cpu", type=int); q.add_argument("gpu", type=int, nargs="?")
     q = fs.add_parser("curve", help="smart-fan curves: list | current | show NAME | use NAME | copy NAME [NEW] | save NAME --cpu PTS --gpu PTS | delete NAME  (built-in curves are read-only: copy them to edit)"); q.add_argument("action", nargs="?", default="current", choices=["list", "current", "show", "use", "save", "delete", "copy"])
     q.add_argument("name", nargs="?"); q.add_argument("new", nargs="?", help="copy: the new name"); q.add_argument("--cpu", help="CPU points, e.g. 52:0,60:35,70:55,80:75,89:100 (temperature:percent, 0 = firmware auto)"); q.add_argument("--gpu", help="GPU points")
@@ -74,7 +75,8 @@ def build():
     q.add_argument("--from", dest="base", help="start from this curve and change only what you give")
     q = fs.add_parser("smart", help="the daemon's smart curve"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
     # battery
-    p = sub.add_parser("battery", help="80 %% charge limit, calibration, USB power-off charging"); bs = p.add_subparsers(dest="verb")
+    p = sub.add_parser("battery", help="80 %% charge limit, charge to full once, calibration, USB power-off charging"); bs = p.add_subparsers(dest="verb")
+    q = bs.add_parser("full", help="charge to 100 %% once: the 80 %% limit comes back by itself (unplug, full for 5 minutes, or 24 hours)"); q.add_argument("action", nargs="?", default="status", choices=["start", "cancel", "status"])
     q = bs.add_parser("limit"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
     q = bs.add_parser("calibration"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
     q = bs.add_parser("usb-charge", help="USB charging while powered off: stop level 0 (off) 10 20 30"); q.add_argument("level", nargs="?", default="status", choices=["status", "0", "10", "20", "30"])
@@ -237,6 +239,7 @@ def h_fan(a):
         except HwError: d["smart"] = None
         emit(d, f"fans: {d['mode']}   CPU {d['cpu_fan_rpm']} rpm   GPU {d['gpu_fan_rpm']} rpm   smart curve: {onoff_value(d['smart'])}")
     elif v == "auto": control.fan("auto"); emit("fans: firmware auto (they stop when cool)")
+    elif v == "off": control.fan("off", confirm=a.confirm); emit("fans: OFF   (back on Auto automatically at CPU 70 C / GPU 65 C; `truesense fan auto` now)")
     elif v == "max": control.fan("max"); emit("fans: MAX  (`truesense fan smart on` hands them back)")
     elif v == "set": control.fan("manual", a.cpu, a.gpu); emit(f"fans: manual {a.cpu} % / {a.gpu if a.gpu is not None else a.cpu} %")
     elif v == "curve":
@@ -271,6 +274,11 @@ def h_battery(a):
     v = a.verb or "status"
     if v == "status": emit({"limit_80": hw.get_battery_limit(), "calibration": hw.get_calibration(), "usb_charge_stop": hw.get_usb_charge()})
     elif v == "limit": tri(a.action, hw.get_battery_limit, hw.set_battery_limit, "80 % battery limit")
+    elif v == "full":
+        from . import ipc
+        r = ipc.call("battery_full", action=a.action if a.action != "status" else "get")
+        emit(r, {"start": "charging to 100 % once; the 80 % limit comes back when you unplug, when it has been full for 5 minutes, or after 24 hours", "cancel": "80 % limit back on",
+                 "status": f"80 % limit {'on' if r.get('limit') else 'off'}, battery {r.get('capacity')} %, charging to full once: {'yes' if r.get('active') else 'no'}"}[a.action])
     elif v == "calibration": tri(a.action, hw.get_calibration, hw.set_calibration, "battery calibration (needs AC, takes hours)")
     elif v == "usb-charge":
         if a.level == "status": emit(hw.get_usb_charge(), f"USB charging while off, stop level: {hw.get_usb_charge()}")
