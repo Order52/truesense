@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.3.12 (2026-10-31): much faster launch
 
 **Much faster launch** (measured from process start to a visible window: 266 ms before, 92 ms now)
 - The window builds only Home before it appears; the other nine pages are built right after the first paint, one per event-loop turn, or at once if you navigate first. The page numbers never change, and data that arrives early is held back and applied once everything exists.
