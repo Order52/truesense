@@ -80,21 +80,16 @@ function render()
   elseif st.tab == "keys" then
     body = {
       tabs(),
-      cap("Choose a key or a group, then pick a colour. Only that choice changes; the rest stay as they are."),
-      ui.label({ text = "Selected: " .. st.target, fontSize = 14, color = "primary" }),
+      cap("Pick keys on a picture of the keyboard, then choose their colour."),
+      ui.button({ glyph = "keyboard", text = "Open the keyboard editor", flexGrow = 1, variant = "default", onClick = "onEditor" }),
+      cap("Quick looks"),
+      ui.row({ gap = 4 }, {
+        ui.button({ text = "Rainbow", flexGrow = 1, controlSize = "sm", variant = "ghost", onClick = "onKbRainbow" }),
+        ui.button({ text = "Fill with colour", flexGrow = 1, controlSize = "sm", variant = "ghost", onClick = "onKbFill" }),
+        ui.button({ text = "Stock", flexGrow = 1, controlSize = "sm", variant = "ghost", onClick = "onKbRestore" }),
+      }),
+      ui.colorPicker({ value = "#" .. st.hex, swatches = SW, onChange = "onKbColorLive", onChangeEnd = "onKbColor" }),
     }
-    for _, r in ipairs(KEYROWS) do
-      local row = {}
-      for _, k in ipairs(r) do row[#row + 1] = ui.button({ text = k[2], controlSize = "sm", flexGrow = 1, variant = (st.target == k[1]) and "default" or "ghost", onClick = "onKey_" .. k[1] }) end
-      body[#body + 1] = ui.row({ gap = 2 }, row)
-    end
-    body[#body + 1] = cap("Groups")
-    body[#body + 1] = chips(GROUPS, "onGroup", nil)
-    body[#body + 1] = ui.colorPicker({ value = "#" .. st.khex, swatches = SW, onChange = "onPaintLive", onChangeEnd = "onPaint" })
-    body[#body + 1] = ui.row({ gap = 4 }, {
-      ui.button({ text = "Paint " .. st.target, flexGrow = 1, controlSize = "sm", variant = "default", onClick = "onPaintNow" }),
-      ui.button({ text = "Black (off)", flexGrow = 1, controlSize = "sm", variant = "ghost", onClick = "onPaintBlack" }),
-    })
   else
     body = {
       tabs(),
@@ -225,4 +220,5 @@ function onRearColorLive(v) setRearColor(clean(v)); rearApply() end
 function onRearColor(v) setRearColor(clean(v)); rearApply() end
 function onRearLevel(v) v = tonumber(v); if v then st.rlevel = math.floor(v); rearApply() end end
 function onRearLevelEnd(v) st.rlevel = math.floor(tonumber(v) or st.rlevel); rearApply(); render() end
+function onEditor() run("sh -c 'truesense gui --page keys || truesense gui'"); panel.close() end
 function onOpen() render() end

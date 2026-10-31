@@ -15,10 +15,10 @@ end
 
 local function apply(what)
   local cmd
-  if what == "smart" then cmd = "truesense fan smart on"
-  elseif what == "auto" then cmd = "truesense fan smart off && truesense fan auto"
-  elseif what == "max" then cmd = "truesense fan smart off && truesense fan max"
-  else cmd = "truesense fan smart off && truesense fan set " .. math.max(20, math.min(100, math.floor(tonumber(what) or 50))) end
+  if what == "smart" then cmd = "PATH=$HOME/.local/bin:$PATH truesense-fast fan smart"
+  elseif what == "auto" then cmd = "PATH=$HOME/.local/bin:$PATH truesense-fast fan auto"
+  elseif what == "max" then cmd = "PATH=$HOME/.local/bin:$PATH truesense-fast fan max"
+  else cmd = "PATH=$HOME/.local/bin:$PATH truesense-fast fan " .. math.max(20, math.min(100, math.floor(tonumber(what) or 50))) end
   noctalia.runAsync(cmd)
   drag, wantMode = nil, what
   render()

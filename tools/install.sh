@@ -66,6 +66,7 @@ say "installed $PREFIX/bin/truesense and $PREFIX/lib/truesense"
 
 step "services"
 for u in truesense.service truesense-health.service truesense-health.timer; do sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@MODPROBE@|$(command -v modprobe)|g" "$ROOT/packaging/$u" > /etc/systemd/system/$u; done
+install -m755 "$ROOT/tools/truesense-fast" "$PREFIX/bin/truesense-fast"
 install -d /usr/share/applications; sed "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/truesense.desktop" > /usr/share/applications/truesense.desktop
 for u in truesense-keys.service truesense-audio.service truesense-startup.service; do sed -e "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/$u" > /etc/systemd/user/$u; done
 systemctl daemon-reload; ur systemctl --user daemon-reload || true

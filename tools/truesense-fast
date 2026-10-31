@@ -1,0 +1,22 @@
+#!/bin/sh
+# Instant fan / power / auto changes for status bars: one request to the daemon over its socket (about 5 ms, no Python start-up).
+# Falls back to the full CLI when socat or the socket is missing or the daemon is older.
+#   truesense-fast fan smart|auto|max|<20-100>      truesense-fast power <mode> [hold-minutes]      truesense-fast auto on|off
+SOCK=/run/truesense/truesense.sock
+send() { printf '%s\n' "$1" | socat -t2 - "UNIX-CONNECT:$SOCK" 2>/dev/null; }
+ok() { case "$1" in *'"ok": true'*) return 0;; esac; return 1; }
+case "$1" in
+  fan)
+    case "$2" in
+      smart|auto|max) r=$(send "{\"cmd\": \"fan\", \"args\": {\"mode\": \"$2\"}}"); ok "$r" || exec truesense fan $( [ "$2" = smart ] && echo smart on || echo "$2" ) ;;
+      [0-9]*) r=$(send "{\"cmd\": \"fan\", \"args\": {\"mode\": \"manual\", \"cpu\": $2}}"); ok "$r" || exec truesense fan set "$2" ;;
+      *) echo "usage: truesense-fast fan smart|auto|max|<20-100>" >&2; exit 2 ;;
+    esac ;;
+  power)
+    m="$2"; h="${3:-30}"
+    r=$(send "{\"cmd\": \"power\", \"args\": {\"mode\": \"$m\", \"hold_minutes\": $h}}"); ok "$r" || exec truesense power set "$m" ;;
+  auto)
+    v=false; [ "$2" = on ] && v=true
+    r=$(send "{\"cmd\": \"set\", \"args\": {\"key\": \"auto_profile\", \"value\": $v}}"); ok "$r" || exec truesense power auto "$2" ;;
+  *) echo "usage: truesense-fast fan|power|auto ..." >&2; exit 2 ;;
+esac

@@ -8,7 +8,7 @@ pkgdesc='PredatorSense for Linux: Acer Predator Helios 16 PH16-71 (fans, power m
 arch=('any')
 url='https://github.com/Order52/truesense'
 license=('GPL-2.0-only')
-depends=('python' 'dkms' 'systemd')
+depends=('python' 'dkms' 'systemd' 'socat')
 optdepends=('linux-headers: build the kernel module (any installed kernel needs its own headers)'
             'noise-suppression-for-voice: Purified Voice (RNNoise) microphone noise reduction'
             'python-pyqt6: optional window (truesense gui)'
@@ -26,6 +26,7 @@ package() {
 #!/bin/sh
 exec env PYTHONPATH=/usr/lib/truesense python3 -m truesense "$@"
 WRAP
+    install -Dm755 "$_src/tools/truesense-fast" "$pkgdir/usr/bin/truesense-fast"
     install -Dm755 "$_src/packaging/health.sh" "$pkgdir/usr/lib/truesense/health.sh"
     for f in truesense.service truesense-health.service truesense-health.timer; do
         sed -e 's|@PREFIX@|/usr|g' -e 's|@MODPROBE@|/usr/bin/modprobe|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/$f"

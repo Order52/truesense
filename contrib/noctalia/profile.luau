@@ -20,12 +20,12 @@ end
 local function set(p)
   local m = INFO[p]
   if not m then return end
-  noctalia.runAsync("truesense power set " .. p)
+  noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast power " .. p)
   noctalia.runAsync("noctalia msg osd-show " .. m[2] .. " 'Power mode: " .. m[4] .. "'")
 end
 
 local function setAuto(on)
-  noctalia.runAsync("truesense power auto " .. (on and "on" or "off"))
+  noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast auto " .. (on and "on" or "off"))
   noctalia.runAsync("noctalia msg osd-show " .. (on and "refresh" or "hand-stop") .. " 'Automatic profile: " .. (on and "on" or "off") .. "'")
 end
 

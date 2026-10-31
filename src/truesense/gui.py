@@ -8,9 +8,10 @@ from .device import HwError
 
 try:
     from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QRectF
+    from PyQt6.QtNetwork import QLocalServer, QLocalSocket
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy)
+                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox)
 except ImportError as _e:
     Qt = None; _IMPORT_ERROR = _e
 
@@ -343,6 +344,11 @@ class Window(QMainWindow if Qt else object):
         self.kb_timeout = self.switch(v, "Keyboard light off after 30 s without typing", lambda x: self.do(lambda: hw.set_kb_timeout(x), "Saved", refresh=False))
         self.boot = self.switch(v, "Boot animation and sound", lambda x: self.do(lambda: hw.set_boot_sound(x), lambda r: f"Boot sound: {'on' if r else 'off'}", refresh=False))
         self.calib = self.switch(v, "Battery calibration", lambda x: self.do(lambda: hw.set_calibration(x), lambda r: f"Calibration: {'on' if r else 'off'}", refresh=False), "Needs AC power and takes hours. Switch off to cancel.")
+        v = self.card(lay, "CPU power limits")
+        v.addWidget(self.hint("Sustained (PL1) and burst (PL2) watts. The daemon also sets these itself per mode; use this to try a value. Range 25 to 120 W."))
+        self.pl1, self.pl2 = QDoubleSpinBox(), QDoubleSpinBox()
+        for s_, val in ((self.pl1, 65), (self.pl2, 80)): s_.setRange(25, 120); s_.setDecimals(0); s_.setSuffix(" W"); s_.setValue(val)
+        self.line(v, "PL1 · PL2", self.pl1, self.pl2, self.btn("Apply", lambda: self.do(lambda: ipc.call("cpu_limits", pl1=self.pl1.value(), pl2=self.pl2.value()), "CPU limits applied", refresh=False)))
         v = self.card(lay, "PREDATOR key")
         v.addWidget(self.hint("What each press does. Examples: power-next, power:turbo, profile:gaming, output-toggle, mic-toggle, exec:firefox. See `truesense keys actions`."))
         self.key_edits = {}
@@ -422,6 +428,18 @@ def main(page=None):
         print(f"The window needs python-pyqt6 ({_IMPORT_ERROR}).  Arch: sudo pacman -S python-pyqt6.  Everything works from the command line without it.")
         return 1
     app = QApplication(sys.argv[:1]); app.setApplicationName("TrueSense"); app.setDesktopFileName("truesense"); app.setStyle("Fusion"); app.setStyleSheet(STYLE)
+    name = "truesense-gui-" + str(__import__("os").getuid())
+    probe = QLocalSocket(); probe.connectToServer(name)
+    if probe.waitForConnected(150):                                   # already open: bring that window forward instead of starting a second one
+        probe.write((page or "home").encode()); probe.flush(); probe.waitForBytesWritten(300); return 0
+    QLocalServer.removeServer(name); server = QLocalServer(); server.listen(name)
     w = Window(); w.show()
     if page in PAGES: w.pages.setCurrentIndex(PAGES[page])
+    def handoff():
+        c = server.nextPendingConnection()
+        if c and c.waitForReadyRead(300):
+            p_ = bytes(c.readAll()).decode()
+            if p_ in PAGES: w.pages.setCurrentIndex(PAGES[p_])
+        w.showNormal(); w.raise_(); w.activateWindow()
+    server.newConnection.connect(handoff)
     return app.exec()

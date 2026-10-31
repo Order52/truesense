@@ -16,7 +16,7 @@ local function readState()
 end
 
 local function set(p)
-  noctalia.runAsync("truesense power set " .. p)
+  noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast power " .. p)
   want = p
   panel.close()
 end
@@ -46,7 +46,7 @@ function onPick_balanced() set("balanced") end
 function onPick_performance() set("performance") end
 function onPick_turbo() set("turbo") end
 function onToggleAuto()
-  noctalia.runAsync("truesense power auto " .. (readState().auto == "1" and "off" or "on"))
+  noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast auto " .. (readState().auto == "1" and "off" or "on"))
   panel.close()
 end
 function onOpen() want = nil; render() end

@@ -14,12 +14,12 @@ local function kfmt(n) return n >= 1000 and string.format("%.1fk", n / 1000) or 
 
 local function osd(glyph, text) noctalia.runAsync("noctalia msg osd-show " .. glyph .. " '" .. text .. "'") end
 local function apply(what)
-  if what == "smart" then noctalia.runAsync("truesense fan smart on"); osd("sparkles", "Fan: Smart curve")
-  elseif what == "auto" then noctalia.runAsync("truesense fan smart off && truesense fan auto"); osd("propeller", "Fan: firmware auto")
-  elseif what == "max" then noctalia.runAsync("truesense fan smart off && truesense fan max"); osd("flame", "Fan: MAX")
+  if what == "smart" then noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast fan smart"); osd("sparkles", "Fan: Smart curve")
+  elseif what == "auto" then noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast fan auto"); osd("propeller", "Fan: firmware auto")
+  elseif what == "max" then noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast fan max"); osd("flame", "Fan: MAX")
   else
     local n = math.max(20, math.min(100, math.floor(tonumber(what) or 50)))
-    noctalia.runAsync("truesense fan smart off && truesense fan set " .. n); osd("wind", "Fan: " .. n .. "%")
+    noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast fan " .. n); osd("wind", "Fan: " .. n .. "%")
   end
 end
 

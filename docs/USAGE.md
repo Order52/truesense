@@ -37,6 +37,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `keyboard operating on\|off` | keyboard colour follows the power mode (re-sent on each change) |
 | `keyboard profile list\|save\|load\|delete` | saved lighting, e.g. `profile save work gradient ff3300 6600ff` |
 | `audio output speakers\|headphones\|toggle\|cycle\|status` | output switch (the two share one PCM) |
+| `audio jack [auto\|headphones\|headset]` | how the 3.5 mm jack is used: auto = what the codec detects, headphones = never use the headset mic, headset = always use it (try this when the codec misses a headset plugged in at boot) |
 | `audio mic status\|mute\|unmute\|toggle\|boost`, `audio jack` | microphones, headset-mic boost, what the codec sees on the jack |
 | `audio voice status\|headset MODE\|array MODE\|apply\|watch` | AI noise reduction; MODE = off, conference, personal |
 | `audio speaker-filter`, `audio dts` | noise filter on the output (off by default); Acer DTS via AcerUltraX |
@@ -45,6 +46,11 @@ Areas that are switches accept `on | off | toggle | status`.
 | `cpu info`, `cpu limits PL1 PL2`, `cpu undervolt ...` | RAPL limits (root); undervolt needs `--confirm` |
 | `touchpad on\|off\|toggle` | touchpad inhibit |
 | `service status\|restart\|logs`, `config show\|validate\|path`, `completion bash\|zsh\|fish`, `gui` | housekeeping |
+
+## The window
+`truesense gui` (or the TrueSense launcher): one compact page with power mode, fans, GPU mode, keyboard, rear light bar and battery/screen, in the style of G-Helper; buttons open Per-key colours (a picture of the keyboard to select keys from), Audio (output, 3.5 mm jack, microphones, Purified Voice, DTS) and Settings (hardware extras, CPU power limits, PREDATOR key, what comes back at login). `truesense gui --page keys|audio|settings` opens a page directly; a second launch brings the open window forward. Colours and sliders apply live. Needs `python-pyqt6`.
+
+`truesense-fast fan smart|auto|max|<20-100>`, `truesense-fast power <mode>` and `truesense-fast auto on|off` talk to the daemon directly (about 5 ms) for status-bar buttons; they fall back to the CLI.
 
 ## The PREDATOR key and Fn keys
 `truesense keys set GESTURE ACTION` with GESTURE = `tap`, `double`, `triple`, `long`, `fn_esc`. `truesense keys actions` lists every action: `power-next`, `power:turbo`, `power-cycle:eco,balanced,turbo`, `fan:smart`, `fan-max-toggle`, `profile:gaming`, `output-toggle`, `mic-toggle`, `voice-next`, `touchpad-toggle`, `keyboard-effect-next`, `rear:toggle`, `battery-limit-toggle`, `overdrive-toggle`, `exec:<command>`, `notify:<text>`, `none`. Actions are checked when you set them, never at key-press time. `truesense keys test ACTION` runs one now. Fn+F11/F12 brightness is done by the keyboard itself and is left alone. Defaults: tap = next power mode, double = output toggle, long = fans to max (toggle).
