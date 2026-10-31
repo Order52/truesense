@@ -165,15 +165,19 @@ class TestWindowLogic(unittest.TestCase):
             finally: QFileDialog.getOpenFileName = orig
         w.close()
 
-    def test_fan_slider_reaches_zero_which_means_fans_off(self):
-        w = gui.Window(); self.assertFalse(hasattr(w, "fan_off_btn"), "the separate Fans off button is gone")
-        for sl in (w.fan_pct, w.fan_cpu, w.fan_gpu): self.assertEqual((sl.minimum(), sl.maximum()), (0, 100))
-        asked = []; w.fan_stop_ask = lambda: asked.append(1)
-        w.fan_link.setChecked(True); w.fan_pct.setValue(0); w.fan_released(); self.assertEqual(w.manual_duty(), (0, 0)); self.assertTrue(asked); self.assertEqual(len(asked), 1)
-        w.fan_pct.setValue(10); self.assertEqual(w.manual_duty(), (20, 20), "below the firmware minimum the fans run at 20 %")
-        w.fan_link.setChecked(False); w.fan_cpu.setValue(0); w.fan_gpu.setValue(60); self.assertEqual(w.manual_duty(), (0, 60), "the CPU fan alone can be stopped")
-        w.fan_cpu.setValue(70); w.fan_gpu.setValue(0); self.assertEqual(w.manual_duty(), (70, 0), "so can the GPU fan alone"); w.fan_gpu.setValue(10); self.assertEqual(w.manual_duty(), (70, 20))
-        w.fan_released(); self.assertEqual(w.fan_gpu.value(), 20); w.fan_link.setChecked(True); w.close()
+    def test_fan_sliders_are_20_to_100_and_the_off_button_asks(self):
+        w = gui.Window(); self.assertTrue(hasattr(w, "fan_off_btn"), "the Turn fans off button is there")
+        for sl in (w.fan_pct, w.fan_cpu, w.fan_gpu): self.assertEqual((sl.minimum(), sl.maximum()), (20, 100))
+        self.assertEqual(w.manual_duty()[0] >= 20, True); w.fan_link.setChecked(False); w.fan_cpu.setValue(20); w.fan_gpu.setValue(65); self.assertEqual(w.manual_duty(), (20, 65)); w.fan_link.setChecked(True)
+        from PyQt6.QtWidgets import QMessageBox
+        import truesense.control as control_mod
+        calls = []; orig_exec, orig_fan = QMessageBox.exec, control_mod.fan
+        control_mod.fan = lambda *a, **k: calls.append((a, k))
+        try:
+            QMessageBox.exec = lambda self_: QMessageBox.StandardButton.Cancel; w.fan_off_ask(); time.sleep(0.2); self.assertFalse(calls, "cancel does nothing")
+            w.fan_asked_at = -9; QMessageBox.exec = lambda self_: QMessageBox.StandardButton.Apply; w.fan_off_ask(); self.assertTrue(self._wait(lambda: calls)); self.assertEqual((calls[0][0], calls[0][1].get("confirm")), (("off",), True))
+        finally: QMessageBox.exec = orig_exec; control_mod.fan = orig_fan
+        w.close()
 
     def test_every_page_fits_the_smallest_window_and_esc_closes(self):
         w = gui.Window(); w.show(); self.assertEqual(w.minimumSize(), w.maximumSize(), "fixed size (floats on Hyprland) is the default"); w.apply_size_mode(False); self.assertFalse(w.minimumSize() == w.maximumSize(), "the window can be resized"); self.assertLessEqual(w.minimumWidth(), 400)
