@@ -9,11 +9,62 @@ from .device import HwError
 try:
     from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QRectF
     from PyQt6.QtNetwork import QLocalServer, QLocalSocket
+    from PyQt6.QtSvg import QSvgRenderer
+    from PyQt6.QtCore import QByteArray, QSize
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen, QIcon, QPixmap
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
                                  QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox, QGridLayout)
 except ImportError as _e:
     Qt = None; _IMPORT_ERROR = _e
+
+
+# ---- vector icons (24x24 stroke icons, drawn at any size and colour; nothing to ship) -------------------------------------------------------
+_P = {
+    "eco": "M6 18c0-8 5-13 13-13 0 8-5 13-13 13zM6 18l8-8",
+    "quiet": "M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z",
+    "balanced": "M12 4v16M6 20h12M5 8h14M5 8l-3 7a3 3 0 0 0 6 0zM19 8l-3 7a3 3 0 0 0 6 0z",
+    "performance": "M4 17a8 8 0 1 1 16 0M12 17l4-6M7 17h.01M17 17h.01",
+    "turbo": "M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z",
+    "smart": "M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z",
+    "auto": "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z",
+    "max": "M12 12c0-4 1-7 4-8 1 3 0 6-4 8zM12 12c4 0 7 1 8 4-3 1-6 0-8-4zM12 12c0 4-1 7-4 8-1-3 0-6 4-8zM12 12c-4 0-7-1-8-4 3-1 6 0 8 4z",
+    "manual": "M4 8h9M17 8h3M4 16h3M11 16h9M15 5v6M9 13v6",
+    "fan": "M12 12c0-4 1-7 4-8 1 3 0 6-4 8zM12 12c4 0 7 1 8 4-3 1-6 0-8-4zM12 12c0 4-1 7-4 8-1-3 0-6 4-8zM12 12c-4 0-7-1-8-4 3-1 6 0 8 4z",
+    "gpu": "M2 7h20v10H2zM6 17v3M18 17v3M12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z",
+    "optimus": "M3 6h8v6H3zM13 12h8v6h-8zM11 9h2v6M7 12v3h4",
+    "keyboard": "M2 6h20v12H2zM6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10",
+    "bar": "M3 10h18v4H3zM6 7v-2M12 7V4M18 7V5M6 17v2M12 17v3M18 17v2",
+    "battery": "M3 7h15v10H3zM18 10h3v4h-3zM6 10v4M9 10v4",
+    "audio": "M4 10v4h4l5 4V6l-5 4zM16.5 9a4 4 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11",
+    "settings": "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1",
+    "palette": "M12 3a9 9 0 1 0 0 18c1.5 0 2-1 1.5-2-.6-1.2.2-2.5 1.6-2.5H17a4 4 0 0 0 4-4c0-5-4-9.5-9-9.5zM7.5 11h.01M10 7.5h.01M14.5 7.5h.01",
+    "power": "M12 3v8M6.5 6.5a8 8 0 1 0 11 0",
+    "back": "M15 5l-7 7 7 7",
+}
+
+def icon_pixmap(name, color="#dfe5ee", size=24):
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+           f'<path d="{_P.get(name, "")}"/></svg>').encode()
+    r = QSvgRenderer(QByteArray(svg)); px = QPixmap(size * 2, size * 2); px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px); r.render(p); p.end(); px.setDevicePixelRatio(2); return px
+
+def make_icon(name, color="#dfe5ee", size=20): return QIcon(icon_pixmap(name, color, size))
+
+
+class TileButton(QPushButton if Qt else object):
+    """A big choice tile: icon above, label below; the chosen one is outlined (or filled with its own colour, like the performance modes)."""
+    def __init__(self, label, icon, fill=None):
+        super().__init__(); self.label, self.icon_name, self.fill = label, icon, fill
+        self.setCheckable(True); self.setCursor(Qt.CursorShape.PointingHandCursor); self.setMinimumHeight(66); self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def paintEvent(self, _):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing); r = QRectF(self.rect()).adjusted(1, 1, -1, -1); on = self.isChecked(); hot = self.underMouse()
+        if on and self.fill: bg, fg, border = QColor(self.fill), "#04101a", QColor(self.fill)
+        elif on: bg, fg, border = QColor("#10303a"), ACCENT, QColor(ACCENT)
+        else: bg, fg, border = QColor("#19212c" if hot else "#131922"), "#aab3c0", QColor("#1f2733")
+        p.setBrush(bg); p.setPen(QPen(border, 1.4)); p.drawRoundedRect(r, 12, 12)
+        px = icon_pixmap(self.icon_name, fg, 22); p.drawPixmap(int(r.center().x() - 11), int(r.top() + 10), px)
+        f = QFont(self.font()); f.setBold(on); p.setFont(f); p.setPen(QColor(fg)); p.drawText(QRectF(r.left(), r.top() + 36, r.width(), r.height() - 38), Qt.AlignmentFlag.AlignCenter, self.label)
 
 
 ACCENT = "#19e3ff"
@@ -79,16 +130,14 @@ PAGES = {"home": 0, "keys": 1, "audio": 2, "settings": 3}
 
 
 class Segmented(QWidget if Qt else object):
-    """A row of exclusive buttons (a modern replacement for a drop-down with few choices). tiles=True: separate big tiles, like G-Helper's mode buttons."""
+    """A row of exclusive buttons. tiles=True: separate icon tiles (like PreySense / G-Helper's mode buttons)."""
     picked = pyqtSignal(int) if Qt else None
 
-    def __init__(self, labels, parent=None, tiles=False, colors=None):
+    def __init__(self, labels, parent=None, tiles=False, colors=None, icons=None):
         super().__init__(parent); h = QHBoxLayout(self); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(8 if tiles else 0); self.group = QButtonGroup(self); self.group.setExclusive(True); self.btns = []
         for i, t in enumerate(labels):
-            b = QPushButton(t); b.setObjectName("tilebtn" if tiles else "seg"); b.setCheckable(True); b.setCursor(Qt.CursorShape.PointingHandCursor)
-            if tiles:
-                b.setMinimumHeight(54); b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-                if colors: c = colors[i]; b.setStyleSheet(f"QPushButton:checked {{ background: {c}; color: #04101a; border-color: {c}; font-weight: 700; }}")
+            if tiles: b = TileButton(t, (icons or [""] * len(labels))[i], colors[i] if colors else None)
+            else: b = QPushButton(t); b.setObjectName("seg"); b.setCheckable(True); b.setCursor(Qt.CursorShape.PointingHandCursor)
             self.group.addButton(b, i); h.addWidget(b); self.btns.append(b)
         if not tiles:
             self.btns[0].setStyleSheet("border-top-left-radius:10px; border-bottom-left-radius:10px;"); self.btns[-1].setStyleSheet("border-top-right-radius:10px; border-bottom-right-radius:10px;")
@@ -200,15 +249,18 @@ class Window(QMainWindow if Qt else object):
         sc = QScrollArea(); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); sc.setWidget(w)
         self.pages.addWidget(sc); h = QHBoxLayout()
         if self.pages.count() > 1:
-            back = self.btn("‹  Back", lambda: self.pages.setCurrentIndex(0)); h.addWidget(back)
+            back = self.btn(" Back", lambda: self.pages.setCurrentIndex(0)); back.setIcon(make_icon("back")); h.addWidget(back)
         t_ = QLabel(heading); t_.setObjectName("brand" if self.pages.count() == 1 else "h1"); h.addWidget(t_); h.addStretch(); self.head = h; lay.addLayout(h); return lay
 
     def card(self, lay, title, icon="", right=False):
         """A flat section like PreySense / G-Helper: icon and title on the left, a live value on the right."""
         c = QFrame(); c.setObjectName("card"); v = QVBoxLayout(c); v.setContentsMargins(0, 8, 0, 4); v.setSpacing(10)
-        h = QHBoxLayout(); t_ = QLabel((icon + "  " if icon else "") + title); t_.setObjectName("cardtitle"); h.addWidget(t_); h.addStretch()
+        h = QHBoxLayout(); h.setSpacing(8)
+        if icon:
+            il = QLabel(); il.setPixmap(icon_pixmap(icon, "#dfe5ee", 20)); il.setFixedSize(22, 22); h.addWidget(il)
+        t_ = QLabel(title); t_.setObjectName("cardtitle"); h.addWidget(t_); h.addStretch()
         v.right = None
-        if right: v.right = QLabel(""); v.right.setObjectName("stats"); h.addWidget(v.right)
+        if right: v.right = QLabel(""); v.right.setObjectName("stats"); v.right.setMinimumWidth(190); v.right.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter); h.addWidget(v.right)
         v.addLayout(h); lay.addWidget(c); return v
 
     @staticmethod
@@ -246,22 +298,21 @@ class Window(QMainWindow if Qt else object):
     # ---- Home (everything you reach for daily, on one compact page) ------------------------------------------------------------------
     def p_home(self):
         lay = self.page("Home", "TrueSense")
-        v = self.card(lay, "Performance Mode", "◔", True); self.stat_cpu = v.right
+        v = self.card(lay, "Performance Mode", "performance", True); self.stat_cpu = v.right
         try: self.modes = hw.supported_modes()
         except Exception: self.modes = list(hw.MODES)
         order = [m for m in ("eco", "quiet", "balanced", "performance", "turbo") if m in self.modes] or self.modes; self.modes = order
         cols = {"eco": "#5de0a0", "quiet": "#5db8ff", "balanced": "#19e3ff", "performance": "#ffb347", "turbo": "#ff5d6c"}
-        ICON = {"eco": "❦", "quiet": "☾", "balanced": "⚖", "performance": "⚡", "turbo": "♨"}
-        self.power = Segmented([ICON.get(m, "") + "\n" + m.capitalize() for m in order], tiles=True, colors=[cols.get(m, "#19e3ff") for m in order]); v.addWidget(self.power)
+        self.power = Segmented([m.capitalize() for m in order], tiles=True, icons=[m if m in _P else "balanced" for m in order], colors=[cols.get(m, "#19e3ff") for m in order]); v.addWidget(self.power)
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
         self.auto = self.switch(v, "Choose automatically", lambda x: self.do(lambda: ipc.call("set", key="auto_profile", value=x), "Saved", refresh=False), "By power source and load. A mode you pick holds for 30 minutes.")
-        v = self.card(lay, "Fans", "✻", True); self.stat_fan = v.right
-        self.fan = Segmented(["☘\nSmart", "◌\nAuto", "✹\nMax", "☰\nManual"], tiles=True); self.fan.picked.connect(lambda i: None if self.loading else self.fan_apply(i)); v.addWidget(self.fan)
+        v = self.card(lay, "Fans", "fan", True); self.stat_fan = v.right
+        self.fan = Segmented(FAN_MODES, tiles=True, icons=["smart", "auto", "max", "manual"]); self.fan.picked.connect(lambda i: None if self.loading else self.fan_apply(i)); v.addWidget(self.fan)
         self.fan_pct = self.slider(v, "Manual speed", 20, 100, 5, lambda x: None, lambda x: self.fan_apply(3))
-        v = self.card(lay, "GPU Mode", "▣", True); self.stat_gpu = v.right
-        self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True); v.addWidget(self.gpu)
+        v = self.card(lay, "GPU Mode", "gpu", True); self.stat_gpu = v.right
+        self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True, icons=["optimus", "gpu", "auto"]); v.addWidget(self.gpu)
         self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False)); v.addWidget(self.hint("Takes effect after a reboot."))
-        v = self.card(lay, "Keyboard", "⌨")
+        v = self.card(lay, "Keyboard", "keyboard")
         self.kb_on = self.switch(v, "Backlight", lambda x: self.do(lambda: actions.run("keyboard:on" if x else "keyboard:off"), lambda r: r))
         self.kb_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("kbl", lambda: keyboard.set_brightness(x)))
         self.kb_fx = QComboBox(); self.kb_fx.addItems([e.capitalize() for e in KB_EFFECTS]); self.kb_color = ColorButton("00aec7")
@@ -269,21 +320,21 @@ class Window(QMainWindow if Qt else object):
         self.kb_color.changed.connect(lambda h_: self.live("kbc", lambda: keyboard.set_color(h_)))
         self.line(v, "Effect and colour", self.kb_fx, self.kb_color)
         self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x)))
-        v = self.card(lay, "Rear Light Bar", "▬")
+        v = self.card(lay, "Rear Light Bar", "bar")
         self.rear_on = self.switch(v, "Light", lambda x: self.do(lambda: actions.run("rear:on" if x else "rear:off"), lambda r: r, refresh=False))
         self.rear_fx = self.seg(v, "Effect", [m.capitalize() for m in hw.REAR_MODES], lambda i: self.rear_apply())
         self.zc = [ColorButton("00aec7") for _ in range(3)]; self.rear_color = ColorButton("00aec7")
         for b in self.zc + [self.rear_color]: b.changed.connect(lambda h_: self.rear_apply())
         self.line(v, "Static: left · middle · right", *self.zc); self.line(v, "Colour (other effects)", self.rear_color)
         self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply())
-        v = self.card(lay, "Battery and Screen", "▮", True); self.stat_bat = v.right
+        v = self.card(lay, "Battery and Screen", "battery", True); self.stat_bat = v.right
         self.limit = self.switch(v, "80 % charge limit", lambda x: self.do(lambda: hw.set_battery_limit(x), lambda r: f"80 % limit: {'on' if r else 'off'}", refresh=False))
         self.od = self.switch(v, "LCD overdrive", lambda x: self.do(lambda: hw.set_overdrive(x), lambda r: f"Overdrive: {'on' if r else 'off'}", refresh=False))
         self.usb = self.seg(v, "USB charging while off", ["Off", "10 %", "20 %", "30 %"], lambda i: self.do(lambda: hw.set_usb_charge(hw.USB_LEVELS[i]), lambda r: f"USB charge stops at {r} %", refresh=False))
         g = QGridLayout(); g.setSpacing(8)
-        for n, (label, cb) in enumerate((("⌨  Per-key colours", lambda: self.pages.setCurrentIndex(1)), ("♪  Audio", lambda: self.pages.setCurrentIndex(2)),
-                                          ("⚙  Settings", lambda: self.pages.setCurrentIndex(3)), ("⏻  Quit", self.close))):
-            b_ = self.btn(label, cb); b_.setMinimumHeight(40); g.addWidget(b_, n // 2, n % 2)
+        for n, (label, ic, cb) in enumerate((("Per-key colours", "palette", lambda: self.pages.setCurrentIndex(1)), ("Audio", "audio", lambda: self.pages.setCurrentIndex(2)),
+                                              ("Settings", "settings", lambda: self.pages.setCurrentIndex(3)), ("Quit", "power", self.close))):
+            b_ = self.btn(label, cb); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); g.addWidget(b_, n // 2, n % 2)
         lay.addLayout(g); lay.addStretch()
 
     def fan_apply(self, i):
