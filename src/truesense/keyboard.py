@@ -46,15 +46,21 @@ def _send(pkts):
             fcntl.ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x06, buf)   # HIDIOCSFEATURE(len)
     finally: os.close(fd)
 
+# The keyboard stores the speed byte 0 (fastest) .. 11 (slowest) and reads it back (byte 3 of the `88` report); 12 and above are refused and become 6 (measured on the PH16-71).
+# The UI scale runs the other way round: 1 = slowest .. 12 = fastest, byte = 12 - speed. (Before 0.3.10 it was 1..11 with byte = 10 - speed: the two slowest steps were
+# unreachable and the top setting sent 0xFF, which the keyboard turns into a medium speed.)
+SPEED_MIN, SPEED_MAX = 1, 12
+
+
 def set_effect(name, color="ffffff", speed=5, brightness=30, direction=0):
     if name == "operatingmode": return set_operating_mode(color)
     if name not in EFFECTS: raise HwError(f"effect: {', '.join(EFFECTS)}")
-    if not 1 <= speed <= 11 or not 0 <= brightness <= MAX_BRIGHT: raise HwError(f"speed 1..11, brightness 0..{MAX_BRIGHT}")
+    if not SPEED_MIN <= speed <= SPEED_MAX or not 0 <= brightness <= MAX_BRIGHT: raise HwError(f"speed {SPEED_MIN}..{SPEED_MAX}, brightness 0..{MAX_BRIGHT}")
     r, g, b = (0, 0, 0) if name in NO_COLOR else bytes.fromhex(color)
     pre = bytes([0xB1, 0, 0, 0, 0, 0, 0, 0x4E])
     if name == "off":
         _send([pre, _pkt(0x08, 0x02, 0, 0, 0, 0, 0), _pkt(0x14, 0, 0, 0, 0, 0, 0)]); userstate.set("keyboard", {"mode": "off"}); return
-    _send([pre, _pkt(0x14, 0, 0, r, g, b, 0), _pkt(0x08, 0x02, EFFECTS[name], (10 - speed) & 0xFF, brightness, 0x01, direction + 1)])
+    _send([pre, _pkt(0x14, 0, 0, r, g, b, 0), _pkt(0x08, 0x02, EFFECTS[name], SPEED_MAX - speed, brightness, 0x01, direction + 1)])
     userstate.set("keyboard", {"mode": "effect", "name": name, "color": color.lstrip("#").lower(), "speed": speed, "brightness": brightness, "direction": direction})
 
 def _hexcells(cells): return ["%02x%02x%02x" % tuple(c) for c in cells[:128]]
@@ -161,8 +167,8 @@ def replay(s=None):
     return None
 
 def set_speed(speed):
-    """Animation speed (1 slow .. 11 fast) of the running effect, keeping its colour and brightness."""
-    if not 1 <= speed <= 11: raise HwError("speed 1..11")
+    """Animation speed (1 slowest .. 12 fastest) of the running effect, keeping its colour and brightness."""
+    if not SPEED_MIN <= speed <= SPEED_MAX: raise HwError(f"speed {SPEED_MIN}..{SPEED_MAX}")
     s = last()
     if s.get("mode") != "effect" or s.get("name") in (None, "off", "static"): raise HwError("the current look has no animation speed; pick an effect first")
     return set_effect(s["name"], s.get("color", "ffffff"), speed, s.get("brightness", get_brightness() or 25), s.get("direction", 0))

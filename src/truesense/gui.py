@@ -791,7 +791,6 @@ class Window(QMainWindow if Qt else object):
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
         TIPS = {"eco": "Lowest power and heat; for battery and light work", "quiet": "Low fan noise; reduced speed", "balanced": "PredatorSense's default: everyday use", "performance": "More power for demanding work and games", "turbo": "Maximum power; loud fans and high heat"}
         for b_, m_ in zip(self.power.btns, order): b_.setToolTip(TIPS.get(m_, ""))
-        self.line(v, "Cycle mode", self.btn("Previous", lambda: self.do(lambda: actions.run("power-prev"), lambda r: r)), self.btn("Next", lambda: self.do(lambda: actions.run("power-next"), lambda r: r)))
         self.auto = Segmented(["Manual", "Native", "Smart"]); self.auto.picked.connect(self.auto_picked); self.line(v, "Mode control", self.auto)
         self.auto_hint = self.hint(AUTO_HINT["off"]); v.addWidget(self.auto_hint)
         self.smart_box = QWidget(); sb = QVBoxLayout(self.smart_box); sb.setContentsMargins(0, 0, 0, 0); sb.setSpacing(8)
@@ -959,7 +958,7 @@ class Window(QMainWindow if Qt else object):
         self.kb_fx.activated.connect(lambda i: self.do(lambda: keyboard.set_effect(KB_EFFECTS[i], self.kb_color.hex, self.kb_speed.value() or 5, max(self.kb_level.value(), 50 if KB_EFFECTS[i] == "neon" else 10)), "Effect applied", refresh=False) or QTimer.singleShot(300, lambda: self.sync_enabled()))
         self.kb_color.changed.connect(lambda h_: self.live("kbc", lambda: keyboard.set_color(h_)))
         self.sep(v); self.line(v, "Lighting mode", self.kb_fx); self.line(v, "Colour", self.kb_color)
-        self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x))); self.sep(v)
+        self.kb_speed = self.slider(v, "Effect speed", keyboard.SPEED_MIN, keyboard.SPEED_MAX, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x))); self.sep(v)
         self.kb_oper = self.switch(v, "Colour follows the power mode", lambda x: self.do(lambda: ipc.call("set", key="operating_follow", value=bool(x)), "Keyboard colour follows the power mode: " + ("on" if x else "off"), refresh=False), sub="Eco green, Quiet blue, Balanced cyan, Performance orange, Turbo red. Off leaves the colours you picked.")
         self.line(v, "Default", self.btn("Reset to default", lambda: self.do(lambda: keyboard.restore_default(None), "Keyboard back to the stock look"))); v.addStretch(); stack.addWidget(kb); stack.addWidget(self.keys_tab())
         rr = QWidget(); v = QVBoxLayout(rr); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)

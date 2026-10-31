@@ -27,7 +27,7 @@ Encodings seen on the laptop:
 ## Keyboard controller (USB HID `04F2:0117`)
 
 - **Lighting interface**: usage page `0xFF02`, feature reports of 8 bytes; the last byte is `0xFF - (sum of the first seven) & 0xFF`.
-- **Effect**: `B1 00 00 00 00 00 00 4E`, then colour `14 00 00 R G B 00 chk`, then `08 02 <effect> <10 - speed> <brightness> 01 <direction + 1> chk`. Effect ids: static 1, breathing 2, wave 3, snake 5, ripple 6, neon 8, raindrop 10, lightning 18, spot 37, star 38, fireball 39, snow 40, heartbeat 41; "operating mode" is `0x22`. Brightness is 0 to 50; speed 1 to 11.
+- **Effect**: `B1 00 00 00 00 00 00 4E`, then colour `14 00 00 R G B 00 chk`, then `08 02 <effect> <speed byte> <brightness> 01 <direction + 1> chk` (speed byte 0 fastest .. 11 slowest; the keyboard reads it back as byte 3 of the `88` report and refuses 12 and above, storing 6 instead; TrueSense's scale is 12 - speed, 1 slowest .. 12 fastest). Effect ids: static 1, breathing 2, wave 3, snake 5, ripple 6, neon 8, raindrop 10, lightning 18, spot 37, star 38, fireball 39, snow 40, heartbeat 41; "operating mode" is `0x22`. Brightness is 0 to 50; speed 1 to 11.
 - **Per-key colours**: feature `88 00 00 00 00 00 00 77` (then a GET), feature `12 00 00 08 00 00 00 E5`, then 8 output reports of 64 bytes (written as 65 bytes with a leading report id of 0, paced about 16 ms apart) carrying 128 cells of `00 R G B`, then `08 02 33 05 <brightness> 08 01 chk`. Cell number is `column * 6 + row`.
 - **Brightness read-back**: send `88 ...` and read the feature report; byte 4 is the brightness.
 - **Backlight timeout**: set `30 01 <0|1> 00 00 00 00 chk`; get by sending `B0 00 00 00 00 00 00 4F` and reading byte 2. The factory state is on.

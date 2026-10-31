@@ -693,3 +693,21 @@ class TestUpdateWithoutPolkitAgent(unittest.TestCase):
         finally:
             if _w is None: _os.environ.pop("WAYLAND_DISPLAY", None)
             else: _os.environ["WAYLAND_DISPLAY"] = _w
+
+
+class TestKeyboardSpeedScale(unittest.TestCase):
+    def sent_speed_byte(self, speed):
+        from truesense import keyboard
+        keyboard.SIM["packets"].clear(); keyboard.set_effect("wave", "00aec7", speed, 25, 0)
+        return [p for p in keyboard.SIM["packets"] if p[0] == 0x08][-1][3]
+
+    def test_speed_scale_covers_the_keyboards_whole_range_and_never_sends_an_invalid_byte(self):
+        from truesense import keyboard
+        self.assertEqual((keyboard.SPEED_MIN, keyboard.SPEED_MAX), (1, 12))
+        self.assertEqual(self.sent_speed_byte(1), 11, "slowest = byte 11 (two steps slower than the old slowest, 9)")
+        self.assertEqual(self.sent_speed_byte(12), 0, "fastest = byte 0")
+        self.assertEqual([self.sent_speed_byte(s) for s in range(1, 13)], list(range(11, -1, -1)), "every step is one byte step faster than the last")
+        for s in range(1, 13): self.assertTrue(0 <= self.sent_speed_byte(s) <= 11, "the keyboard refuses bytes above 11 and turns them into a medium speed")
+        for bad in (0, 13, -1, 99):
+            with self.assertRaises(device.HwError): keyboard.set_effect("wave", "00aec7", bad, 25, 0)
+        with self.assertRaises(device.HwError): keyboard.set_speed(13)

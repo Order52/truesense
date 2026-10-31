@@ -46,7 +46,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `startup boot [NAME\|current\|clear]` | the look applied at BOOT (before login) and after every resume from suspend, by the root service; no argument shows it |
 | `startup show`, `startup set keyboard\|rear\|profile VALUE`, `startup apply` | what comes back at login: `last` (default, saved automatically), `default`, `off`, `none`; keyboard also `profile:NAME`; profile = a full profile applied first |
 | `keyboard on\|off\|toggle`, `restore`, `brightness N` (0-50), `timeout on\|off` | backlight |
-| `keyboard effect NAME --color --speed --brightness` | static breathing wave snake ripple neon raindrop lightning spot star fireball snow heartbeat (neon needs brightness 50) |
+| `keyboard effect NAME --color --speed --brightness` (speed 1 slowest .. 12 fastest; `keyboard speed N` changes it for the running effect) | static breathing wave snake ripple neon raindrop lightning spot star fireball snow heartbeat (neon needs brightness 50) |
 | `keyboard fx off\|pulse\|wave\|cycle\|twinkle\|rainbow\|scanner\|comet\|ripple\|rain\|matrix\|fire\|plasma\|aurora\|lightning\|confetti\|starlight\|mood\|breathing [--speed 1..10] [--keys wasd,arrows,f5]` | per-key animation on chosen keys (or all). The hardware effects cover the whole keyboard, so this one is drawn by the key service, about 5 frames a second; slow effects look best (identical frames are not re-sent) |
 | `keyboard design list\|apply NAME\|save NAME` | still designs: built-in gaming, coding, arrows, ice, ember, stealth; yours are JSON files in `~/.config/truesense/designs/` (plain colours, no code) |
 | `keyboard image FILE` | paint a picture across the keys (scaled to the 22 x 6 key grid; needs Pillow) |

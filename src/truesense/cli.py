@@ -118,7 +118,7 @@ def build():
     q = ks.add_parser("effect"); q.add_argument("name"); q.add_argument("--color", default="00aec7"); q.add_argument("--speed", type=int, default=5); q.add_argument("--brightness", type=int, default=None); q.add_argument("--direction", type=int, default=0)
     q = ks.add_parser("fx", help="per-key animation on chosen keys (drawn by the key service, about 5 frames a second): off | pulse | wave | cycle | twinkle | rainbow | scanner | comet | ripple | rain | matrix | fire | plasma | aurora | lightning | confetti | starlight | mood | breathing"); q.add_argument("mode", choices=["off"] + list(__import__("truesense.perkeyfx", fromlist=["MODES"]).MODES))
     q.add_argument("--speed", type=int, default=5, help="1..10"); q.add_argument("--keys", help="comma list of keys or groups, e.g. wasd,arrows,f5 (default: all keys)")
-    q = ks.add_parser("speed", help="animation speed of the running effect, 1 (slow) .. 11 (fast)"); q.add_argument("level", type=int)
+    q = ks.add_parser("speed", help="animation speed of the running effect, 1 (slowest) .. 12 (fastest)"); q.add_argument("level", type=int)
     q = ks.add_parser("color", help="change the colour of the current effect (stays in the same mode)"); q.add_argument("color")
     q = ks.add_parser("paint", help='colour some keys and keep the rest, e.g. paint w=ff0000 arrows=00ff00 esc=ffffff'); q.add_argument("items", nargs="+"); q.add_argument("--brightness", type=int, default=None)
     ks.add_parser("layout", help="key names and positions (for other tools)")

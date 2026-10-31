@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+**Effect speed**
+- The keyboard effect speed slider now goes slower. Measured on the real keyboard: it stores speed bytes 0 (fastest) to 11 (slowest) and refuses anything above; the old scale (1..11, byte = 10 - speed) never reached the two slowest steps, and its top setting sent 0xFF, which the keyboard turns into a medium speed (so the fastest setting was slower than the one below it). The scale is now 1 (slowest) to 12 (fastest), one keyboard step per slider step.
+- Saved looks keep their number but run a little differently (the scale is now 12 - speed instead of 10 - speed).
+
+**Home**
+- Removed the Cycle mode Previous / Next buttons: the mode tiles do the same.
+
 **Faster and lighter**
 - The window asks the hardware for far less. While idle it now reads only what changes by itself (power mode and power source from the service, and the fans); the slow settings (lighting, battery, screen, boot, GPU) are re-read every 20 s and whenever you come back to the window, open a page or change something. Measured on the real laptop: 15 hardware calls (134 ms) per 10 s instead of 55 calls (594 ms), which also means less firmware time stolen from the audio path.
 - When the window is not the focused one it polls three times less often.
