@@ -90,6 +90,7 @@ def build():
     p = sub.add_parser("keyboard", help="keyboard lighting"); ks = p.add_subparsers(dest="verb")
     ks.add_parser("status"); ks.add_parser("on"); ks.add_parser("off"); ks.add_parser("toggle"); ks.add_parser("restore", help="back to the stock cyan per-key state"); ks.add_parser("list-keys")
     q = ks.add_parser("effect"); q.add_argument("name"); q.add_argument("--color", default="00aec7"); q.add_argument("--speed", type=int, default=5); q.add_argument("--brightness", type=int, default=None); q.add_argument("--direction", type=int, default=0)
+    q = ks.add_parser("speed", help="animation speed of the running effect, 1 (slow) .. 11 (fast)"); q.add_argument("level", type=int)
     q = ks.add_parser("color", help="change the colour of the current effect (stays in the same mode)"); q.add_argument("color")
     q = ks.add_parser("paint", help='colour some keys and keep the rest, e.g. paint w=ff0000 arrows=00ff00 esc=ffffff'); q.add_argument("items", nargs="+"); q.add_argument("--brightness", type=int, default=None)
     ks.add_parser("layout", help="key names and positions (for other tools)")
@@ -252,6 +253,7 @@ def h_keyboard(a):
             kb.set_effect(a.name, a.color, a.speed, 50 if (a.name == "neon" and a.brightness is None) else b, a.direction)
         done()
     elif v == "color": kb.set_color(a.color); done()
+    elif v == "speed": kb.set_speed(a.level); done(f"keyboard effect speed: {a.level} / 11")
     elif v == "paint":
         items = {}
         for item in a.items:

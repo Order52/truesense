@@ -11,7 +11,7 @@ try:
     from PyQt6.QtNetwork import QLocalServer, QLocalSocket
     from PyQt6.QtGui import QColor, QPainter, QFont, QPen
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox)
+                                 QPushButton, QScrollArea, QSlider, QListWidget, QStackedWidget, QVBoxLayout, QWidget, QFrame, QButtonGroup, QSizePolicy, QDoubleSpinBox, QGridLayout)
 except ImportError as _e:
     Qt = None; _IMPORT_ERROR = _e
 
@@ -27,14 +27,14 @@ QListWidget { background: transparent; border: none; outline: 0; }
 QListWidget::item { padding: 11px 14px; border-radius: 10px; margin: 2px 0; color: #8d97a6; }
 QListWidget::item:selected { background: #10252b; color: #19e3ff; }
 QListWidget::item:hover:!selected { background: #11161d; color: #cfd6e0; }
-#card { background: #11151c; border: 1px solid #1b222c; border-radius: 16px; }
-#cardtitle { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #6c7787; }
+#card { background: transparent; border: none; }
+#cardtitle { font-size: 14px; font-weight: 700; color: #e8edf3; }
 #tile { background: #11151c; border: 1px solid #1b222c; border-radius: 16px; }
 #tilevalue { font-size: 26px; font-weight: 700; color: #ffffff; }
 #tilelabel { font-size: 11px; letter-spacing: 1px; color: #6c7787; }
 #hint { color: #6c7787; font-size: 12px; }
 #h1 { font-size: 20px; font-weight: 700; }
-#stats { color: #9aa4b2; font-size: 12px; }
+#stats { color: #aab3c0; font-size: 12px; }
 QPushButton { background: #171d26; border: 1px solid #222b37; border-radius: 10px; padding: 8px 16px; color: #dfe5ee; }
 QPushButton:hover { background: #1d2530; border-color: #2c3847; }
 QPushButton:pressed { background: #10252b; }
@@ -164,7 +164,7 @@ class KeyboardView(QWidget if Qt else object):
 
 class Window(QMainWindow if Qt else object):
     def __init__(self):
-        super().__init__(); self.setWindowTitle("TrueSense"); self.resize(560, 820); self.setMinimumSize(500, 560)
+        super().__init__(); self.setWindowTitle("TrueSense"); self.resize(470, 860); self.setMinimumSize(440, 560)
         self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.refreshed.connect(self._apply); self.busy = {}; self.loading = False
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready"); self.names = []
@@ -201,10 +201,13 @@ class Window(QMainWindow if Qt else object):
             back = self.btn("‹  Back", lambda: self.pages.setCurrentIndex(0)); h.addWidget(back)
         t_ = QLabel(heading); t_.setObjectName("brand" if self.pages.count() == 1 else "h1"); h.addWidget(t_); h.addStretch(); self.head = h; lay.addLayout(h); return lay
 
-    @staticmethod
-    def card(lay, title):
-        c = QFrame(); c.setObjectName("card"); v = QVBoxLayout(c); v.setContentsMargins(20, 16, 20, 18); v.setSpacing(12)
-        t = QLabel(title.upper()); t.setObjectName("cardtitle"); v.addWidget(t); lay.addWidget(c); return v
+    def card(self, lay, title, icon="", right=False):
+        """A flat section like PreySense / G-Helper: icon and title on the left, a live value on the right."""
+        c = QFrame(); c.setObjectName("card"); v = QVBoxLayout(c); v.setContentsMargins(0, 8, 0, 4); v.setSpacing(10)
+        h = QHBoxLayout(); t_ = QLabel((icon + "  " if icon else "") + title); t_.setObjectName("cardtitle"); h.addWidget(t_); h.addStretch()
+        v.right = None
+        if right: v.right = QLabel(""); v.right.setObjectName("stats"); h.addWidget(v.right)
+        v.addLayout(h); lay.addWidget(c); return v
 
     @staticmethod
     def hint(text):
@@ -240,43 +243,46 @@ class Window(QMainWindow if Qt else object):
 
     # ---- Home (everything you reach for daily, on one compact page) ------------------------------------------------------------------
     def p_home(self):
-        lay = self.page("Home", "TRUESENSE"); self.stats = QLabel("…"); self.stats.setObjectName("stats"); self.head.addWidget(self.stats)
-        v = self.card(lay, "Performance mode")
+        lay = self.page("Home", "TrueSense")
+        v = self.card(lay, "Performance Mode", "◔", True); self.stat_cpu = v.right
         try: self.modes = hw.supported_modes()
         except Exception: self.modes = list(hw.MODES)
         order = [m for m in ("eco", "quiet", "balanced", "performance", "turbo") if m in self.modes] or self.modes; self.modes = order
         cols = {"eco": "#5de0a0", "quiet": "#5db8ff", "balanced": "#19e3ff", "performance": "#ffb347", "turbo": "#ff5d6c"}
-        self.power = Segmented([m.capitalize() for m in order], tiles=True, colors=[cols.get(m, "#19e3ff") for m in order]); v.addWidget(self.power)
+        ICON = {"eco": "❦", "quiet": "☾", "balanced": "⚖", "performance": "⚡", "turbo": "♨"}
+        self.power = Segmented([ICON.get(m, "") + "\n" + m.capitalize() for m in order], tiles=True, colors=[cols.get(m, "#19e3ff") for m in order]); v.addWidget(self.power)
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
         self.auto = self.switch(v, "Choose automatically", lambda x: self.do(lambda: ipc.call("set", key="auto_profile", value=x), "Saved", refresh=False), "By power source and load. A mode you pick holds for 30 minutes.")
-        v = self.card(lay, "Fans")
-        self.fan = Segmented(FAN_MODES, tiles=True); self.fan.picked.connect(lambda i: None if self.loading else self.fan_apply(i)); v.addWidget(self.fan)
+        v = self.card(lay, "Fans", "✻", True); self.stat_fan = v.right
+        self.fan = Segmented(["☘\nSmart", "◌\nAuto", "✹\nMax", "☰\nManual"], tiles=True); self.fan.picked.connect(lambda i: None if self.loading else self.fan_apply(i)); v.addWidget(self.fan)
         self.fan_pct = self.slider(v, "Manual speed", 20, 100, 5, lambda x: None, lambda x: self.fan_apply(3))
-        v = self.card(lay, "Graphics")
+        v = self.card(lay, "GPU Mode", "▣", True); self.stat_gpu = v.right
         self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True); v.addWidget(self.gpu)
         self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False)); v.addWidget(self.hint("Takes effect after a reboot."))
-        v = self.card(lay, "Keyboard")
+        v = self.card(lay, "Keyboard", "⌨")
         self.kb_on = self.switch(v, "Backlight", lambda x: self.do(lambda: actions.run("keyboard:on" if x else "keyboard:off"), lambda r: r))
         self.kb_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("kbl", lambda: keyboard.set_brightness(x)))
         self.kb_fx = QComboBox(); self.kb_fx.addItems([e.capitalize() for e in KB_EFFECTS]); self.kb_color = ColorButton("00aec7")
-        self.kb_fx.activated.connect(lambda i: self.do(lambda: keyboard.set_effect(KB_EFFECTS[i], self.kb_color.hex, 5, max(self.kb_level.value(), 50 if KB_EFFECTS[i] == "neon" else 10)), "Effect applied", refresh=False))
+        self.kb_fx.activated.connect(lambda i: self.do(lambda: keyboard.set_effect(KB_EFFECTS[i], self.kb_color.hex, self.kb_speed.value() or 5, max(self.kb_level.value(), 50 if KB_EFFECTS[i] == "neon" else 10)), "Effect applied", refresh=False))
         self.kb_color.changed.connect(lambda h_: self.live("kbc", lambda: keyboard.set_color(h_)))
         self.line(v, "Effect and colour", self.kb_fx, self.kb_color)
-        v = self.card(lay, "Rear light bar")
+        self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x)))
+        v = self.card(lay, "Rear Light Bar", "▬")
         self.rear_on = self.switch(v, "Light", lambda x: self.do(lambda: actions.run("rear:on" if x else "rear:off"), lambda r: r, refresh=False))
         self.rear_fx = self.seg(v, "Effect", [m.capitalize() for m in hw.REAR_MODES], lambda i: self.rear_apply())
         self.zc = [ColorButton("00aec7") for _ in range(3)]; self.rear_color = ColorButton("00aec7")
         for b in self.zc + [self.rear_color]: b.changed.connect(lambda h_: self.rear_apply())
         self.line(v, "Static: left · middle · right", *self.zc); self.line(v, "Colour (other effects)", self.rear_color)
         self.rear_speed = self.slider(v, "Speed", 1, 5, 1, lambda x: self.rear_apply()); self.rear_bright = self.slider(v, "Brightness", 0, 100, 10, lambda x: self.rear_apply())
-        v = self.card(lay, "Battery and screen")
+        v = self.card(lay, "Battery and Screen", "▮", True); self.stat_bat = v.right
         self.limit = self.switch(v, "80 % charge limit", lambda x: self.do(lambda: hw.set_battery_limit(x), lambda r: f"80 % limit: {'on' if r else 'off'}", refresh=False))
         self.od = self.switch(v, "LCD overdrive", lambda x: self.do(lambda: hw.set_overdrive(x), lambda r: f"Overdrive: {'on' if r else 'off'}", refresh=False))
         self.usb = self.seg(v, "USB charging while off", ["Off", "10 %", "20 %", "30 %"], lambda i: self.do(lambda: hw.set_usb_charge(hw.USB_LEVELS[i]), lambda r: f"USB charge stops at {r} %", refresh=False))
-        h = QHBoxLayout(); h.setSpacing(8)
-        for label, idx in (("Per-key colours", 1), ("Audio", 2), ("Settings", 3)):
-            b = self.btn(label, lambda idx=idx: self.pages.setCurrentIndex(idx)); b.setMinimumHeight(40); h.addWidget(b, 1)
-        lay.addLayout(h); lay.addStretch()
+        g = QGridLayout(); g.setSpacing(8)
+        for n, (label, cb) in enumerate((("⌨  Per-key colours", lambda: self.pages.setCurrentIndex(1)), ("♪  Audio", lambda: self.pages.setCurrentIndex(2)),
+                                          ("⚙  Settings", lambda: self.pages.setCurrentIndex(3)), ("⏻  Quit", self.close))):
+            b_ = self.btn(label, cb); b_.setMinimumHeight(40); g.addWidget(b_, n // 2, n % 2)
+        lay.addLayout(g); lay.addStretch()
 
     def fan_apply(self, i):
         mode = ("smart", "auto", "max", "manual")[i]; p = self.fan_pct.value()
@@ -372,7 +378,9 @@ class Window(QMainWindow if Qt else object):
 
     # ---- refresh -----------------------------------------------------------------------------------------------------------------------
     def tick(self):
-        try: s = hw.sensors(); self.stats.setText(f"CPU {s['cpu_temp']}° {s['cpu_fan_rpm']} rpm   ·   GPU {s['gpu_temp']}° {s['gpu_fan_rpm']} rpm   ·   {self.src}")
+        try:
+            s = hw.sensors(); self.stat_cpu.setText(f"CPU: {s['cpu_temp']} °C · {s['cpu_fan_rpm']} RPM"); self.stat_gpu.setText(f"GPU: {s['gpu_temp']} °C · {s['gpu_fan_rpm']} RPM")
+            self.stat_fan.setText(f"{max(s['cpu_fan_rpm'], s['gpu_fan_rpm'])} RPM"); self.stat_bat.setText(self.src)
         except HwError: pass
 
     def full_refresh(self):
@@ -404,7 +412,7 @@ class Window(QMainWindow if Qt else object):
                 for b, z in zip(self.zc, zs if isinstance(zs, list) and len(zs) == 3 else [r["color"]] * 3): b.set_hex(z)
             if "kb" in d: self.kb_level.setValue(d["kb"]); self.kb_on.setChecked(d["kb"] > 0)
             look = d.get("look") or {}
-            if look.get("mode") == "effect" and look.get("name") in KB_EFFECTS: self.kb_fx.setCurrentIndex(KB_EFFECTS.index(look["name"])); self.kb_color.set_hex(look.get("color", "00aec7"))
+            if look.get("mode") == "effect" and look.get("name") in KB_EFFECTS: self.kb_fx.setCurrentIndex(KB_EFFECTS.index(look["name"])); self.kb_color.set_hex(look.get("color", "00aec7")); self.kb_speed.setValue(look.get("speed", 5))
             if d.get("kbtimeout") is not None: self.kb_timeout.setChecked(bool(d["kbtimeout"]))
             if "cells" in d and not self.kv.sel: self.kv.cells = ["%02x%02x%02x" % tuple(c) for c in d["cells"]]; self.kv.update()
             for k, w in (("limit", self.limit), ("calib", self.calib), ("od", self.od), ("boot", self.boot), ("dts", self.dts)):

@@ -15,7 +15,7 @@ local KEYROWS = {
 }
 local ZONES = { { "all", "All" }, { "left", "Left" }, { "middle", "Middle" }, { "right", "Right" } }
 local SW = { "#FF0000", "#FF6A00", "#FFD000", "#00FF55", "#00FFD0", "#00AAFF", "#3A3AFF", "#B400FF", "#FF00AA", "#FFFFFF" }
-local st = { tab = "kb", hex = "00AAFF", level = 25, target = "wasd", khex = "FF0000",
+local st = { tab = "kb", hex = "00AAFF", level = 25, kspeed = 5, target = "wasd", khex = "FF0000",
              rear = "static", rhex = "00AEC7", rlevel = 100, speed = 3, zone = 1, z = { "00AEC7", "00AEC7", "00AEC7" } }
 
 local function run(cmd) noctalia.runAsync(cmd) end
@@ -72,6 +72,8 @@ function render()
       ui.colorPicker({ value = "#" .. st.hex, swatches = SW, onChange = "onKbColorLive", onChangeEnd = "onKbColor" }),
       cap("Brightness  " .. st.level .. " / 50  (Fn+F11 / Fn+F12 also work)"),
       ui.slider({ min = 0, max = 50, step = 5, value = st.level, controlSize = "md", onChange = "onKbLevel", onDragEnd = "onKbLevelEnd" }),
+      cap("Effect speed  " .. st.kspeed .. " / 11"),
+      ui.slider({ min = 1, max = 11, step = 1, value = st.kspeed, controlSize = "md", onChange = "onKbSpeed", onDragEnd = "onKbSpeedEnd" }),
       ui.row({ gap = 4 }, {
         ui.button({ text = "Fill all keys", flexGrow = 1, controlSize = "sm", variant = "ghost", onClick = "onKbFill" }),
         ui.button({ text = "Rainbow", flexGrow = 1, controlSize = "sm", variant = "ghost", onClick = "onKbRainbow" }),
@@ -103,6 +105,8 @@ function render()
     }
     if st.rear == "static" then body[#body + 1] = chips(ZONES, "onZone", st.zone) end
     body[#body + 1] = ui.colorPicker({ value = "#" .. (st.rear == "static" and (st.zone == 1 and st.z[1] or st.z[st.zone - 1]) or st.rhex), swatches = SW, onChange = "onRearColorLive", onChangeEnd = "onRearColor" })
+    body[#body + 1] = cap("Speed  " .. st.speed .. " / 5")
+    body[#body + 1] = ui.slider({ min = 1, max = 5, step = 1, value = st.speed, controlSize = "md", onChange = "onRearSpeed", onDragEnd = "onRearSpeedEnd" })
     body[#body + 1] = cap("Brightness  " .. st.rlevel .. " %")
     body[#body + 1] = ui.slider({ min = 10, max = 100, step = 10, value = st.rlevel, controlSize = "md", onChange = "onRearLevel", onDragEnd = "onRearLevelEnd" })
   end
@@ -117,11 +121,13 @@ function onTab_rear() st.tab = "rear"; render() end
 function onKbOn() run("truesense keyboard on") end
 function onKbOff() run("truesense keyboard off") end
 function onKbRestore() run("truesense keyboard restore") end
-local function kbEffect(i) run("truesense keyboard effect " .. KB[i][1] .. " --color " .. st.hex .. " --brightness " .. math.max(st.level, 10)) end
+local function kbEffect(i) run("truesense keyboard effect " .. KB[i][1] .. " --color " .. st.hex .. " --speed " .. st.kspeed .. " --brightness " .. math.max(st.level, 10)) end
 function onKb1() kbEffect(1) end function onKb2() kbEffect(2) end function onKb3() kbEffect(3) end function onKb4() kbEffect(4) end
 function onKb5() kbEffect(5) end function onKb6() kbEffect(6) end function onKb7() kbEffect(7) end function onKb8() kbEffect(8) end
 function onKb9() kbEffect(9) end function onKb10() kbEffect(10) end function onKb11() kbEffect(11) end function onKb12() kbEffect(12) end
 function onKb13() kbEffect(13) end
+function onKbSpeed(v) v = tonumber(v); if v then st.kspeed = math.floor(v); live("kbspeed", function() return "truesense keyboard speed " .. st.kspeed end) end end
+function onKbSpeedEnd(v) st.kspeed = math.floor(tonumber(v) or st.kspeed); live("kbspeed", function() return "truesense keyboard speed " .. st.kspeed end); render() end
 function onKbColorLive(v) st.hex = clean(v); live("kbcolor", function() return "truesense keyboard color " .. st.hex end) end
 function onKbColor(v) st.hex = clean(v); live("kbcolor", function() return "truesense keyboard color " .. st.hex end) end
 function onKbFill() run("truesense keyboard fill " .. st.hex) end
@@ -218,6 +224,8 @@ local function setRearColor(h)
 end
 function onRearColorLive(v) setRearColor(clean(v)); rearApply() end
 function onRearColor(v) setRearColor(clean(v)); rearApply() end
+function onRearSpeed(v) v = tonumber(v); if v then st.speed = math.floor(v); rearApply() end end
+function onRearSpeedEnd(v) st.speed = math.floor(tonumber(v) or st.speed); rearApply(); render() end
 function onRearLevel(v) v = tonumber(v); if v then st.rlevel = math.floor(v); rearApply() end end
 function onRearLevelEnd(v) st.rlevel = math.floor(tonumber(v) or st.rlevel); rearApply(); render() end
 function onEditor() run("sh -c 'truesense gui --page keys || truesense gui'"); panel.close() end

@@ -156,6 +156,13 @@ def replay(s=None):
     if m == "perkey" and s.get("cells"): per_key([tuple(bytes.fromhex(c)) for c in s["cells"]], s.get("brightness") or 25); return "per-key colours"
     return None
 
+def set_speed(speed):
+    """Animation speed (1 slow .. 11 fast) of the running effect, keeping its colour and brightness."""
+    if not 1 <= speed <= 11: raise HwError("speed 1..11")
+    s = last()
+    if s.get("mode") != "effect" or s.get("name") in (None, "off", "static"): raise HwError("the current look has no animation speed; pick an effect first")
+    return set_effect(s["name"], s.get("color", "ffffff"), speed, s.get("brightness", get_brightness() or 25), s.get("direction", 0))
+
 def set_color(color):
     """Change the colour of the current look without changing the effect. Effects without a colour (wave, neon) cannot take one."""
     hexc(color); color = color.lstrip("#").lower(); s = last(); b = get_brightness() or 25
