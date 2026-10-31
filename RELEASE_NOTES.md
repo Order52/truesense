@@ -1,10 +1,11 @@
 # Release notes
 
-## Unreleased
+## 0.3.8 (2026-10-31): layout fixes on the Lighting and Undervolt pages
 
 - **Fixed:** on tabs shorter than the tallest tab (Lighting: Rear bar and Profiles) the settings rows stretched, leaving a huge empty gap, for example around the Effect buttons on the Rear bar tab. Rows now take exactly the height they need.
-- Lighting and Undervolt tabs are as tall as the tab you are on, so a short tab no longer scrolls or leaves long empty space.
+- Lighting and Undervolt tabs are as tall as the tab you are on, so a short tab no longer scrolls or leaves long empty space (Rear bar and Keyboard no longer scroll at all).
 - The window title follows the page ("TrueSense - Lighting"), which helps on a floating window.
+- Tests cover the row height, the per-tab height and the window title.
 
 ## 0.3.7 (2026-10-31): updating from the window works without a polkit agent
 
