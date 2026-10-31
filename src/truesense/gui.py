@@ -175,6 +175,31 @@ AUTOSTART = os.path.expanduser("~/.config/autostart/truesense.desktop")
 PAGES = {"home": 0, "lighting": 1, "battery": 2, "audio": 3, "settings": 4, "curves": 5, "smart": 6, "predator": 7, "undervolt": 8, "profiles": 9}      # "keys" opens Lighting on its Per-key tab
 
 
+class TabPages(QWidget if Qt else object):
+    """Like a QStackedWidget, but only the current page takes part in the layout, so the area is as tall as the tab you are on (Qt's stacked widget always reports the tallest page,
+    which left long empty stretches and needless scrolling)."""
+    currentChanged = pyqtSignal(int) if Qt else None
+
+    def __init__(self):
+        super().__init__(); self.box = QVBoxLayout(self); self.box.setContentsMargins(0, 0, 0, 0); self.box.setSpacing(0); self.pages = []; self.cur = -1
+
+    def addWidget(self, w):
+        self.pages.append(w); self.box.addWidget(w); w.setVisible(len(self.pages) == 1)
+        if self.cur < 0: self.cur = 0
+        return len(self.pages) - 1
+
+    def count(self): return len(self.pages)
+    def widget(self, i): return self.pages[i] if 0 <= i < len(self.pages) else None
+    def currentIndex(self): return self.cur
+    def currentWidget(self): return self.widget(self.cur)
+
+    def setCurrentIndex(self, i):
+        if not 0 <= i < len(self.pages) or i == self.cur: return
+        self.cur = i
+        for k, w in enumerate(self.pages): w.setVisible(k == i)
+        self.updateGeometry(); self.currentChanged.emit(i)
+
+
 class Row(QWidget if Qt else object):
     """A settings row: the name on the left, the controls on the right. When the window is too narrow for both, the controls move under the name (and text boxes and drop-downs stretch), so nothing is ever cut off."""
     NAME_MIN = 120
@@ -188,7 +213,7 @@ class Row(QWidget if Qt else object):
         for w in self.widgets:
             self.inner.addWidget(w)
             if isinstance(w, (QComboBox, QLineEdit)): self.pref[w] = w.minimumWidth(); self.policy[w] = w.sizePolicy()
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)             # a row is exactly as tall as it needs: it must never soak up spare height in a taller tab
 
     def minimumSizeHint(self): return QSize(60, super().minimumSizeHint().height())
 
@@ -220,7 +245,7 @@ class FlowGrid(QWidget if Qt else object):
     """Buttons in a grid that uses two columns when there is room and one when there is not."""
     def __init__(self, items, two_at=340):
         super().__init__(); self.items = list(items); self.two_at = two_at; self.cols = None; self.grid = QGridLayout(self); self.grid.setContentsMargins(0, 0, 0, 0); self.grid.setSpacing(8)
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum); self._fill(2 if two_at else 1)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed); self._fill(2 if two_at else 1)
 
     def minimumSizeHint(self): return QSize(60, super().minimumSizeHint().height())
 
@@ -642,7 +667,10 @@ class Window(QMainWindow if Qt else object):
         if fixed: self.setFixedSize(480, h)
         else: self.setMinimumSize(380, 480); self.setMaximumSize(16777215, 16777215); self.resize(max(self.width(), 480) if self.isVisible() else 480, h)
 
+    PAGE_TITLES = {0: "", 1: "Lighting", 2: "Battery and Screen", 3: "Audio", 4: "Settings", 5: "Fan curves", 6: "Smart auto profiles", 7: "PREDATOR key", 8: "Undervolt", 9: "Profiles"}
+
     def nav_changed(self, i):
+        self.setWindowTitle("TrueSense" + (" - " + self.PAGE_TITLES[i] if self.PAGE_TITLES.get(i) else ""))
         if self.navigating: return
         if not self.nav or self.nav[-1] != i: self.nav.append(i); self.nav = self.nav[-30:]; self.nav_fwd.clear()
 
@@ -917,7 +945,7 @@ class Window(QMainWindow if Qt else object):
     # ---- Lighting: keyboard and rear bar on one page, one at a time ------------------------------------------------------------------------
     def p_lighting(self):
         lay = self.page("Lighting")
-        self.light_tabs = Segmented(["Keyboard", "Per-key", "Rear bar", "Profiles"], tiles=True, icons=["keyboard", "palette", "bar", "manual"]); lay.addWidget(self.light_tabs); stack = QStackedWidget(); lay.addWidget(stack); self.light_stack = stack
+        self.light_tabs = Segmented(["Keyboard", "Per-key", "Rear bar", "Profiles"], tiles=True, icons=["keyboard", "palette", "bar", "manual"]); lay.addWidget(self.light_tabs); stack = TabPages(); lay.addWidget(stack); self.light_stack = stack
         self.light_tabs.picked.connect(stack.setCurrentIndex); self.light_tabs.set_index(0)
         kb = QWidget(); v = QVBoxLayout(kb); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
         self.kb_on = self.switch(v, "Backlight", lambda x: self.do(lambda: actions.run("keyboard:on" if x else "keyboard:off"), lambda r: r, refresh=False)); self.sep(v)
@@ -1531,7 +1559,7 @@ class Window(QMainWindow if Qt else object):
         lay = self.page("Undervolt")
         warn = self.hint("Lowers CPU or GPU voltage to run cooler. Too much can freeze, reboot or crash games. Nothing is applied unless you confirm, and a reboot always returns to stock. Test a profile under load before relying on it.")
         warn.setStyleSheet("color: #ffb347;"); lay.addWidget(warn)
-        self.uv_tabs = Segmented(["CPU", "GPU"], tiles=True, icons=["performance", "gpu"]); lay.addWidget(self.uv_tabs); uvstack = QStackedWidget(); lay.addWidget(uvstack)
+        self.uv_tabs = Segmented(["CPU", "GPU"], tiles=True, icons=["performance", "gpu"]); lay.addWidget(self.uv_tabs); uvstack = TabPages(); lay.addWidget(uvstack)
         self.uv_tabs.picked.connect(uvstack.setCurrentIndex); self.uv_tabs.set_index(0); page_lay = lay
         cpu_w = QWidget(); lay = QVBoxLayout(cpu_w); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(14)
         v = self.card(lay, "Right now", "", True); self.uv_now = v.right; self.uv_state = self.hint("Reading the current voltage…"); v.addWidget(self.uv_state)

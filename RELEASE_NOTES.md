@@ -1,5 +1,11 @@
 # Release notes
 
+## Unreleased
+
+- **Fixed:** on tabs shorter than the tallest tab (Lighting: Rear bar and Profiles) the settings rows stretched, leaving a huge empty gap, for example around the Effect buttons on the Rear bar tab. Rows now take exactly the height they need.
+- Lighting and Undervolt tabs are as tall as the tab you are on, so a short tab no longer scrolls or leaves long empty space.
+- The window title follows the page ("TrueSense - Lighting"), which helps on a floating window.
+
 ## 0.3.7 (2026-10-31): updating from the window works without a polkit agent
 
 - **Fixed:** the Update button in the window did nothing useful on desktops without a polkit authentication agent (Hyprland, sway and other minimal setups). It used `pkexec`, which cannot ask for a password without an agent, and only reported "the installer exited with code 127". The updater now checks for an agent first. With none, it opens a terminal window (`$TERMINAL`, then kitty, foot, alacritty, ghostty, wezterm, konsole, gnome-terminal, xfce4-terminal or xterm) that runs `sudo truesense update apply`, and tells you what to run if no terminal can be found.

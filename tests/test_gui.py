@@ -219,6 +219,20 @@ class TestWindowLogic(unittest.TestCase):
         self.assertEqual(profiles.describe({}), ["(nothing)"])
         w.go("profiles"); self.assertEqual(w.pages.currentIndex(), gui.PAGES["profiles"]); w.close()
 
+    def test_rows_never_stretch_tabs_are_as_tall_as_their_content_and_the_title_follows_the_page(self):
+        from PyQt6.QtWidgets import QSizePolicy
+        w = gui.Window(); w.show(); w.go("lighting"); self.app.processEvents()
+        heights = []
+        for t in range(4):
+            w.light_tabs.set_index(t); w.light_stack.setCurrentIndex(t); self.app.processEvents(); self.app.processEvents(); heights.append(w.light_stack.minimumSizeHint().height())
+        self.assertGreater(heights[1], heights[2] + 300, "the short Rear bar tab is not as tall as the Per-key tab"); self.assertLess(heights[2], 500)
+        w.light_stack.setCurrentIndex(2); self.app.processEvents()
+        rows = [r for r in w.light_stack.widget(2).findChildren(gui.Row)]; self.assertTrue(rows)
+        for r in rows: self.assertEqual(r.sizePolicy().verticalPolicy(), QSizePolicy.Policy.Fixed, "a row never soaks up spare height")
+        biggest = max(r.height() for r in rows); self.assertLess(biggest, 90, f"no row is stretched (tallest row {biggest} px)")
+        self.assertEqual(w.windowTitle(), "TrueSense - Lighting"); w.go("settings"); self.assertEqual(w.windowTitle(), "TrueSense - Settings"); w.nav_back(); self.assertEqual(w.windowTitle(), "TrueSense - Lighting")
+        w.pages.setCurrentIndex(0); self.assertEqual(w.windowTitle(), "TrueSense"); w.close()
+
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
         w = gui.Window(); w.go("keys"); names = [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]; self.assertIn("gaming", names)
