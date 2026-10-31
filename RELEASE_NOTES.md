@@ -1,5 +1,18 @@
 # Release notes
 
+## Unreleased
+
+**Faster and lighter**
+- The window asks the hardware for far less. While idle it now reads only what changes by itself (power mode and power source from the service, and the fans); the slow settings (lighting, battery, screen, boot, GPU) are re-read every 20 s and whenever you come back to the window, open a page or change something. Measured on the real laptop: 15 hardware calls (134 ms) per 10 s instead of 55 calls (594 ms), which also means less firmware time stolen from the audio path.
+- When the window is not the focused one it polls three times less often.
+- Temperatures and fan speeds are read off the UI thread, so a slow or stuck device can never freeze the window.
+- Icons are rendered once instead of on every repaint (a big part of the cost of showing a page: Smart 56 to 25 ms, Battery 55 to 16 ms, Profiles 18 to 6 ms).
+
+**Looks**
+- Every section is a clearly outlined card; page margins and spacing were rebalanced to fit.
+- Hint text is lighter (contrast 5.6:1 instead of 3.9:1, above the 4.5:1 readability guideline).
+- The primary button's hover colour now matches the accent blue instead of an old cyan.
+
 ## 0.3.9 (2026-10-31): one place for profiles
 
 - **Home:** removed the profile picker at the top. It duplicated the Profiles page, which stays as the single place to pick, apply, save and delete profiles (Home keeps the Profiles tile).

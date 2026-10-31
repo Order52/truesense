@@ -233,6 +233,39 @@ class TestWindowLogic(unittest.TestCase):
         self.assertEqual(w.windowTitle(), "TrueSense - Lighting"); w.go("settings"); self.assertEqual(w.windowTitle(), "TrueSense - Settings"); w.nav_back(); self.assertEqual(w.windowTitle(), "TrueSense - Lighting")
         w.pages.setCurrentIndex(0); self.assertEqual(w.windowTitle(), "TrueSense"); w.close()
 
+    def test_icons_are_rendered_once(self):
+        a = gui.icon_pixmap("fan", "#dfe5ee", 20); b = gui.icon_pixmap("fan", "#dfe5ee", 20); self.assertIs(a, b, "the same icon is rendered once, not on every repaint")
+        self.assertIsNot(a, gui.icon_pixmap("fan", "#58a6ff", 20)); self.assertFalse(a.isNull())
+
+    def test_idle_refresh_asks_the_hardware_for_little(self):
+        import threading
+        w = gui.Window(); w.show(); self.app.processEvents(); calls = []; main = threading.main_thread()
+        names = ("get_mode", "fan_state", "rear_get", "get_kb_timeout", "get_battery_limit", "get_calibration", "get_usb_charge", "get_overdrive", "get_boot_sound", "get_gpu_mode", "on_ac")
+        real = {n: getattr(gui.hw, n) for n in names}; real_ipc = gui.ipc.call; real_kb = gui.keyboard.get_brightness
+        for n in names: setattr(gui.hw, n, (lambda n=n, f=real[n]: (lambda *a, **k: (calls.append(n), f(*a, **k))[1]))())
+        gui.keyboard.get_brightness = lambda *a, **k: (calls.append("kb_brightness"), real_kb(*a, **k))[1]
+        gui.ipc.call = lambda cmd, **k: {"live": {"power_mode": "turbo", "ac": True}, "settings": {"smart_fan": True, "auto_profile": True, "auto_mode": "smart"}} if cmd == "state" else real_ipc(cmd, **k)
+        got = []; w.bus.refreshed.connect(got.append)
+        try:
+            time.sleep(0.5); self.app.processEvents(); calls.clear(); w.refreshing = False; w.full_refresh("home_fast"); self.assertTrue(self._wait(lambda: got))
+            self.assertEqual(sorted(set(calls)), ["fan_state"], f"the quick refresh reads only the fans from the hardware, got {sorted(set(calls))}")
+            self.assertEqual(got[-1]["mode"], "turbo"); self.assertTrue(got[-1]["ac"]); got.clear(); calls.clear(); w.refreshing = False; w.full_refresh("home"); self.assertTrue(self._wait(lambda: got))
+            self.assertGreaterEqual(len(set(calls)), 8, "the full refresh (every 20 s, on focus, after a change) still reads everything")
+        finally:
+            for n in names: setattr(gui.hw, n, real[n])
+            gui.ipc.call = real_ipc; gui.keyboard.get_brightness = real_kb
+        w.close()
+
+    def test_sensors_are_read_off_the_ui_thread(self):
+        import threading
+        w = gui.Window(); w.show(); self.app.processEvents(); seen = []; real = gui.hw.sensors
+        gui.hw.sensors = lambda: (seen.append(threading.current_thread() is threading.main_thread()), real())[1]
+        try:
+            w.sensing = False; w.tick(); self.assertTrue(self._wait(lambda: seen)); self.assertEqual(seen, [False], "temperatures and fan speeds are never read on the UI thread")
+            self.assertTrue(self._wait(lambda: "°C" in w.stat_cpu.text()), "and the labels still update")
+        finally: gui.hw.sensors = real
+        w.close()
+
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
         w = gui.Window(); w.go("keys"); names = [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]; self.assertIn("gaming", names)

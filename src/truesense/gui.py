@@ -45,7 +45,17 @@ _P = {
     "back": "M15 5l-7 7 7 7",
 }
 
+_ICONS = {}
+
+
 def icon_pixmap(name, color="#dfe5ee", size=24):
+    """An icon as a pixmap, rendered once per (name, colour, size): tiles repaint often and rendering the SVG each time cost about 6 ms apiece."""
+    key = (name, color, size); px = _ICONS.get(key)
+    if px is None: px = _ICONS[key] = _render_icon(name, color, size)
+    return px
+
+
+def _render_icon(name, color, size):
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
            f'<path d="{_P.get(name, "")}"/></svg>').encode()
     r = QSvgRenderer(QByteArray(svg)); px = QPixmap(size * 2, size * 2); px.fill(Qt.GlobalColor.transparent)
@@ -107,14 +117,14 @@ QListWidget { background: transparent; border: none; outline: 0; }
 QListWidget::item { padding: 11px 14px; border-radius: 10px; margin: 2px 0; color: #8d97a6; }
 QListWidget::item:selected { background: #10252b; color: #58a6ff; }
 QListWidget::item:hover:!selected { background: #11161d; color: #cfd6e0; }
-#card { background: transparent; border: none; }
+#card { background: transparent; border: 1px solid #262a31; border-radius: 14px; }
 #sep { background: #272a30; max-height: 1px; min-height: 1px; border: none; }
 #section { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: #7d8590; padding-top: 6px; }
 #cardtitle { font-size: 15px; font-weight: 700; color: #e8edf3; }
 #tile { background: #1d1f24; border: 1px solid #1b222c; border-radius: 16px; }
 #tilevalue { font-size: 26px; font-weight: 700; color: #ffffff; }
 #tilelabel { font-size: 11px; letter-spacing: 1px; color: #6c7787; }
-#hint { color: #6c7787; font-size: 12px; }
+#hint { color: #8892a2; font-size: 12px; }
 #h1 { font-size: 20px; font-weight: 700; }
 #stats { color: #aab3c0; font-size: 13px; }
 QPushButton { background: #171d26; border: 1px solid #222b37; border-radius: 10px; padding: 8px 16px; color: #dfe5ee; }
@@ -130,7 +140,8 @@ QPushButton#tilebtn:checked { background: #243247; color: #58a6ff; border: 1px s
 QPushButton#quiet { background: transparent; border: 1px solid #2e3239; padding: 5px 12px; }
 QFrame#banner { background: #1c2b3f; border: 1px solid #2f5d8f; border-radius: 12px; }
 QPushButton#primary { background: #58a6ff; color: #031418; border: none; font-weight: 700; }
-QPushButton#primary:hover { background: #4aeaff; }
+QPushButton#primary:hover { background: #7ab8ff; }
+QPushButton#primary:pressed { background: #4a90e0; }
 QComboBox { background: #1b1d22; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; min-height: 20px; }
 QComboBox::drop-down { border: none; width: 24px; }
 QComboBox:disabled { color: #666c76; }
@@ -328,6 +339,7 @@ class Bus(QObject if Qt else object):
     refreshed = pyqtSignal(dict) if Qt else None
     game = pyqtSignal(dict) if Qt else None
     pm = pyqtSignal(dict) if Qt else None
+    sens = pyqtSignal(dict) if Qt else None
 
 
 class ColorButton(QPushButton if Qt else object):
@@ -623,7 +635,7 @@ class Window(QMainWindow if Qt else object):
         super().__init__(); self.setWindowTitle("TrueSense")
         self.apply_size_mode(bool(userstate.get("gui_fixed", True)), save=False)
         self.wheel_guard = WheelGuard(self); QApplication.instance().installEventFilter(self.wheel_guard)
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.bus.game.connect(lambda r: self.game_show(r)); self.bus.pm.connect(lambda r: self.pm_show(r)); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.bus.game.connect(lambda r: self.game_show(r)); self.bus.pm.connect(lambda r: self.pm_show(r)); self.bus.sens.connect(lambda r: self._sens_show(r)); self.sensing = False; self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         self.nav = [0]; self.nav_fwd = []; self.navigating = False; self.nav_filter = NavFilter(self); QApplication.instance().installEventFilter(self.nav_filter)
@@ -713,7 +725,7 @@ class Window(QMainWindow if Qt else object):
         threading.Thread(target=work, daemon=True).start()
 
     def page(self, heading, back=True):
-        w = QWidget(); w.setMaximumWidth(860); lay = QVBoxLayout(w); lay.setContentsMargins(24, 18, 24, 20); lay.setSpacing(14)
+        w = QWidget(); w.setMaximumWidth(860); lay = QVBoxLayout(w); lay.setContentsMargins(16, 18, 16, 20); lay.setSpacing(12)
         sc = QScrollArea(); sc.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); sc.setWidget(w); self.pages.addWidget(sc)
         h = QHBoxLayout(); h.setSpacing(10)
         if back:
@@ -724,7 +736,7 @@ class Window(QMainWindow if Qt else object):
 
     def card(self, lay, title, icon="", right=False):
         """A plain section: icon and title on the left, a live value on the right, rows underneath."""
-        c = QFrame(); c.setObjectName("card"); v = QVBoxLayout(c); v.setContentsMargins(0, 4, 0, 2); v.setSpacing(10)
+        c = QFrame(); c.setObjectName("card"); v = QVBoxLayout(c); v.setContentsMargins(14, 12, 14, 12); v.setSpacing(10)
         h = QHBoxLayout(); h.setSpacing(8)
         if icon:
             il = QLabel(); il.setPixmap(icon_pixmap(icon, "#dfe5ee", 20)); il.setFixedSize(22, 22); h.addWidget(il)
@@ -1934,20 +1946,37 @@ class Window(QMainWindow if Qt else object):
         self.do(lambda: ipc.call("smart_profile", action="use", name=name, data=None if name in smartprofiles.BUILTIN else smartprofiles.load(name)), lambda r: f"Smart auto profile in use: {r['name']}", refresh=False)
 
     # ---- refresh -----------------------------------------------------------------------------------------------------------------------
+    def _sens_show(self, s):
+        self.stat_cpu.setText(f"CPU: {s['cpu_temp']} °C · {s['cpu_fan_rpm']} RPM"); self.stat_gpu.setText(f"GPU: {s['gpu_temp']} °C · {s['gpu_fan_rpm']} RPM")
+        self.stat_fan.setText(f"{max(s['cpu_fan_rpm'], s['gpu_fan_rpm'])} RPM"); self.stat_bat.setText(self.src)
+        if self.pages.currentIndex() == PAGES["curves"]: self.editor.marks = {"cpu": s["cpu_temp"], "gpu": s["gpu_temp"]}; self.editor.update()
+
+    def _read_sensors(self):
+        """Temperatures and fan speeds, read off the UI thread (a slow or stuck device must never freeze the window)."""
+        try: s = hw.sensors()
+        except HwError: s = None
+        self.sensing = False
+        if s is not None:
+            try: self.bus.sens.emit(s)
+            except RuntimeError: pass
+
     def tick(self):
-        """Once a second: temperatures and fans. Every 2 s, when you are not touching anything, re-read the hardware so changes made elsewhere
-        (Noctalia, the PREDATOR key, Fn keys, the command line) show up here."""
+        """Once a second: temperatures and fans. Every 2 s (every 6 s when the window is not the focused one), when you are not touching anything, re-read what changes by itself: power mode,
+        fans, power source (mostly from the service, one cheap call). The slow settings (lighting, battery, screen, boot, GPU) are re-read every 20 s and whenever you come back to the window,
+        open a page or change something. Every hardware read costs the firmware a few milliseconds, so the window asks for as little as it can."""
         if not self.isVisible() or self.isMinimized(): return
-        try:
-            s = hw.sensors(); self.stat_cpu.setText(f"CPU: {s['cpu_temp']} °C · {s['cpu_fan_rpm']} RPM"); self.stat_gpu.setText(f"GPU: {s['gpu_temp']} °C · {s['gpu_fan_rpm']} RPM")
-            self.stat_fan.setText(f"{max(s['cpu_fan_rpm'], s['gpu_fan_rpm'])} RPM"); self.stat_bat.setText(self.src)
-            if self.pages.currentIndex() == PAGES["curves"]: self.editor.marks = {"cpu": s["cpu_temp"], "gpu": s["gpu_temp"]}; self.editor.update()
-        except HwError: pass
-        self.ticks += 1
+        active = self.isActiveWindow(); self.ticks += 1
+        if (active or self.ticks % 2 == 0) and not self.sensing: self.sensing = True; threading.Thread(target=self._read_sensors, daemon=True).start()
         idle = time.monotonic() - self.last_action > 2.0 and not any(self.busy.values()) and not self.pending
         dragging = any(s.isSliderDown() for s in (self.kb_level, self.kb_speed, self.rear_bright, self.rear_speed, self.fan_pct, self.fan_cpu, self.fan_gpu, self.boost, self.pk_level))
         popup = any(c.view().isVisible() for c in (self.kb_fx,))
-        if self.ticks % 2 == 0 and idle and not dragging and not popup and not self.refreshing: self.full_refresh("audio_fast" if self.pages.currentIndex() == PAGES["audio"] else "home")
+        if self.ticks % (2 if active else 6) == 0 and idle and not dragging and not popup and not self.refreshing:
+            if self.pages.currentIndex() == PAGES["audio"]: self.full_refresh("audio_fast")
+            else: self.full_refresh("home" if (active and self.ticks % 20 == 0) else "home_fast")
+
+    def event(self, e):
+        if e.type() == QEvent.Type.WindowActivate and getattr(self, "bus", None) is not None and not self.closing: QTimer.singleShot(150, lambda: self.full_refresh() if not self.refreshing else None)    # back at the window: show things as they are now
+        return super().event(e)
 
     def full_refresh(self, scope=None):
         """Read the hardware off the UI thread. The audio page (pactl, amixer, DTS) is only read while it is shown, so the main page stays quick."""
@@ -1962,6 +1991,11 @@ class Window(QMainWindow if Qt else object):
                 get("out", audio.output_status); get("jack", audio.jack_status); get("mic", audio.mic_state); get("boost", audio.headset_boost); get("voice", audio.voice_modes)
                 get("jackset", lambda: config.load()["audio"]["jack"]); get("spkf", audio.speaker_filter_on)
                 if scope == "audio": get("dts", lambda: "DTS:            on" in audio.dts_status())      # slow (starts a helper): only when the page opens or after a change
+            elif scope == "home_fast":
+                get("state", lambda: ipc.call("state")); live = (d.get("state") or {}).get("live") or {}
+                if live.get("power_mode") in hw.MODES and "ac" in live: d["mode"] = live["power_mode"]; d["ac"] = bool(live["ac"])       # the service already knows these: no hardware read
+                else: get("mode", hw.get_mode); get("ac", hw.on_ac)
+                get("fan", hw.fan_state)
             else:
                 get("state", lambda: ipc.call("state")); get("mode", hw.get_mode); get("fan", hw.fan_state); get("rear", hw.rear_get); get("kb", keyboard.get_brightness)
                 get("kbtimeout", hw.get_kb_timeout); get("limit", hw.get_battery_limit); get("calib", hw.get_calibration); get("usb", hw.get_usb_charge); get("od", hw.get_overdrive)
