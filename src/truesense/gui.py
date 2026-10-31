@@ -609,7 +609,7 @@ class Window(QMainWindow if Qt else object):
         hb.addWidget(self.hold_lbl, 1); hb.addWidget(self.btn("Resume auto", lambda: self.do(lambda: ipc.call("hold", minutes=None), "Auto is back in charge", refresh=False))); v.addWidget(self.hold_box); self.hold_box.setVisible(False)
         v = self.card(lay, "GPU Mode", "gpu", True); self.stat_gpu = v.right
         self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True, icons=["optimus", "gpu", "auto"]); v.addWidget(self.gpu)
-        self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False))
+        self.gpu.picked.connect(self.gpu_picked)
         v = self.card(lay, "Fans", "fan", True); self.stat_fan = v.right
         self.fan = Segmented(FAN_MODES, tiles=True, icons=["smart", "auto", "max", "manual"])
         for b_, tip in zip(self.fan.btns, ("Follows your fan curve by temperature and load", "The firmware's own control, exactly like PredatorSense on Windows", "Both fans at full speed", "Set the speed yourself")): b_.setToolTip(tip)
@@ -651,6 +651,15 @@ class Window(QMainWindow if Qt else object):
     def fan_manual_live(self):
         if self.loading: return
         c, g = self.manual_duty(); self.live("fanpct", lambda: control.fan("manual", c, g))
+
+    def gpu_picked(self, i):
+        """The GPU mode is a firmware setting that only takes effect after a reboot, so it is confirmed first and can be undone by picking the old one again."""
+        if self.loading: return
+        mode = list(hw.GPU_MODES)[i]; box = QMessageBox(QMessageBox.Icon.Question, "Change the GPU mode", f"Switch the GPU mode to {mode.capitalize()}?\n\nIt takes effect after the next reboot. Pick your previous mode again before rebooting to cancel.",
+                                                          QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, self)
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if box.exec() != QMessageBox.StandardButton.Apply: self.full_refresh(); return
+        self.do(lambda: hw.set_gpu_mode(mode), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False)
 
     def fan_off_ask(self):
         box = QMessageBox(QMessageBox.Icon.Warning, "Turn the fans off", "Stop both fans?\n\nWith the fans off the laptop can overheat quickly under any load. This is only for quiet, light use.\n\n"
@@ -876,7 +885,7 @@ class Window(QMainWindow if Qt else object):
         self.line(v, "Need a full battery", self.full_btn); v.addWidget(self.full_lbl)
         v.addWidget(self.hint("The firmware offers two levels: 80 % or 100 %. Charge to 100 % once lifts the limit for one charge; the 80 % limit comes back by itself when you unplug, when the battery has been full for 5 minutes, or after 24 hours."))
         self.sep(v); self.usb = self.seg(v, "USB charging while off", ["Off", "10 %", "20 %", "30 %"], lambda i: self.do(lambda: hw.set_usb_charge(hw.USB_LEVELS[i]), lambda r: f"USB charge stops at {r} %", refresh=False)); self.sep(v)
-        self.calib = self.switch(v, "Calibration", lambda x: self.do(lambda: hw.set_calibration(x), lambda r: f"Calibration: {'on' if r else 'off'}", refresh=False), "Needs AC power and takes hours. Switch off to cancel.")
+        self.calib = self.switch(v, "Calibration", self.calib_picked, "Needs AC power and takes hours. Switch off to cancel.")
         v = self.card(lay, "Screen and boot")
         self.od = self.switch(v, "LCD overdrive", lambda x: self.do(lambda: hw.set_overdrive(x), lambda r: f"Overdrive: {'on' if r else 'off'}", refresh=False)); self.sep(v)
         self.boot = self.switch(v, "Boot animation and sound", lambda x: self.do(lambda: hw.set_boot_sound(x), lambda r: f"Boot sound: {'on' if r else 'off'}", refresh=False)); self.sep(v)
@@ -884,6 +893,13 @@ class Window(QMainWindow if Qt else object):
         lay.addStretch()
 
     # ---- Audio -----------------------------------------------------------------------------------------------------------------------------
+    def calib_picked(self, on):
+        if on:
+            box = QMessageBox(QMessageBox.Icon.Question, "Battery calibration", "Start a battery calibration?\n\nIt needs the charger connected and takes several hours; the battery is charged and discharged fully. Switch it off here to cancel.",
+                              QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel, self); box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+            if box.exec() != QMessageBox.StandardButton.Apply: self.loading = True; self.calib.setChecked(False); self.loading = False; return
+        self.do(lambda: hw.set_calibration(on), lambda r: f"Calibration: {'on' if r else 'off'}", refresh=False)
+
     def full_toggle(self):
         if self.full_btn.property("active"): self.do(lambda: ipc.call("battery_full", action="cancel"), "80 % limit is back on", refresh=False); QTimer.singleShot(700, self.battery_refresh)
         else: self.do(lambda: ipc.call("battery_full", action="start"), "Charging to 100 % once: the 80 % limit comes back by itself", refresh=False); QTimer.singleShot(700, self.battery_refresh)
