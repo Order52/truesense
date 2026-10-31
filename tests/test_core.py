@@ -128,6 +128,7 @@ class TestDaemonLogic(Base):
         st = state.State({"smart_fan": True, "auto_profile": True, "operating_follow": False, "profile_hold_until": 0}, tempfile.mkdtemp() + "/s.json")
         daemon.RUN = tempfile.mkdtemp(); daemon.TMP_STATE = tempfile.mkdtemp() + "/ts"; b = daemon.Brain(cfg, st); b.say = lambda *a, **k: None; b.last_ac = True
         daemon.hw.on_ac = lambda: True                                           # not the real charger state
+        b.read_cpu_load = lambda: None                                          # the test sets cpu_load itself; the real /proc/stat must not pull it down
         b.find_hwmon = lambda: None; b.coretemp = None; b.gpu_temp = 0          # the test drives the temperatures; real sensors must not leak in
         return b
 
@@ -146,7 +147,7 @@ class TestDaemonLogic(Base):
         for bad in ({"key": "bogus", "value": True}, {"key": "smart_fan", "value": "yes"}):
             with self.assertRaises(device.HwError): h["set"](**bad)
         device.SIM.mode = 6; b.cur_mode = "eco"; b.busy_hold = 20; h["hold"](minutes=30); self.drive(b, 35, 70, 60, 90); self.assertEqual(device.SIM.mode, 6)
-        h["hold"](minutes=None); self.drive(b, 35, 70, 60, 90); self.assertEqual(device.SIM.mode, 5)
+        h["hold"](minutes=None); self.drive(b, 35, 70, 60, 90); self.assertEqual(device.SIM.mode, 4)      # auto takes over: performance (turbo stays blocked after the earlier overheat)
 
     def test_boot_look_is_stored_and_applied(self):
         import tempfile
@@ -160,6 +161,36 @@ class TestDaemonLogic(Base):
         self.assertTrue(keyboard.SIM["packets"], "the boot look should have reached the keyboard")
         self.assertEqual(device.SIM.rear[1], 1)                                  # breathing
         h["boot_look"](action="clear"); self.assertIsNone(h["boot_look"](action="get"))
+
+    def test_native_auto_follows_the_power_source_only(self):
+        b = self.make(); h = b.handlers(); h["set"](key="auto_mode", value="native"); b.cur_mode = "eco"; device.SIM.mode = 6
+        self.drive(b, 8, 40, 40, 95); self.assertEqual(device.SIM.mode, 1)                       # on AC: balanced, even under load (no heat/load logic)
+        daemon.hw.on_ac = lambda: False; self.drive(b, 8, 40, 40, 95); self.assertEqual(device.SIM.mode, 6)   # on battery: eco
+        daemon.hw.on_ac = lambda: True
+
+    def test_smart_auto_escalates_and_backs_off_for_heat(self):
+        b = self.make(); h = b.handlers(); h["set"](key="auto_mode", value="smart")
+        self.drive(b, 70, 40, 40, 5); self.assertEqual(device.SIM.mode, 1)                       # idle on AC: balanced
+        self.drive(b, 10, 70, 60, 90); self.assertEqual(device.SIM.mode, 4)                      # heavy load: performance first
+        self.drive(b, 35, 70, 60, 90); self.assertEqual(device.SIM.mode, 5)                      # sustained and cool enough: turbo
+        self.drive(b, 10, 93, 70, 95); self.assertEqual(device.SIM.mode, 4)                      # hot: back off from turbo at once
+        self.drive(b, 40, 70, 60, 90); self.assertEqual(device.SIM.mode, 4)                      # and stay there during the back-off hold
+        self.drive(b, 100, 40, 40, 3); self.assertIn(device.SIM.mode, (1, 4))
+
+    def test_smart_auto_on_battery_saves_power(self):
+        b = self.make(); h = b.handlers(); h["set"](key="auto_mode", value="smart"); daemon.hw.on_ac = lambda: False; b.last_ac = False
+        self.drive(b, 40, 40, 40, 4); self.assertEqual(device.SIM.mode, 6)                       # idle on battery: eco
+        self.drive(b, 40, 70, 60, 90); self.assertEqual(device.SIM.mode, 1)                      # busy on battery: balanced, not turbo
+        daemon.hw.on_ac = lambda: True
+
+    def test_fan_curve_is_followed_and_custom_curves_are_checked(self):
+        from truesense import curves
+        b = self.make(); h = b.handlers(); self.drive(b, 25, 45, 45, 2); self.assertEqual(device.SIM.fan, "auto")
+        h["fan_curve"](action="use", name="max-cooling"); self.drive(b, 8, 65, 50, 40)
+        self.assertEqual(device.SIM.fan, "manual"); self.assertGreaterEqual(device.SIM.fan_duty[0], 90)
+        with self.assertRaises(device.HwError): h["fan_curve"](action="use", name="weak", data={"cpu": [[50, 0], [70, 50]], "gpu": [[50, 0], [78, 100]]})
+        self.assertEqual(h["fan_curve"](action="get")["name"], "max-cooling")
+        c = curves.load("truesense"); self.assertAlmostEqual(curves.interp(c["cpu"], 80), 70); self.assertEqual(curves.interp(c["cpu"], 100), 100)
 
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run

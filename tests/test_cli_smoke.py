@@ -4,8 +4,8 @@ from truesense import cli, config, device, keyprofiles, profiles, userstate
 
 COMMANDS = """
 status|sensors|version|doctor-skip
-power|power status|power list|power set turbo|power set balanced|power next|power prev|power auto status|power auto off|power hold 5|power release
-fan|fan status|fan auto|fan max|fan set 60|fan set 50 70|fan smart status|fan smart on
+power|power status|power list|power set turbo|power set balanced|power next|power prev|power auto status|power auto off|power auto native|power auto smart|power auto on|power auto toggle|power hold 5|power release
+fan|fan curve list|fan curve show truesense|fan curve show quiet|fan curve save mine --from truesense --predict 6|fan curve show mine|fan curve save mine2 --cpu 50:0,60:40,70:60,89:100 --gpu 46:0,60:40,70:60,78:100|fan curve delete mine2|fan curve delete mine|fan curve current|fan curve use quiet|fan status|fan auto|fan max|fan set 60|fan set 50 70|fan smart status|fan smart on
 battery|battery status|battery limit status|battery limit on|battery limit off|battery limit toggle|battery calibration on|battery calibration off|battery usb-charge|battery usb-charge 10|battery usb-charge 30
 display overdrive|display overdrive on|display overdrive off|display overdrive toggle
 boot sound|boot sound on|boot sound off|boot sound toggle
@@ -24,6 +24,7 @@ completion bash|completion zsh|completion fish
 """.replace("|doctor-skip", "").strip()
 
 FAILING_BY_DESIGN = [
+    "fan curve show nosuchcurve", "fan curve delete truesense", "fan curve save x --cpu 50:0,70:50 --gpu 46:0,78:100", "fan curve save y", "fan curve use", "fan curve save z --cpu bad --gpu 1:1",
     "look apply nosuchlook", "look save bad/name", "look delete nosuchlook", "startup set keyboard look:nosuchlook",
     "keyboard speed 0", "keyboard speed 12",
     "rear set breathing --zones ff0000,00ff00,0000ff", "rear set static --zones ff0000,00ff00", "startup set keyboard bogus", "startup set rear profile:x", "keyboard paint w", "keyboard paint nokey=ff0000", "keyboard color zzz", "audio jack speakers",                       # these MUST be refused with exit code 1, never raise

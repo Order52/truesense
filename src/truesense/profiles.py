@@ -3,8 +3,8 @@
 Files are plain TOML in ~/.config/truesense/profiles/ (yours) and <prefix>/share/truesense/profiles/ (shipped; yours win). Sections, all optional:
 
   description = "..."
-  [power]    mode = "turbo"                                   quiet balanced performance turbo eco
-  [fan]      mode = "smart" | "auto" | "max" | "manual"       manual also needs cpu = 60, gpu = 60 (20..100)
+  [power]    mode = "turbo"                                   quiet balanced performance turbo eco     auto = "off" | "native" | "smart"
+  [fan]      mode = "smart" | "auto" | "max" | "manual"       manual also needs cpu = 60, gpu = 60 (20..100)     curve = "truesense" (smart fan curve name)
   [keyboard] on = true  effect = "wave" color = "00aec7" speed = 5 brightness = 30   or   profile = "<lighting profile>"   timeout = true
   [rear]     on = true  effect = "breathing" color = "ff0000" speed = 3 brightness = 100
   [battery]  limit = true   usb_charge = 30                   (0 10 20 30)
@@ -101,6 +101,7 @@ def apply(name, cfg=None):
         except Exception as e: failed.append(f"{label}: {e}")
 
     p = d.get("power", {})
+    if "auto" in p: step("power auto", lambda: ipc.call("set", key="auto_mode", value=p["auto"]))
     if "mode" in p: step("power", lambda: actions.run(f"power:{p['mode']}", cfg))
     f = d.get("fan", {})
     if f.get("mode") == "manual": step("fan", lambda: _fan_manual(int(f["cpu"]), int(f["gpu"])))

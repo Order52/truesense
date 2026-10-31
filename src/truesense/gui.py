@@ -3,7 +3,7 @@
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
 import os, sys, threading, time
-from . import actions, audio, backend as hw, config, control, ipc, keyboard, keymap, looks, profiles, userstate
+from . import actions, audio, backend as hw, config, control, curves, ipc, keyboard, keymap, looks, profiles, userstate
 from .device import HwError
 
 try:
@@ -136,6 +136,10 @@ QStatusBar { background: #121316; color: #6c7787; border-top: 1px solid #151a22;
 QLabel { background: transparent; }
 """
 
+AUTO_KEYS = ["off", "native", "smart"]
+AUTO_HINT = {"off": "You choose the mode. A mode you pick stays until you change it.",
+             "native": "Like PredatorSense on Windows: Balanced on power, Eco on battery, nothing else.",
+             "smart": "Switches by heat, load and battery: Performance and Turbo when gaming or heavy work (backs off if it overheats), Eco on battery."}
 FAN_MODES = ["Smart", "Auto", "Max", "Manual"]
 KB_EFFECTS = ["static", "breathing", "wave", "snake", "ripple", "neon", "raindrop", "lightning", "spot", "star", "fireball", "snow", "heartbeat"]
 KEY_GROUPS = ["all", "wasd", "arrows", "fkeys", "numrow", "letters", "numpad", "esc", "space", "enter", "predator", "lshift"]
@@ -149,7 +153,7 @@ JACK_HINT = {"auto": "Uses what the codec detects when you plug something in.",
 
 
 AUTOSTART = os.path.expanduser("~/.config/autostart/truesense.desktop")
-PAGES = {"home": 0, "lighting": 1, "keys": 2, "battery": 3, "audio": 4, "settings": 5}
+PAGES = {"home": 0, "lighting": 1, "keys": 2, "battery": 3, "audio": 4, "settings": 5, "curves": 6}
 
 
 class Segmented(QWidget if Qt else object):
@@ -235,6 +239,63 @@ class KeyboardView(QWidget if Qt else object):
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.labels[c][:5])
 
 
+class CurveEditor(QWidget if Qt else object):
+    """Fan curve graph: drag a point to move it, double-click empty space to add one, right-click a point to remove it."""
+    changed = pyqtSignal() if Qt else None
+    T0, T1 = 30, 100
+
+    def __init__(self):
+        super().__init__(); self.setFixedSize(432, 250); self.setMouseTracking(True); self.curve = curves.load("truesense"); self.side = "cpu"; self.drag = None; self.marks = {"cpu": None, "gpu": None}
+
+    def set_curve(self, c): self.curve = c; self.update()
+    def pts(self): return self.curve[self.side]
+    def _xy(self, t, p): return 38 + (t - self.T0) / (self.T1 - self.T0) * (self.width() - 52), 14 + (1 - p / 100) * (self.height() - 44)
+    def _tp(self, x, y): return self.T0 + (x - 38) / (self.width() - 52) * (self.T1 - self.T0), (1 - (y - 14) / (self.height() - 44)) * 100
+
+    def paintEvent(self, _):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.fillRect(self.rect(), QColor("#1b1d22")); f = QFont(); f.setPixelSize(10); p.setFont(f)
+        for pct in range(0, 101, 20):
+            x0, y = self._xy(self.T0, pct); x1, _ = self._xy(self.T1, pct); p.setPen(QPen(QColor("#2b2f36"), 1)); p.drawLine(int(x0), int(y), int(x1), int(y)); p.setPen(QColor("#8b929c")); p.drawText(4, int(y) + 4, f"{pct}%")
+        for t_ in range(self.T0, self.T1 + 1, 10):
+            x, y0 = self._xy(t_, 0); _, y1 = self._xy(t_, 100); p.setPen(QPen(QColor("#2b2f36"), 1)); p.drawLine(int(x), int(y1), int(x), int(y0)); p.setPen(QColor("#8b929c")); p.drawText(int(x) - 10, int(y0) + 14, f"{t_}°")
+        for side, col in (("gpu", "#6f7f96"), ("cpu", ACCENT)):
+            pts = self.curve[side]; on = side == self.side; path = [self._xy(self.T0, pts[0][1])] + [self._xy(t_, d) for t_, d in pts] + [self._xy(self.T1, pts[-1][1])]
+            p.setPen(QPen(QColor(col), 2.4 if on else 1.4)); [p.drawLine(int(a[0]), int(a[1]), int(b[0]), int(b[1])) for a, b in zip(path, path[1:])]
+            if on:
+                for t_, d in pts: x, y = self._xy(t_, d); p.setBrush(QColor("#ffffff")); p.setPen(QPen(QColor(col), 2)); p.drawEllipse(QRectF(x - 5, y - 5, 10, 10))
+            m = self.marks.get(side)
+            if m: x, _ = self._xy(m, 0); _, y0 = self._xy(0, 100); p.setPen(QPen(QColor(col), 1, Qt.PenStyle.DashLine)); p.drawLine(int(x), int(y0), int(x), self.height() - 30)
+        p.end()
+
+    def _hit(self, pos):
+        for i, (t_, d) in enumerate(self.pts()):
+            x, y = self._xy(t_, d)
+            if (x - pos.x()) ** 2 + (y - pos.y()) ** 2 < 144: return i
+        return None
+
+    def mousePressEvent(self, e):
+        i = self._hit(e.position())
+        if e.button() == Qt.MouseButton.RightButton and i is not None and len(self.pts()) > 2: self.pts().pop(i); self.update(); self.changed.emit(); return
+        self.drag = i
+
+    def mouseMoveEvent(self, e):
+        if self.drag is None or not (e.buttons() & Qt.MouseButton.LeftButton): return
+        pts = self.pts(); t_, d = self._tp(e.position().x(), e.position().y()); i = self.drag
+        lo = pts[i - 1][0] + 1 if i > 0 else self.T0; hi = pts[i + 1][0] - 1 if i < len(pts) - 1 else self.T1 + 10
+        d = 0 if d < 12 else max(20, min(100, int(5 * round(d / 5)))); t_ = int(max(lo, min(hi, round(t_))))
+        d = max(d, pts[i - 1][1] if i > 0 else 0); d = min(d, pts[i + 1][1] if i < len(pts) - 1 else 100)       # the duty may only rise with temperature
+        pts[i] = [t_, d]; self.update()
+
+    def mouseReleaseEvent(self, e):
+        if self.drag is not None: self.drag = None; self.changed.emit()
+
+    def mouseDoubleClickEvent(self, e):
+        if self._hit(e.position()) is not None: return
+        t_, d = self._tp(e.position().x(), e.position().y()); t_ = int(round(t_)); pts = self.pts()
+        if any(abs(t_ - q[0]) < 2 for q in pts) or len(pts) >= 12: return
+        d = max(20, min(100, int(5 * round(curves.interp(pts, t_) / 5)))) if curves.interp(pts, t_) >= 12 else 0; pts.append([t_, d]); pts.sort(); self.update(); self.changed.emit()
+
+
 class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
@@ -242,7 +303,7 @@ class Window(QMainWindow if Qt else object):
         self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
-        for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings): build()
+        for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings, self.p_curves): build()
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(1000); self.full_refresh(); self.tick()
 
@@ -348,12 +409,16 @@ class Window(QMainWindow if Qt else object):
         cols = {"eco": "#5de0a0", "quiet": "#5db8ff", "balanced": "#58a6ff", "performance": "#ffb347", "turbo": "#ff5d6c"}
         self.power = Segmented([m.capitalize() for m in order], tiles=True, icons=[m if m in _P else "balanced" for m in order], colors=[cols.get(m, "#58a6ff") for m in order]); v.addWidget(self.power)
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
-        self.auto = self.switch(v, "Choose automatically", lambda x: self.do(lambda: ipc.call("set", key="auto_profile", value=x), "Saved", refresh=False), "By power source and load. A mode you pick holds for 30 minutes.")
+        self.auto = Segmented(["Manual", "Native auto", "Smart auto"]); self.auto.picked.connect(self.auto_picked); self.line(v, "Mode control", self.auto)
+        self.auto_hint = self.hint(AUTO_HINT["off"]); v.addWidget(self.auto_hint)
         v = self.card(lay, "GPU Mode", "gpu", True); self.stat_gpu = v.right
         self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True, icons=["optimus", "gpu", "auto"]); v.addWidget(self.gpu)
         self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False))
         v = self.card(lay, "Fans", "fan", True); self.stat_fan = v.right
         self.fan = Segmented(FAN_MODES, tiles=True, icons=["smart", "auto", "max", "manual"]); self.fan.picked.connect(self.fan_picked); v.addWidget(self.fan)
+        self.curve_box = QWidget(); cb = QVBoxLayout(self.curve_box); cb.setContentsMargins(0, 0, 0, 0)
+        self.curve_cb = QComboBox(); self.curve_cb.setMinimumWidth(140); self.curve_cb.activated.connect(self.curve_picked)
+        self.line(cb, "Smart curve", self.curve_cb, self.btn("Edit", lambda: self.go("curves"))); v.addWidget(self.curve_box)
         self.fan_box = QWidget(); fb = QVBoxLayout(self.fan_box); fb.setContentsMargins(0, 0, 0, 0); fb.setSpacing(8)      # only shown while Manual is chosen
         self.fan_pct = self.slider(fb, "Manual speed", 20, 100, 5, lambda x: self.live("fanpct", lambda: control.fan("manual", x)), lambda x: None, suffix=" %")
         self.loading = True; self.fan_pct.setValue(40); self.loading = False; v.addWidget(self.fan_box); self.fan_box.setVisible(False)
@@ -363,9 +428,13 @@ class Window(QMainWindow if Qt else object):
             b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); g.addWidget(b_, n // 2, n % 2)
         lay.addSpacing(4); lay.addLayout(g); lay.addStretch()
 
+    def auto_picked(self, i):
+        if self.loading: return
+        self.auto_hint.setText(AUTO_HINT[AUTO_KEYS[i]]); self.do(lambda: ipc.call("set", key="auto_mode", value=AUTO_KEYS[i]), lambda r: f"Mode control: {AUTO_KEYS[i]}", refresh=False)
+
     def fan_picked(self, i):
         if self.loading: return
-        self.fan_box.setVisible(i == 3); self.fan_apply(i)
+        self.fan_box.setVisible(i == 3); self.curve_box.setVisible(i == 0); self.fan_apply(i)
 
     def fan_apply(self, i):
         mode = ("smart", "auto", "max", "manual")[i]; p = self.fan_pct.value()
@@ -543,6 +612,62 @@ class Window(QMainWindow if Qt else object):
                 except FileNotFoundError: pass
         self.do(go, "Window opens at login" if on else "Window does not open at login", refresh=False)
 
+    # ---- Fan curves ------------------------------------------------------------------------------------------------------------------
+    def p_curves(self):
+        lay = self.page("Fan curves"); lay.addWidget(self.hint("Drag a point to move it. Double-click empty space to add one, right-click a point to remove it. 0 % means the firmware runs the fans (they stop when cool)."))
+        self.curve_side = Segmented(["CPU fan", "GPU fan"]); lay.addWidget(self.curve_side)
+        self.editor = CurveEditor(); hk = QHBoxLayout(); hk.addWidget(self.editor); hk.addStretch(); lay.addLayout(hk)
+        self.curve_side.picked.connect(lambda i: (setattr(self.editor, "side", ("cpu", "gpu")[i]), self.editor.update())); self.curve_side.set_index(0)
+        v = self.card(lay, "Behaviour")
+        self.c_pre = self.slider(v, "Early boost when heating (°C)", 0, 15, 1, lambda x: None, suffix=" °C")
+        self.c_hys = self.slider(v, "Wait before slowing down (°C)", 0, 15, 1, lambda x: None, suffix=" °C")
+        self.c_rate = self.slider(v, "Slow-down speed (% per second)", 1, 10, 1, lambda x: None, suffix=" %/s")
+        v = self.card(lay, "Curves")
+        self.curve_list = QComboBox(); self.curve_list.setMinimumWidth(150); self.curve_list.activated.connect(lambda i: self.load_curve_in_editor(self.curve_list.currentText()))
+        self.line(v, "Load", self.curve_list, self.btn("Use this curve", self.curve_use, True)); self.curve_name = QLineEdit(); self.curve_name.setPlaceholderText("name"); self.curve_name.setMinimumWidth(150)
+        self.line(v, "Save as", self.curve_name, self.btn("Save", self.curve_save), self.btn("Delete", self.curve_delete)); self.curve_msg = self.hint(""); v.addWidget(self.curve_msg)
+        self.reload_curves(); lay.addStretch()
+
+    def reload_curves(self, select=None):
+        self.curve_list.clear(); self.curve_list.addItems(curves.names()); self.curve_cb.clear(); self.curve_cb.addItems(curves.names())
+        sel = select or "truesense"; i = self.curve_list.findText(sel); self.curve_list.setCurrentIndex(max(0, i)); self.curve_cb.setCurrentIndex(max(0, self.curve_cb.findText(sel)))
+        self.load_curve_in_editor(self.curve_list.currentText())
+
+    def load_curve_in_editor(self, name):
+        try: c = curves.load(name)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.editor.set_curve(c); self.loading = True
+        for s_, k in ((self.c_pre, "predict"), (self.c_hys, "hysteresis"), (self.c_rate, "down_rate")): s_.setValue(int(round(c[k])))
+        self.loading = False
+
+    def editor_curve(self):
+        c = {k: v_ for k, v_ in self.editor.curve.items() if k != "description"}
+        c.update(predict=self.c_pre.value(), hysteresis=self.c_hys.value(), down_rate=self.c_rate.value()); return curves.validate(c)
+
+    def curve_use(self):
+        try: c = self.editor_curve()
+        except Exception as e: self.curve_msg.setText(str(e)); self.say(f"Error: {e}"); return
+        name = self.curve_list.currentText(); builtin_same = name in curves.BUILTIN and c == curves.load(name)
+        self.curve_msg.setText(""); self.do(lambda: ipc.call("fan_curve", action="use", name=name if builtin_same else (name if name not in curves.BUILTIN else "custom"), data=None if builtin_same else c), lambda r: f"Fan curve in use: {r['name']}", refresh=False)
+
+    def curve_save(self):
+        name = self.curve_name.text().strip()
+        try: c = self.editor_curve(); curves.save(name, c)
+        except Exception as e: self.curve_msg.setText(str(e)); self.say(f"Error: {e}"); return
+        self.curve_msg.setText(f"Saved '{name}'. Press Use this curve to run it."); self.reload_curves(name); self.say(f"Saved fan curve '{name}'")
+
+    def curve_delete(self):
+        name = self.curve_list.currentText()
+        try: curves.delete(name)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_curves(); self.say(f"Deleted fan curve '{name}'")
+
+    def curve_picked(self, i):
+        name = self.curve_cb.currentText()
+        def go():
+            c = curves.load(name); return ipc.call("fan_curve", action="use", name=name, data=None if name in curves.BUILTIN else c)
+        self.do(go, lambda r: f"Fan curve in use: {r['name']}", refresh=False)
+
     def save_key(self, g, e):
         err = actions.validate(e.text())
         if err: self.statusBar().showMessage(err, 8000); return
@@ -556,6 +681,7 @@ class Window(QMainWindow if Qt else object):
         try:
             s = hw.sensors(); self.stat_cpu.setText(f"CPU: {s['cpu_temp']} °C · {s['cpu_fan_rpm']} RPM"); self.stat_gpu.setText(f"GPU: {s['gpu_temp']} °C · {s['gpu_fan_rpm']} RPM")
             self.stat_fan.setText(f"{max(s['cpu_fan_rpm'], s['gpu_fan_rpm'])} RPM"); self.stat_bat.setText(self.src)
+            if self.pages.currentIndex() == PAGES["curves"]: self.editor.marks = {"cpu": s["cpu_temp"], "gpu": s["gpu_temp"]}; self.editor.update()
         except HwError: pass
         self.ticks += 1
         idle = time.monotonic() - self.last_action > 2.0 and not any(self.busy.values()) and not self.pending
@@ -591,9 +717,11 @@ class Window(QMainWindow if Qt else object):
         self.loading = True
         try:
             if "state" in d:
-                s = d["state"]["settings"]; self.auto.setChecked(bool(s["auto_profile"]))
+                s = d["state"]["settings"]; am = s.get("auto_mode") or ("smart" if s["auto_profile"] else "off"); self.auto.set_index(AUTO_KEYS.index(am) if am in AUTO_KEYS else 0); self.auto_hint.setText(AUTO_HINT.get(am, ""))
+                fc = d["state"]["live"].get("fan_curve")
+                if fc and self.curve_cb.currentText() != fc and not self.curve_cb.view().isVisible(): self.curve_cb.setCurrentIndex(max(0, self.curve_cb.findText(fc)))
                 if d.get("fan", {}).get("mode") == "manual": self._set(self.fan_pct, max(20, d["fan"]["duty_register_pct"]["cpu"]))
-                fi = 0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1); self.fan.set_index(fi); self.fan_box.setVisible(fi == 3)
+                fi = 0 if s["smart_fan"] else {"auto": 1, "max": 2, "manual": 3}.get(d.get("fan", {}).get("mode"), 1); self.fan.set_index(fi); self.fan_box.setVisible(fi == 3); self.curve_box.setVisible(fi == 0)
             if "ac" in d: self.src = "AC" if d["ac"] else "Battery"
             if d.get("mode") in self.modes: self.power.set_index(self.modes.index(d["mode"]))
             if "rear" in d:

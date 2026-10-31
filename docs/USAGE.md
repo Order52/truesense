@@ -20,9 +20,12 @@ Areas that are switches accept `on | off | toggle | status`.
 |---|---|
 | `status`, `sensors` | everything / temperatures and fan RPM |
 | `power set MODE`, `next`, `prev`, `list`, `status` | eco, quiet, balanced, performance, turbo |
-| `power auto on\|off`, `power hold [MIN]`, `power release` | the automatic profile (AC / battery / load); a manual choice is held 30 min by default |
+| `power auto off\|native\|smart` | who picks the power mode: you (`off`), **native** (like PredatorSense on Windows: Balanced on power, Eco on battery), or **smart** (heat, load and battery aware: Performance when you game or work hard, Turbo when that is sustained and cool enough, a back-off if it overheats, Eco on battery); `on` = smart |
+| `power hold [MIN]`, `power release` | keep your manual choice against the automatic mode (30 min by default) |
 | `fan auto \| max \| set CPU [GPU] \| status` | fans; manual duty 20-100 % |
 | `fan smart on\|off\|toggle` | the daemon's smart curve |
+| `fan curve list\|current\|show NAME\|use NAME` | fan curves (temperature to duty, CPU and GPU separately): built in `truesense` (tuned for this laptop), `quiet`, `performance`, `max-cooling`, plus yours |
+| `fan curve save NAME --cpu 52:0,60:35,70:55,89:100 --gpu 48:0,60:35,78:100 [--from BASE] [--predict 5 --hysteresis 4 --down-rate 1.5 --couple 15]`, `fan curve delete NAME` | your own curve; 0 % = firmware auto, the duty may only rise with temperature, it must reach 100 % by 95 C (CPU) / 85 C (GPU) |
 | `battery limit`, `battery calibration`, `battery usb-charge [0\|10\|20\|30]` | 80 % limit, calibration flag, USB charging while off |
 | `display overdrive`, `boot sound` | LCD overdrive, boot animation/sound |
 | `gpu status`, `gpu set optimus\|nvidia\|auto` | MUX mode (reboot to apply) |

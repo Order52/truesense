@@ -25,9 +25,15 @@ function render()
   local st = readState()
   local cur = st.power_mode
   if want ~= nil then if cur == want then want = nil else cur = want end end
+  local kind = st.auto_mode or (st.auto == "1" and "smart" or "off")
   local rows = {
-    ui.button({ glyph = "refresh", text = "Auto   battery · power · load", flexGrow = 1,
-      variant = st.auto == "1" and "default" or "ghost", onClick = "onToggleAuto" }),
+    ui.label({ text = "Mode control", color = "on_surface_variant" }),
+    ui.row({ gap = 4 }, {
+      ui.button({ text = "Manual", flexGrow = 1, controlSize = "sm", variant = kind == "off" and "default" or "ghost", onClick = "onAuto_off" }),
+      ui.button({ text = "Native", flexGrow = 1, controlSize = "sm", variant = kind == "native" and "default" or "ghost", onClick = "onAuto_native" }),
+      ui.button({ text = "Smart", flexGrow = 1, controlSize = "sm", variant = kind == "smart" and "default" or "ghost", onClick = "onAuto_smart" }),
+    }),
+    ui.label({ text = kind == "smart" and "Switches by heat, load and battery" or kind == "native" and "Balanced on power, Eco on battery" or "You choose the mode", fontSize = 12, color = "on_surface_variant" }),
     ui.label({ text = "Power mode", color = "on_surface_variant" }),
   }
   for _, it in ipairs(LIST) do
@@ -45,8 +51,8 @@ function onPick_quiet() set("quiet") end
 function onPick_balanced() set("balanced") end
 function onPick_performance() set("performance") end
 function onPick_turbo() set("turbo") end
-function onToggleAuto()
-  noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast auto " .. (readState().auto == "1" and "off" or "on"))
-  panel.close()
-end
+local function setKind(k) noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast auto " .. k); panel.close() end
+function onAuto_off() setKind("off") end
+function onAuto_native() setKind("native") end
+function onAuto_smart() setKind("smart") end
 function onOpen() want = nil; render() end

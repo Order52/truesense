@@ -5,7 +5,7 @@ a missing/failing device never kills the daemon (it keeps waiting and retrying).
 20 % ~1700 rpm, 30 2160, 40 2850, 50 3460, 60 4070, 70 4600, 80 5100, 100 6050. Firmware Auto is the only way to reach 0 rpm, so when calm control goes back to it.
 """
 import glob, os, pwd, signal, socket, subprocess, sys, threading, time
-from . import backend as hw, config, cpu, ipc, looks, osd, state as statemod, touchpad
+from . import backend as hw, config, cpu, curves, ipc, looks, osd, state as statemod, touchpad
 
 RUN = os.environ.get("TRUESENSE_RUN", "/run/truesense")
 RAPL = "/sys/class/powercap/intel-rapl:0/"
@@ -52,7 +52,7 @@ class Brain:
         self.tcpu = self.tgpu = self.tchassis = None; self.rpm = (0, 0)
         self.hist_c, self.hist_g = [], []
         self.tick = self.calm = self.busy_hold = self.last_try = 0
-        self.lvl = [0, 0]; self.changed = [0, 0]
+        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
         self.written = None                      # (cpu, gpu) last written, (0, 0) = firmware Auto
         self.activity = "idle"; self.last_target = None; self.last_ac = None; self.cur_mode = None
         self.cap = self.p["cap_max_khz"]; self.cap_changed = 0
@@ -128,42 +128,31 @@ class Brain:
         if self.cpu_load < 8 and self.gpu_util < 10: return "idle"
         return "browsing"
 
-    def level_for(self, pct):
-        if pct <= 0: return 0
-        for i, p in enumerate(self.f["levels"], 1):
-            if p >= pct: return i
-        return len(self.f["levels"])
-
     def floor_pct(self):
         f = 60 if (self.activity == "gaming" and self.gpu_power >= 80) else 50 if self.activity == "gaming" else 40 if self.activity == "heavy" else 0
         if f > 0 and self.tchassis: f = max(f, 60 if self.tchassis >= 68 else 50 if self.tchassis >= 63 else 0)    # board/VRM heat-soak hint
         return f
 
-    def step_fan(self, i, temp, rising, up, shift, floor_idx):
-        t_eff = temp + (self.f["predict"] if rising else 0); want = 0
-        for k, thr in enumerate(up, 1):
-            if t_eff >= thr + shift: want = k
-        want = max(want, floor_idx, 1); cur = self.lvl[i]
-        if want > cur: self.lvl[i], self.changed[i] = want, self.tick
-        elif want < cur:
-            entry = up[cur - 1] + shift
-            if temp < entry - self.f["hysteresis"] and floor_idx < cur and self.tick - self.changed[i] >= self.f["down_hold"]:
-                self.lvl[i], self.changed[i] = cur - 1, self.tick
+    def load_curve(self):
+        data = self.st.get("fan_curve_data")
+        try: return curves.validate(data) if data else curves.load(self.st.get("fan_curve", "truesense"))
+        except hw.HwError as e:
+            self.log(f"fan curve invalid, using the built-in: {e}", 30); return curves.load("truesense")
 
     def smart_fan(self):
-        f = self.f; levels = f["levels"]
+        """Curve-driven fans: duty follows the active curve (see curves.py), rising at once and falling slowly, with the activity floor and heat protection."""
+        f = self.f
+        if self.follower is None: self.follower = curves.Follower(self.load_curve())
+        fo = self.follower
         calm_now = self.activity in ("idle", "browsing") and self.tcpu < f["calm_cpu"] and self.tgpu < f["calm_gpu"]
         self.calm = self.calm + 1 if calm_now else 0
-        if self.calm >= f["calm_hold"] or (self.lvl == [0, 0] and calm_now):
-            self.lvl = [0, 0]; self.write_fan(0, 0); return
+        if self.calm >= f["calm_hold"] or (max(fo.duty.values()) < 20 and calm_now):
+            fo.duty = {"cpu": 0.0, "gpu": 0.0}; self.write_fan(0, 0); return
         if self.activity == "hot":
-            self.lvl, self.changed = [len(levels)] * 2, [self.tick] * 2; self.write_fan(100, 100); return
-        shift = 0 if self.last_ac else f["battery_shift"]; f_idx = self.level_for(self.floor_pct())
-        self.step_fan(0, self.tcpu, self.slope(self.hist_c, self.tcpu) >= 1, f["cpu_up"], shift, f_idx)
-        self.step_fan(1, self.tgpu, self.slope(self.hist_g, self.tgpu) >= 1, f["gpu_up"], shift, f_idx)
-        c, g = levels[self.lvl[0] - 1], levels[self.lvl[1] - 1]
-        couple = 10 if (self.tcpu >= 85 or self.tgpu >= 75) else f["couple"]      # shared heatpipes
-        self.write_fan(max(c, g - couple), max(g, c - couple))
+            fo.duty = {"cpu": 100.0, "gpu": 100.0}; self.write_fan(100, 100); return
+        shift = 0.0 if self.last_ac else fo.c["battery_shift"]
+        fo.step("cpu", self.tcpu, self.slope(self.hist_c, self.tcpu) >= 1, shift=shift); fo.step("gpu", self.tgpu, self.slope(self.hist_g, self.tgpu) >= 1, shift=shift)
+        self.write_fan(*fo.output(self.floor_pct()))
 
     # ---- CPU power limit + thermal governor -------------------------------------------------------------------------------------------
     def enforce_power_limit(self):
@@ -184,20 +173,53 @@ class Brain:
             if rd(p) != str(self.cap): wr(p, self.cap)
 
     # ---- power profile -------------------------------------------------------------------------------------------------------------------
+    RANK = {"eco": 0, "quiet": 1, "balanced": 2, "performance": 3, "turbo": 4}
+
+    def auto_kind(self):
+        k = self.st.get("auto_mode")
+        return k if k in ("off", "native", "smart") else ("smart" if self.st.get("auto_profile") else "off")
+
+    def battery_pct(self):
+        for p in glob.glob("/sys/class/power_supply/BAT*/capacity"):
+            v = num(p)
+            if v is not None: return v
+        return 100
+
+    def smart_target(self):
+        """Smart auto: pick the power mode from what the laptop is doing and how hot it is. Returns (mode, urgent)."""
+        s = self.c["smart"]; a = self.activity; cur = self.cur_mode; ac = self.last_ac
+        heavy = a in ("gaming", "heavy"); hot = a == "hot"
+        self.heavy_for = self.heavy_for + 1 if heavy else max(0, self.heavy_for - 1); self.idle_for = self.idle_for + 1 if a == "idle" else 0
+        if hot: self.backoff_until = self.tick + s["backoff_hold_s"]
+        if ac:
+            if heavy or hot:
+                t = s["ac_busy"]
+                if s["ac_turbo"] and self.heavy_for >= s["turbo_after_s"] and self.tcpu < s["turbo_max_cpu"] and self.tgpu < s["turbo_max_gpu"] and self.tick >= self.backoff_until: t = "turbo"
+                if hot and cur == "turbo": return "performance", True                      # thermal back-off, at once
+                return t, False
+            if a == "browsing" or self.idle_for < s["idle_after_s"]: return s["ac_browsing"], False
+            return s["ac_idle"], False
+        if self.battery_pct() < s["battery_low_pct"]: return "eco", True
+        if hot: return s["battery_hot"], True
+        if heavy: return s["battery_busy"], False
+        return (s["battery_browsing"] if a == "browsing" else s["battery_idle"]), False
+
     def auto_profile(self):
-        if not self.st.get("auto_profile") or self.legacy("predator-auto-off"): return
-        if time.time() < self.st.get("profile_hold_until", 0): return            # a manual choice is in force
-        busy = self.activity in ("gaming", "heavy", "hot")
-        self.busy_hold = 20 if busy else max(0, self.busy_hold - 1); ac = self.last_ac
-        a = self.c["profile"]["auto"]
-        target = (a["ac_busy"] if ac else a["battery_busy"]) if self.busy_hold > 0 else (a["ac_normal"] if ac else a["battery_idle"])
-        if self.cur_mode and self.cur_mode != target and (target != self.last_target or self.tick - self.last_try >= 30):
-            self.last_target, self.last_try = target, self.tick
-            try:
-                self.cur_mode = hw.set_mode(target)
-                self.say(f"Power mode: {target} ({self.activity if busy else ('on power' if ac else 'on battery')})")
-            except hw.HwError as e: self.log(f"auto profile: {e}", 30)
-        elif self.cur_mode == target: self.last_target = target
+        """Automatic power mode. native = PredatorSense-like (power source only); smart = temperature, load and battery aware; off = hands off."""
+        kind = self.auto_kind()
+        if kind == "off" or self.legacy("predator-auto-off") or time.time() < self.st.get("profile_hold_until", 0) or not self.cur_mode: return
+        if kind == "native": target, urgent = self.c["native"]["ac" if self.last_ac else "battery"], True        # follows the plug at once
+        else: target, urgent = self.smart_target()
+        if target == self.cur_mode: self.last_target = target; return
+        if target == self.last_target and self.tick - self.last_try < 30: return                       # it already failed recently
+        up = self.RANK[target] > self.RANK.get(self.cur_mode, 2); s = self.c["smart"]
+        dwell = s["up_dwell_s"] if up else s["down_dwell_s"]
+        if not urgent and self.tick - self.mode_changed < dwell: return                                # no flapping
+        self.last_target, self.last_try = target, self.tick
+        try:
+            self.cur_mode = hw.set_mode(target); self.mode_changed = self.tick
+            self.say(f"Power mode: {target} ({kind} auto: {self.activity if self.activity not in ('idle', 'browsing') else ('on power' if self.last_ac else 'on battery')})")
+        except hw.HwError as e: self.log(f"auto profile: {e}", 30)
 
     def operating_lighting(self):
         """Opt-in ([keyboard] operating_follow): re-send the OPERATINGMODE colour when the power mode changes (the keyboard does not track it by itself)."""
@@ -214,7 +236,7 @@ class Brain:
         fan = "auto" if self.written in (None, (0, 0)) else f"{self.written[0]},{self.written[1]}"
         self.live = {"mode": "smart" if smart else "manual", "activity": self.activity, "fan": fan, "tcpu": round(self.tcpu or 0), "tgpu": round(self.tgpu or 0),
                      "chassis": round(self.tchassis or 0), "cpu": round(self.cpu_load), "gpu": round(self.gpu_util), "gpuw": round(self.gpu_power),
-                     "rpm1": self.rpm[0], "rpm2": self.rpm[1], "cap": self.cap // 1000, "power_mode": self.cur_mode or "?", "ac": bool(self.last_ac), "auto": bool(self.st.get("auto_profile")), "hw_ok": self.hw_ok}
+                     "rpm1": self.rpm[0], "rpm2": self.rpm[1], "cap": self.cap // 1000, "power_mode": self.cur_mode or "?", "ac": bool(self.last_ac), "auto": self.auto_kind() != "off", "auto_mode": self.auto_kind(), "fan_curve": self.st.get("fan_curve", "truesense"), "hw_ok": self.hw_ok}
         txt = "".join(f"{k}={v}\n" if not isinstance(v, bool) else f"{k}={int(v)}\n" for k, v in self.live.items())
         paths = [RUN + "/state", TMP_STATE] + (["/tmp/predator-state"] if self.c["compat"]["predator_widgets"] else [])
         for path in paths:
@@ -289,8 +311,12 @@ class Brain:
             return {"live": self.live, "settings": self.st.snapshot(), "hold_left_s": max(0, int(self.st.get("profile_hold_until", 0) - time.time()))}
 
         def set_(key, value):
+            if key == "auto_mode":
+                if value not in ("off", "native", "smart"): raise hw.HwError("auto_mode: off | native | smart")
+                self.st.set("auto_mode", value); self.st.set("auto_profile", value != "off"); self.log(f"setting auto_mode = {value}", 20); return self.st.snapshot()
             if key not in ("smart_fan", "auto_profile", "operating_follow"): raise hw.HwError(f"unknown setting {key!r}")
             if not isinstance(value, bool): raise hw.HwError("value must be true or false")
+            if key == "auto_profile": self.st.set("auto_mode", "smart" if value else "off")
             self.st.set(key, value); self.log(f"setting {key} = {value}", 20)
             if key == "smart_fan" and not value: self.written = None
             return self.st.snapshot()
@@ -315,6 +341,15 @@ class Brain:
                 if hold_minutes: self.st.set("profile_hold_until", time.time() + float(hold_minutes) * 60)
                 return new
 
+        def fan_curve(action="get", name=None, data=None):
+            """get -> the active curve; use -> switch to a built-in by name, or to a curve sent as data (kept by the daemon, so it works before login)."""
+            with self.lock:
+                if action == "get": return {"name": self.st.get("fan_curve", "truesense"), "curve": self.follower.c if self.follower else self.load_curve(), "names": curves.names()}
+                if action != "use": raise hw.HwError("fan_curve: get | use")
+                if data is not None: c = curves.validate(data); self.st.set("fan_curve_data", c); self.st.set("fan_curve", name or "custom")
+                else: c = curves.load(name or "truesense"); self.st.set("fan_curve_data", None if name in curves.BUILTIN else c); self.st.set("fan_curve", name)
+                self.follower = curves.Follower(c); self.written = None; self.log(f"setting fan_curve = {name}", 20); return {"name": self.st.get("fan_curve"), "curve": c}
+
         def boot_look(action="get", look=None):
             if action == "get": return looks.read_boot()
             if action == "clear": looks.write_boot(None); return None
@@ -334,7 +369,7 @@ class Brain:
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
 
 
 def main():
@@ -344,7 +379,7 @@ def main():
         print("falling back to the built-in defaults for the whole configuration", flush=True)
         cfg = config.merge(config.copy.deepcopy(config.DEFAULTS), {"user": cfg["user"]})
     os.makedirs(RUN, exist_ok=True)
-    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
+    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "smart" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
     brain = Brain(cfg, st)
     uids = [brain.pw.pw_uid] if brain.pw else []
     server = ipc.Server(brain.handlers(), uids); server.start()

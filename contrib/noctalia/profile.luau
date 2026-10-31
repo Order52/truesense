@@ -24,9 +24,11 @@ local function set(p)
   noctalia.runAsync("noctalia msg osd-show " .. m[2] .. " 'Power mode: " .. m[4] .. "'")
 end
 
-local function setAuto(on)
-  noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast auto " .. (on and "on" or "off"))
-  noctalia.runAsync("noctalia msg osd-show " .. (on and "refresh" or "hand-stop") .. " 'Automatic profile: " .. (on and "on" or "off") .. "'")
+local AUTO = { "off", "native", "smart" }
+local AUTOTXT = { off = "Manual", native = "Native auto", smart = "Smart auto" }
+local function setAuto(kind)
+  noctalia.runAsync("PATH=$HOME/.local/bin:$PATH truesense-fast auto " .. kind)
+  noctalia.runAsync("noctalia msg osd-show " .. (kind == "off" and "hand-stop" or "refresh") .. " 'Mode control: " .. AUTOTXT[kind] .. "'")
 end
 
 function update()
@@ -39,22 +41,22 @@ function update()
     barWidget.setTooltip("TrueSense daemon not running")
     return
   end
-  local auto = st.auto == "1"
-  barWidget.setGlyph(m[2]) barWidget.setText((auto and "A·" or "") .. m[1])
+  local kind = st.auto_mode or (st.auto == "1" and "smart" or "off"); local auto = kind ~= "off"
+  barWidget.setGlyph(m[2]) barWidget.setText((kind == "smart" and "S·" or kind == "native" and "N·" or "") .. m[1])
   barWidget.setColor(m[3]) barWidget.setGlyphColor(m[3])
   barWidget.setTooltip({
     { "Power mode", m[4] },
-    { "Mode", auto and ("Auto · " .. (ACT[st.activity] or "…")) or "Manual" },
+    { "Mode control", auto and (AUTOTXT[kind] .. " · " .. (ACT[st.activity] or "…")) or "Manual" },
     { "Power", st.ac == "1" and "AC" or "Battery" },
-    { "Click", "power menu" }, { "Middle click", "toggle auto" } })
+    { "Click", "power menu" }, { "Middle click", "cycle Manual / Native / Smart" } })
 end
 
 function onClick() noctalia.togglePanel(PANEL) end
 function onRightClick() noctalia.togglePanel(PANEL) end
-function onMiddleClick() setAuto(readState().auto ~= "1") end
+function onMiddleClick() local cur = readState().auto_mode or "off"; for i, k in ipairs(AUTO) do if k == cur then setAuto(AUTO[i % 3 + 1]) return end end setAuto("smart") end
 function onIpc(event, payload)
   payload = payload and tostring(payload) or ""
   if event == "set" and INFO[payload] then set(payload)
-  elseif event == "auto" then setAuto(payload ~= "off") end
+  elseif event == "auto" then setAuto((payload == "native" or payload == "off") and payload or "smart") end
 end
 update()

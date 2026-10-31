@@ -58,13 +58,17 @@ def build():
     p = sub.add_parser("power", help="power mode (quiet balanced performance turbo eco) and the automatic profile"); ps = p.add_subparsers(dest="verb")
     ps.add_parser("status"); ps.add_parser("list"); q = ps.add_parser("set"); q.add_argument("mode", choices=list(hw.MODES))
     q = ps.add_parser("next"); q = ps.add_parser("prev")
-    q = ps.add_parser("auto", help="automatic profile (AC/battery/load) on or off"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "status"])
+    q = ps.add_parser("auto", help="automatic power mode: off | native (PredatorSense-like: power source only) | smart (heat, load and battery aware); on = smart"); q.add_argument("action", nargs="?", default="status", choices=["off", "native", "smart", "on", "toggle", "status"])
     q = ps.add_parser("hold", help="keep the current power mode against the automatic profile"); q.add_argument("minutes", nargs="?", type=float, default=30)
     ps.add_parser("release", help="end a hold")
     # fan
     p = sub.add_parser("fan", help="fans: firmware auto, max, manual %%, smart curve"); fs = p.add_subparsers(dest="verb")
     fs.add_parser("status"); fs.add_parser("auto", help="firmware control (0 rpm when cool)"); fs.add_parser("max")
     q = fs.add_parser("set", help="manual duty, 20..100 %%"); q.add_argument("cpu", type=int); q.add_argument("gpu", type=int, nargs="?")
+    q = fs.add_parser("curve", help="smart-fan curves: list | current | show NAME | use NAME | save NAME --cpu PTS --gpu PTS | delete NAME"); q.add_argument("action", nargs="?", default="current", choices=["list", "current", "show", "use", "save", "delete"])
+    q.add_argument("name", nargs="?"); q.add_argument("--cpu", help="CPU points, e.g. 52:0,60:35,70:55,80:75,89:100 (temperature:percent, 0 = firmware auto)"); q.add_argument("--gpu", help="GPU points")
+    for k_, d_ in (("hysteresis", None), ("down-rate", None), ("predict", None), ("couple", None), ("battery-shift", None)): q.add_argument("--" + k_, type=float, default=d_)
+    q.add_argument("--from", dest="base", help="start from this curve and change only what you give")
     q = fs.add_parser("smart", help="the daemon's smart curve"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "toggle", "status"])
     # battery
     p = sub.add_parser("battery", help="80 %% charge limit, calibration, USB power-off charging"); bs = p.add_subparsers(dest="verb")
@@ -174,7 +178,12 @@ def h_power(a):
         emit(m, f"power mode: {m}   (held 30 min against the automatic profile; `truesense power release` to end)")
     elif v in ("next", "prev"):
         from . import actions; emit(actions.run("power-" + v))
-    elif v == "auto": tri(a.action, lambda: ipc.call("state")["settings"]["auto_profile"], lambda x: daemon_set("auto_profile", x)["auto_profile"], "automatic power profile")
+    elif v == "auto":
+        cur = ipc.call("state")["settings"].get("auto_mode") or ("smart" if ipc.call("state")["settings"]["auto_profile"] else "off")
+        want = {"on": "smart", "status": cur, "toggle": "off" if cur != "off" else "smart"}.get(a.action, a.action)
+        if want != cur: daemon_set("auto_mode", want)
+        emit(want, {"off": "automatic power mode: off (you choose)", "native": "automatic power mode: native (power source only, like PredatorSense: AC balanced, battery eco)",
+                    "smart": "automatic power mode: smart (heat, load and battery aware)"}[want])
     elif v == "hold": ipc.call("hold", minutes=a.minutes); emit(f"holding the current power mode for {a.minutes:g} min")
     elif v == "release": ipc.call("hold", minutes=None); emit("hold released: the automatic profile is in charge again")
 
@@ -193,6 +202,27 @@ def h_fan(a):
     elif v == "auto": control.fan("auto"); emit("fans: firmware auto (they stop when cool)")
     elif v == "max": control.fan("max"); emit("fans: MAX  (`truesense fan smart on` hands them back)")
     elif v == "set": control.fan("manual", a.cpu, a.gpu); emit(f"fans: manual {a.cpu} % / {a.gpu if a.gpu is not None else a.cpu} %")
+    elif v == "curve":
+        from . import curves
+        act = a.action
+        if act == "list": r = curves.names(); cur = ipc.call("fan_curve", action="get")["name"] if ipc.available() else None; emit(r, "\n".join(("* " if n == cur else "  ") + n + ("  - " + curves.BUILTIN[n]["description"] if n in curves.BUILTIN else "") for n in r))
+        elif act == "current": d = ipc.call("fan_curve", action="get"); emit(d, f"fan curve in use: {d['name']}\n  cpu {d['curve']['cpu']}\n  gpu {d['curve']['gpu']}")
+        elif act == "show": c = curves.load(a.name or "truesense"); emit(c, f"{a.name or 'truesense'}\n  cpu {c['cpu']}\n  gpu {c['gpu']}\n  " + "  ".join(f"{k}={c[k]}" for k in curves.DEFAULTS))
+        elif act == "use":
+            if not a.name: raise HwError("which curve? (truesense fan curve list)")
+            d = ipc.call("fan_curve", action="use", name=a.name, data=None if a.name in curves.BUILTIN else curves.load(a.name)); emit(d["name"], f"fan curve in use: {d['name']}")
+        elif act == "save":
+            if not a.name: raise HwError("save under which name?")
+            base = curves.load(a.base) if a.base else (curves.load(a.name) if a.name in curves.names() and a.name not in curves.BUILTIN else {})
+            c = {**{k: v_ for k, v_ in base.items() if k != "description"}}
+            if a.cpu: c["cpu"] = curves.parse_points(a.cpu)
+            if a.gpu: c["gpu"] = curves.parse_points(a.gpu)
+            for k_ in curves.DEFAULTS:
+                v_ = getattr(a, k_.replace("-", "_").replace("_", "_"), None)
+                if v_ is not None: c[k_] = v_
+            if "cpu" not in c or "gpu" not in c: raise HwError("give --cpu and --gpu points (or --from an existing curve)")
+            saved = curves.save(a.name, c); emit(saved, f"saved fan curve '{a.name}' (use it: truesense fan curve use {a.name})")
+        elif act == "delete": curves.delete(a.name or ""); emit(a.name, f"deleted fan curve '{a.name}'")
     elif v == "smart": tri(a.action, lambda: ipc.call("state")["settings"]["smart_fan"], lambda x: daemon_set("smart_fan", x)["smart_fan"], "smart fan curve")
 
 

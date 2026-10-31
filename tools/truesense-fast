@@ -16,7 +16,7 @@ case "$1" in
     m="$2"; h="${3:-30}"
     r=$(send "{\"cmd\": \"power\", \"args\": {\"mode\": \"$m\", \"hold_minutes\": $h}}"); ok "$r" || exec truesense power set "$m" ;;
   auto)
-    v=false; [ "$2" = on ] && v=true
-    r=$(send "{\"cmd\": \"set\", \"args\": {\"key\": \"auto_profile\", \"value\": $v}}"); ok "$r" || exec truesense power auto "$2" ;;
+    case "$2" in on) v=smart;; off|native|smart) v="$2";; *) echo "usage: truesense-fast auto off|native|smart" >&2; exit 2;; esac
+    r=$(send "{\"cmd\": \"set\", \"args\": {\"key\": \"auto_mode\", \"value\": \"$v\"}}"); ok "$r" || exec truesense power auto "$v" ;;
   *) echo "usage: truesense-fast fan|power|auto ..." >&2; exit 2 ;;
 esac

@@ -19,6 +19,10 @@ DEFAULTS = {
     },
     "cpu": {"pl_normal_w": 80, "pl_gaming_w": 65, "gov_hi": 88, "gov_lo": 83, "gov_enabled": True,
             "cap_max_khz": 5_000_000, "cap_min_khz": 2_800_000, "cap_down_khz": 200_000, "cap_up_khz": 100_000},
+    "native": {"ac": "balanced", "battery": "eco"},                      # "native auto", like PredatorSense on Windows: follows the power source only
+    "smart": {"ac_idle": "balanced", "ac_browsing": "balanced", "ac_busy": "performance", "ac_turbo": True, "turbo_after_s": 30, "turbo_max_cpu": 85, "turbo_max_gpu": 75,
+              "backoff_hold_s": 90, "idle_after_s": 60, "battery_idle": "eco", "battery_browsing": "eco", "battery_busy": "balanced", "battery_hot": "quiet", "battery_low_pct": 20,
+              "up_dwell_s": 5, "down_dwell_s": 30},
     "profile": {"osd": True, "hold_minutes": 30,
                 "auto": {"ac_busy": "turbo", "ac_normal": "balanced", "battery_busy": "balanced", "battery_idle": "eco"}},
     "keys": {"tap": "power-next", "double": "output-toggle", "triple": "none", "long": "fan-max-toggle", "fn_esc": "none",
@@ -62,6 +66,11 @@ def validate(cfg):
     if not 25 <= c["pl_normal_w"] <= 120 or not 25 <= c["pl_gaming_w"] <= 120: out.append("[cpu] power limits must be 25..120 W")
     if cfg["audio"]["jack"] not in ("auto", "headphones", "headset"): out.append("[audio] jack must be auto, headphones or headset")
     s = cfg["startup"]
+    modes = ("eco", "quiet", "balanced", "performance", "turbo")
+    for k, v in cfg["smart"].items():
+        if k.startswith(("ac_", "battery_")) and isinstance(v, str) and v not in modes: out.append(f"[smart] {k} must be one of {', '.join(modes)}")
+    for k, v in cfg["native"].items():
+        if v not in modes: out.append(f"[native] {k} must be one of {', '.join(modes)}")
     if not isinstance(s["keyboard"], str) or not (s["keyboard"] in ("last", "default", "none", "off") or s["keyboard"].startswith(("profile:", "look:"))): out.append("[startup] keyboard must be last, default, none, off, profile:NAME or look:NAME")
     if not isinstance(s["rear"], str) or not (s["rear"] in ("last", "default", "none", "off") or s["rear"].startswith("look:")): out.append("[startup] rear must be last, default, none, off or look:NAME")
     if cfg["osd"]["style"] not in ("native", "noctalia", "none"): out.append("[osd] style must be native, noctalia or none")
