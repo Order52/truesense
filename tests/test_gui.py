@@ -37,3 +37,12 @@ class TestWindowLogic(unittest.TestCase):
         w.sync_enabled({"mode": "effect", "name": "wave"}); self.assertTrue(w.kb_speed.isEnabled()); self.assertFalse(w.kb_color.isEnabled())
         w.sync_enabled({"mode": "perkey"}); self.assertFalse(w.kb_speed.isEnabled())
         w.close()
+
+    def test_choosing_a_rear_effect_while_off_turns_it_on_not_off(self):
+        from truesense import backend as hw
+        w = gui.Window(); time.sleep(0.4); self.app.processEvents()
+        hw.rear_set("static", "ff0000", 3, 0, 1)                                 # the bar is off (brightness 0)
+        w.loading = True; w.rear_bright.setValue(0); w.loading = False
+        w.rear_fx.btns[1].click(); time.sleep(0.6); self.app.processEvents()      # pick Breathing
+        r = hw.rear_get(); self.assertEqual(r["mode"], "breathing"); self.assertGreater(r["brightness"], 0)
+        w.close()

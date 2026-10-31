@@ -239,7 +239,7 @@ class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings): build()
@@ -439,11 +439,16 @@ class Window(QMainWindow if Qt else object):
         self.kb_color.setEnabled(name not in keyboard.NO_COLOR and name != "off"); self.kb_speed.setEnabled(name is not None and name not in ("static", "off"))
 
     def rear_apply(self):
+        """Apply the rear light as shown. Choosing an effect must never switch the light off: brightness 0 means off, so an effect picked while the bar is off turns it on."""
+        if self.loading: return
+        mode = list(hw.REAR_MODES)[max(0, self.rear_fx.group.checkedId())]; sp = self.rear_speed.value() or 3; br = self.rear_bright.value()
+        if br == 0: br = self.rear_last or 100; self.loading = True; self._set(self.rear_bright, br); self.loading = False     # was off: come back at the last brightness
+        self.rear_last = br; zones = [b.hex for b in self.zc]; color = self.rear_color.hex
         def go():
-            mode = list(hw.REAR_MODES)[max(0, self.rear_fx.group.checkedId())]; sp, br = self.rear_speed.value() or 3, self.rear_bright.value()
-            if mode == "static": hw.rear_set("static", speed=sp, brightness=br, zones=[b.hex for b in self.zc])
-            else: hw.rear_set(mode, self.rear_color.hex, sp, br)
-        if not self.loading: self.live("rear", go)
+            if mode == "static": hw.rear_set("static", speed=sp, brightness=br, zones=zones, verify=False)
+            else: hw.rear_set(mode, color, sp, br, verify=False)
+        self.live("rear", go)
+        self.loading = True; self.rear_on.setChecked(True); self.loading = False
 
     # ---- Per-key -------------------------------------------------------------------------------------------------------------------------
     def p_keys(self):
@@ -582,7 +587,7 @@ class Window(QMainWindow if Qt else object):
             if "ac" in d: self.src = "AC" if d["ac"] else "Battery"
             if d.get("mode") in self.modes: self.power.set_index(self.modes.index(d["mode"]))
             if "rear" in d:
-                r = d["rear"]; self.rear_on.setChecked(r["brightness"] > 0); self._set(self.rear_bright, r["brightness"]); self._set(self.rear_speed, r["speed"])
+                r = d["rear"]; self.rear_on.setChecked(r["brightness"] > 0); self.rear_last = r["brightness"] or self.rear_last; self._set(self.rear_bright, r["brightness"]); self._set(self.rear_speed, r["speed"])
                 self.rear_fx.set_index(list(hw.REAR_MODES).index(r["mode"]) if r["mode"] in hw.REAR_MODES else -1); self.rear_color.set_hex(r["color"])
                 zs = r.get("zones") or userstate.get("rear_zones")
                 for b, z in zip(self.zc, zs if isinstance(zs, list) and len(zs) == 3 else [r["color"]] * 3): b.set_hex(z)

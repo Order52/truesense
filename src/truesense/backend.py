@@ -123,7 +123,7 @@ def _hex6(c):
     if not re.fullmatch(r"[0-9a-fA-F]{6}", c or ""): raise HwError("color must be RRGGBB hex")
     return c.lower()
 
-def rear_set(mode, color="ffffff", speed=3, brightness=100, direction=1, zones=None):
+def rear_set(mode, color="ffffff", speed=3, brightness=100, direction=1, zones=None, verify=True):
     """zones: optional list of one or three RRGGBB colours (left, middle, right); only the static effect can colour the three parts differently."""
     if mode not in REAR_MODES: raise HwError(f"rear mode: {', '.join(REAR_MODES)}")
     color = _hex6(color)
@@ -140,10 +140,12 @@ def rear_set(mode, color="ffffff", speed=3, brightness=100, direction=1, zones=N
         zs = zones or [color] * 3
         for z, c in zip(REAR_ZONES, zs): cmd(f"set_color {c} {z}")
         userstate.set("rear_zones", zs)
+    userstate.set("rear_state", {"mode": mode, "color": color, "speed": speed, "brightness": brightness, "direction": direction, "zones": zones if mode == "static" else None})
+    if not verify:                                                          # live sliders and colour drags: no read-back, the next write follows at once
+        return {"mode": mode, "brightness": brightness, "speed": speed, "color": color, **({"zones": zs} if mode == "static" else {})}
     settle(lambda: (lambda g: (g["mode"], g["brightness"]))(rear_get()), (mode, brightness), "rear light")
     r = rear_get()
     if mode == "static": r["zones"] = zs
-    userstate.set("rear_state", {"mode": mode, "color": color, "speed": speed, "brightness": brightness, "direction": direction, "zones": zones if mode == "static" else None})
     return r
 
 # ---- plain Linux sensors (CPU package temp, GPU) ---------------------------------------------------------------------------------------
