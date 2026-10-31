@@ -59,3 +59,12 @@ class TestWindowLogic(unittest.TestCase):
         w.curve_list.setCurrentIndex(w.curve_list.findText("truesense")); w.curve_copy()
         self.assertIn("truesense-copy", curves.names()); self.assertFalse(w.editor.locked); self.assertTrue(w.c_pre.isEnabled())
         curves.delete("truesense-copy"); w.close()
+
+    def test_builtin_smart_profiles_are_read_only_until_copied(self):
+        from truesense import smartprofiles as sp
+        w = gui.Window(); w.load_smart_in_editor("truesense")
+        self.assertFalse(w.sm_modes["ac_busy"].isEnabled()); self.assertFalse(w.sm_save.isEnabled()); self.assertFalse(w.sm_copy.isHidden())
+        w.sm_list.setCurrentIndex(w.sm_list.findText("truesense")); w.smart_copy()
+        self.assertIn("truesense-copy", sp.names()); self.assertTrue(w.sm_modes["ac_busy"].isEnabled())
+        w.sm_modes["ac_busy"].setCurrentIndex(sp.MODES.index("turbo")); w.sm_name.setText("truesense-copy"); w.smart_save()
+        self.assertEqual(sp.load("truesense-copy")["ac_busy"], "turbo"); sp.delete("truesense-copy"); w.close()

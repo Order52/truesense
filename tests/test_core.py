@@ -192,6 +192,17 @@ class TestDaemonLogic(Base):
         self.assertEqual(h["fan_curve"](action="get")["name"], "max-cooling")
         c = curves.load("truesense"); self.assertAlmostEqual(curves.interp(c["cpu"], 80), 70); self.assertEqual(curves.interp(c["cpu"], 100), 100)
 
+    def test_smart_profile_changes_how_smart_auto_behaves(self):
+        from truesense import smartprofiles as sp
+        b = self.make(); h = b.handlers(); h["set"](key="auto_mode", value="smart")
+        h["smart_profile"](action="use", name="battery-first"); self.drive(b, 70, 40, 40, 5);
+        self.drive(b, 60, 70, 60, 90); self.assertEqual(device.SIM.mode, 4)                       # battery-first never uses Turbo, even when sustained
+        h["smart_profile"](action="use", name="performance-first"); self.drive(b, 25, 70, 60, 90); self.assertEqual(device.SIM.mode, 5)   # performance-first: Turbo after 10 s
+        with self.assertRaises(device.HwError): h["smart_profile"](action="use", name="bad", data={"ac_busy": "warp"})
+        self.assertEqual(h["smart_profile"](action="get")["name"], "performance-first")
+        with self.assertRaises(device.HwError): sp.save("silent", dict(sp.DEFAULTS))                # built-ins are read-only
+        self.assertTrue(b.reason)
+
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run
         device.SIM.run = lambda c: "err no such device\n"

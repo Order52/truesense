@@ -3,7 +3,7 @@
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
 import os, sys, threading, time
-from . import actions, audio, backend as hw, config, control, curves, ipc, keyboard, keymap, looks, profiles, userstate
+from . import actions, audio, backend as hw, config, control, curves, ipc, keyboard, keymap, looks, profiles, smartprofiles, userstate
 from .device import HwError
 
 try:
@@ -121,6 +121,9 @@ QPushButton#primary { background: #58a6ff; color: #031418; border: none; font-we
 QPushButton#primary:hover { background: #4aeaff; }
 QComboBox { background: #1b1d22; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; min-height: 20px; }
 QComboBox::drop-down { border: none; width: 24px; }
+QComboBox:disabled { color: #666c76; }
+QSlider::handle:horizontal:disabled { background: #4a505a; border-color: #2e3239; }
+QSlider::sub-page:horizontal:disabled { background: #3a404a; }
 QComboBox QAbstractItemView { background: #1d1f24; border: 1px solid #222b37; selection-background-color: #243247; outline: 0; }
 QLineEdit { background: #1b1d22; border: 1px solid #222b37; border-radius: 10px; padding: 7px 12px; }
 QLineEdit:focus { border-color: #58a6ff; }
@@ -153,7 +156,7 @@ JACK_HINT = {"auto": "Uses what the codec detects when you plug something in.",
 
 
 AUTOSTART = os.path.expanduser("~/.config/autostart/truesense.desktop")
-PAGES = {"home": 0, "lighting": 1, "keys": 2, "battery": 3, "audio": 4, "settings": 5, "curves": 6}
+PAGES = {"home": 0, "lighting": 1, "keys": 2, "battery": 3, "audio": 4, "settings": 5, "curves": 6, "smart": 7}
 
 
 class Segmented(QWidget if Qt else object):
@@ -304,7 +307,7 @@ class Window(QMainWindow if Qt else object):
         self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
-        for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings, self.p_curves): build()
+        for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart): build()
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(1000); self.full_refresh(); self.tick()
 
@@ -375,7 +378,7 @@ class Window(QMainWindow if Qt else object):
 
     def line(self, v, text, *widgets, sub=None):
         """One settings row: the name on the left, the control on the right."""
-        h = QHBoxLayout(); h.setSpacing(10); h.setContentsMargins(0, 2, 0, 2); lab = QLabel(text); h.addWidget(lab); h.addStretch()
+        h = QHBoxLayout(); h.setSpacing(10); h.setContentsMargins(0, 2, 0, 2); lab = QLabel(text); lab.setWordWrap(True); h.addWidget(lab, 1)
         for w in widgets: h.addWidget(w)
         v.addLayout(h)
         if sub: v.addWidget(self.hint(sub))
@@ -393,7 +396,7 @@ class Window(QMainWindow if Qt else object):
         val = QLabel(f"{s.value()}{suffix}"); val.setObjectName("stats"); s.vlabel = val
         s.valueChanged.connect(lambda x: val.setText(f"{x}{suffix}")); s.valueChanged.connect(lambda x: None if self.loading else cb(x))
         if final: s.sliderReleased.connect(lambda: final(s.value()))
-        h = QHBoxLayout(); h.addWidget(QLabel(text)); h.addStretch(); h.addWidget(val); v.addLayout(h); v.addWidget(s); return s
+        lab = QLabel(text); lab.setWordWrap(True); h = QHBoxLayout(); h.addWidget(lab, 1); h.addWidget(val); v.addLayout(h); v.addWidget(s); return s
 
     def btn(self, text, cb, primary=False):
         b = QPushButton(text); b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -412,6 +415,11 @@ class Window(QMainWindow if Qt else object):
         self.power.picked.connect(lambda i: None if self.loading else self.do(lambda: control.power(order[i], 30), lambda r: f"Power mode: {r} (held 30 min)", refresh=False))
         self.auto = Segmented(["Manual", "Native auto", "Smart auto"]); self.auto.picked.connect(self.auto_picked); self.line(v, "Mode control", self.auto)
         self.auto_hint = self.hint(AUTO_HINT["off"]); v.addWidget(self.auto_hint)
+        self.smart_box = QWidget(); sb = QVBoxLayout(self.smart_box); sb.setContentsMargins(0, 0, 0, 0); sb.setSpacing(8)
+        self.smart_cb = QComboBox(); self.smart_cb.setMinimumWidth(150); self.smart_cb.activated.connect(self.smart_picked)
+        self.line(sb, "Smart profile", self.smart_cb, self.btn("Edit", lambda: self.go("smart"))); self.smart_status = self.hint(""); sb.addWidget(self.smart_status); v.addWidget(self.smart_box); self.smart_box.setVisible(False)
+        self.hold_box = QWidget(); hb = QHBoxLayout(self.hold_box); hb.setContentsMargins(0, 0, 0, 0); self.hold_lbl = self.hint("")
+        hb.addWidget(self.hold_lbl, 1); hb.addWidget(self.btn("Resume auto", lambda: self.do(lambda: ipc.call("hold", minutes=None), "Auto is back in charge", refresh=False))); v.addWidget(self.hold_box); self.hold_box.setVisible(False)
         v = self.card(lay, "GPU Mode", "gpu", True); self.stat_gpu = v.right
         self.gpu = Segmented([m.capitalize() for m in hw.GPU_MODES], tiles=True, icons=["optimus", "gpu", "auto"]); v.addWidget(self.gpu)
         self.gpu.picked.connect(lambda i: None if self.loading else self.do(lambda: hw.set_gpu_mode(list(hw.GPU_MODES)[i]), lambda r: f"GPU mode: {r} (reboot to apply)", refresh=False))
@@ -420,6 +428,7 @@ class Window(QMainWindow if Qt else object):
         self.curve_box = QWidget(); cb = QVBoxLayout(self.curve_box); cb.setContentsMargins(0, 0, 0, 0)
         self.curve_cb = QComboBox(); self.curve_cb.setMinimumWidth(140); self.curve_cb.activated.connect(self.curve_picked)
         self.line(cb, "Smart curve", self.curve_cb, self.btn("Edit", lambda: self.go("curves"))); v.addWidget(self.curve_box)
+        self.fan_hint = self.hint("Smart follows your fan curve. Auto is the firmware's own control, exactly like Auto in PredatorSense on Windows (fans stop when cool)."); v.addWidget(self.fan_hint)
         self.fan_box = QWidget(); fb = QVBoxLayout(self.fan_box); fb.setContentsMargins(0, 0, 0, 0); fb.setSpacing(8)      # only shown while Manual is chosen
         self.fan_pct = self.slider(fb, "Manual speed", 20, 100, 5, lambda x: self.live("fanpct", lambda: control.fan("manual", x)), lambda x: None, suffix=" %")
         self.loading = True; self.fan_pct.setValue(40); self.loading = False; v.addWidget(self.fan_box); self.fan_box.setVisible(False)
@@ -431,7 +440,7 @@ class Window(QMainWindow if Qt else object):
 
     def auto_picked(self, i):
         if self.loading: return
-        self.auto_hint.setText(AUTO_HINT[AUTO_KEYS[i]]); self.do(lambda: ipc.call("set", key="auto_mode", value=AUTO_KEYS[i]), lambda r: f"Mode control: {AUTO_KEYS[i]}", refresh=False)
+        self.auto_hint.setText(AUTO_HINT[AUTO_KEYS[i]]); self.smart_box.setVisible(i == 2); self.do(lambda: ipc.call("set", key="auto_mode", value=AUTO_KEYS[i]), lambda r: f"Mode control: {AUTO_KEYS[i]}", refresh=False)
 
     def fan_picked(self, i):
         if self.loading: return
@@ -626,9 +635,9 @@ class Window(QMainWindow if Qt else object):
         v = self.card(lay, "Curves")
         self.curve_list = QComboBox(); self.curve_list.setMinimumWidth(150); self.curve_list.activated.connect(lambda i: self.load_curve_in_editor(self.curve_list.currentText()))
         self.copy_btn = self.btn("Copy to edit", self.curve_copy)
-        self.line(v, "Load", self.curve_list, self.copy_btn, self.btn("Use this curve", self.curve_use, True)); self.curve_name = QLineEdit(); self.curve_name.setPlaceholderText("name"); self.curve_name.setMinimumWidth(150)
+        self.line(v, "Curve", self.curve_list, self.btn("Use", self.curve_use, True)); self.curve_name = QLineEdit(); self.curve_name.setPlaceholderText("name"); self.curve_name.setMinimumWidth(120)
         self.curve_save_btn = self.btn("Save", self.curve_save); self.del_btn = self.btn("Delete", self.curve_delete)
-        self.line(v, "Save as", self.curve_name, self.curve_save_btn, self.del_btn); self.curve_msg = self.hint(""); v.addWidget(self.curve_msg)
+        self.line(v, "Edit", self.copy_btn, self.del_btn); self.line(v, "Save as", self.curve_name, self.curve_save_btn); self.curve_msg = self.hint(""); v.addWidget(self.curve_msg)
         self.reload_curves(); lay.addStretch()
 
     def reload_curves(self, select=None):
@@ -682,6 +691,65 @@ class Window(QMainWindow if Qt else object):
             c = curves.load(name); return ipc.call("fan_curve", action="use", name=name, data=None if name in curves.BUILTIN else c)
         self.do(go, lambda r: f"Fan curve in use: {r['name']}", refresh=False)
 
+    # ---- Smart auto profiles ---------------------------------------------------------------------------------------------------------
+    def p_smart(self):
+        lay = self.page("Smart auto profiles"); lay.addWidget(self.hint("How Smart auto chooses the power mode. Built-in profiles can't be edited: copy one, then change the copy."))
+        v = self.card(lay, "Which mode when"); self.sm_modes = {}
+        for k, label in smartprofiles.LABELS.items():
+            cb = QComboBox(); cb.addItems([m.capitalize() for m in smartprofiles.MODES]); cb.setMinimumWidth(120); self.line(v, label, cb); self.sm_modes[k] = cb
+        v = self.card(lay, "Turbo and timing"); self.sm_turbo = self.switch(v, "Allow Turbo on power", lambda x: None); self.sm_nums = {}
+        for k, (lo, hi, label) in smartprofiles.NUMS.items(): self.sm_nums[k] = self.slider(v, label, lo, hi, 1, lambda x: None)
+        v = self.card(lay, "Profiles"); self.sm_list = QComboBox(); self.sm_list.setMinimumWidth(150); self.sm_list.activated.connect(lambda i: self.load_smart_in_editor(self.sm_list.currentText()))
+        self.sm_copy = self.btn("Copy to edit", self.smart_copy); self.line(v, "Profile", self.sm_list, self.btn("Use", self.smart_use, True))
+        self.sm_name = QLineEdit(); self.sm_name.setPlaceholderText("name"); self.sm_name.setMinimumWidth(120); self.sm_save = self.btn("Save", self.smart_save); self.sm_del = self.btn("Delete", self.smart_delete)
+        self.line(v, "Edit", self.sm_copy, self.sm_del); self.line(v, "Save as", self.sm_name, self.sm_save); self.sm_msg = self.hint(""); v.addWidget(self.sm_msg); self.reload_smart(); lay.addStretch()
+
+    def reload_smart(self, select=None):
+        ns = smartprofiles.names(); self.sm_list.clear(); self.sm_list.addItems(ns); self.smart_cb.clear(); self.smart_cb.addItems(ns)
+        sel = select or "truesense"; self.sm_list.setCurrentIndex(max(0, self.sm_list.findText(sel))); self.smart_cb.setCurrentIndex(max(0, self.smart_cb.findText(sel))); self.load_smart_in_editor(self.sm_list.currentText())
+
+    def load_smart_in_editor(self, name):
+        try: p = smartprofiles.load(name)
+        except Exception as e: self.say(f"Error: {e}"); return
+        locked = name in smartprofiles.BUILTIN; self.loading = True
+        for k, cb in self.sm_modes.items(): cb.setCurrentIndex(smartprofiles.MODES.index(p[k])); cb.setEnabled(not locked)
+        self.sm_turbo.setChecked(p["ac_turbo"]); self.sm_turbo.setEnabled(not locked)
+        for k, s_ in self.sm_nums.items(): s_.setValue(p[k]); s_.setEnabled(not locked)
+        self.loading = False; self.sm_copy.setVisible(locked); self.sm_save.setEnabled(not locked); self.sm_del.setEnabled(not locked)
+        self.sm_msg.setText("Built-in profiles can't be edited. Press Copy to edit to make your own version." if locked else (p.get("description") or ""))
+
+    def smart_editor_profile(self):
+        p = {k: smartprofiles.MODES[cb.currentIndex()] for k, cb in self.sm_modes.items()}; p["ac_turbo"] = self.sm_turbo.isChecked()
+        p.update({k: s_.value() for k, s_ in self.sm_nums.items()}); return smartprofiles.validate(p)
+
+    def smart_use(self):
+        name = self.sm_list.currentText()
+        try: p = None if name in smartprofiles.BUILTIN else self.smart_editor_profile()
+        except Exception as e: self.sm_msg.setText(str(e)); return
+        self.do(lambda: ipc.call("smart_profile", action="use", name=name, data=p), lambda r: f"Smart auto profile in use: {r['name']}", refresh=False)
+
+    def smart_save(self):
+        name = self.sm_name.text().strip() or self.sm_list.currentText()
+        try: smartprofiles.save(name, self.smart_editor_profile())
+        except Exception as e: self.sm_msg.setText(str(e)); self.say(f"Error: {e}"); return
+        self.reload_smart(name); self.sm_msg.setText(f"Saved '{name}'. Press Use this profile to run it."); self.say(f"Saved smart profile '{name}'")
+
+    def smart_copy(self):
+        src = self.sm_list.currentText()
+        try: n = smartprofiles.copy(src, self.sm_name.text().strip() or None)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_smart(n); self.sm_msg.setText(f"Copied to '{n}'. Change what you like, then Save and Use this profile."); self.say(f"Copied '{src}' to '{n}'")
+
+    def smart_delete(self):
+        name = self.sm_list.currentText()
+        try: smartprofiles.delete(name)
+        except Exception as e: self.say(f"Error: {e}"); return
+        self.reload_smart(); self.say(f"Deleted smart profile '{name}'")
+
+    def smart_picked(self, i):
+        name = self.smart_cb.currentText()
+        self.do(lambda: ipc.call("smart_profile", action="use", name=name, data=None if name in smartprofiles.BUILTIN else smartprofiles.load(name)), lambda r: f"Smart auto profile in use: {r['name']}", refresh=False)
+
     def save_key(self, g, e):
         err = actions.validate(e.text())
         if err: self.statusBar().showMessage(err, 8000); return
@@ -731,7 +799,11 @@ class Window(QMainWindow if Qt else object):
         self.loading = True
         try:
             if "state" in d:
-                s = d["state"]["settings"]; am = s.get("auto_mode") or ("smart" if s["auto_profile"] else "off"); self.auto.set_index(AUTO_KEYS.index(am) if am in AUTO_KEYS else 0); self.auto_hint.setText(AUTO_HINT.get(am, ""))
+                s = d["state"]["settings"]; am = s.get("auto_mode") or ("smart" if s["auto_profile"] else "off"); self.auto.set_index(AUTO_KEYS.index(am) if am in AUTO_KEYS else 0); self.auto_hint.setText(AUTO_HINT.get(am, "")); self.smart_box.setVisible(am == "smart")
+                lv = d["state"]["live"]; sp_ = lv.get("smart_profile")
+                if sp_ and self.smart_cb.currentText() != sp_ and not self.smart_cb.view().isVisible(): self.smart_cb.setCurrentIndex(max(0, self.smart_cb.findText(sp_)))
+                self.smart_status.setText(f"Now: {lv.get('mode_reason')}" if lv.get("mode_reason") and am != "off" else "")
+                hl = d["state"].get("hold_left_s", 0); self.hold_box.setVisible(bool(hl) and am != "off"); self.hold_lbl.setText(f"You picked a mode: held for {max(1, hl // 60)} more min, then {am} auto takes over.")
                 fc = d["state"]["live"].get("fan_curve")
                 if fc and self.curve_cb.currentText() != fc and not self.curve_cb.view().isVisible(): self.curve_cb.setCurrentIndex(max(0, self.curve_cb.findText(fc)))
                 if d.get("fan", {}).get("mode") == "manual": self._set(self.fan_pct, max(20, d["fan"]["duty_register_pct"]["cpu"]))

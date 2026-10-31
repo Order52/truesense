@@ -4,7 +4,7 @@ from truesense import cli, config, device, keyprofiles, profiles, userstate
 
 COMMANDS = """
 status|sensors|version|doctor-skip
-power|power status|power list|power set turbo|power set balanced|power next|power prev|power auto status|power auto off|power auto native|power auto smart|power auto on|power auto toggle|power hold 5|power release
+power|power status|power list|power set turbo|power set balanced|power next|power prev|power smart list|power smart show truesense|power smart show silent|power smart copy truesense mysmart|power smart save mysmart --set ac_busy=turbo --set turbo_after_s=20|power smart show mysmart|power smart use mysmart|power smart current|power smart delete mysmart|power auto status|power auto off|power auto native|power auto smart|power auto on|power auto toggle|power hold 5|power release
 fan|fan curve list|fan curve show truesense|fan curve show quiet|fan curve copy truesense mycopy|fan curve show mycopy|fan curve delete mycopy|fan curve save mine --from truesense --predict 6|fan curve show mine|fan curve save mine2 --cpu 50:0,60:40,70:60,89:100 --gpu 46:0,60:40,70:60,78:100|fan curve delete mine2|fan curve delete mine|fan curve current|fan curve use quiet|fan status|fan auto|fan max|fan set 60|fan set 50 70|fan smart status|fan smart on
 battery|battery status|battery limit status|battery limit on|battery limit off|battery limit toggle|battery calibration on|battery calibration off|battery usb-charge|battery usb-charge 10|battery usb-charge 30
 display overdrive|display overdrive on|display overdrive off|display overdrive toggle
@@ -24,6 +24,7 @@ completion bash|completion zsh|completion fish
 """.replace("|doctor-skip", "").strip()
 
 FAILING_BY_DESIGN = [
+    "power smart save truesense --set ac_busy=turbo", "power smart delete truesense", "power smart show nosuch", "power smart save q --set ac_busy=warp", "power smart save q --set turbo_after_s=1", "power smart use",
     "fan curve save truesense --cpu 50:0,89:100 --gpu 46:0,78:100", "fan curve copy nosuch",
     "fan curve show nosuchcurve", "fan curve delete truesense", "fan curve save x --cpu 50:0,70:50 --gpu 46:0,78:100", "fan curve save y", "fan curve use", "fan curve save z --cpu bad --gpu 1:1",
     "look apply nosuchlook", "look save bad/name", "look delete nosuchlook", "startup set keyboard look:nosuchlook",

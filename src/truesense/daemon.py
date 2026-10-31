@@ -5,7 +5,7 @@ a missing/failing device never kills the daemon (it keeps waiting and retrying).
 20 % ~1700 rpm, 30 2160, 40 2850, 50 3460, 60 4070, 70 4600, 80 5100, 100 6050. Firmware Auto is the only way to reach 0 rpm, so when calm control goes back to it.
 """
 import glob, os, pwd, signal, socket, subprocess, sys, threading, time
-from . import backend as hw, config, cpu, curves, ipc, looks, osd, state as statemod, touchpad
+from . import backend as hw, config, cpu, curves, ipc, looks, smartprofiles, osd, state as statemod, touchpad
 
 RUN = os.environ.get("TRUESENSE_RUN", "/run/truesense")
 RAPL = "/sys/class/powercap/intel-rapl:0/"
@@ -52,7 +52,7 @@ class Brain:
         self.tcpu = self.tgpu = self.tchassis = None; self.rpm = (0, 0)
         self.hist_c, self.hist_g = [], []
         self.tick = self.calm = self.busy_hold = self.last_try = 0
-        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
+        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self._smart = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
         self.written = None                      # (cpu, gpu) last written, (0, 0) = firmware Auto
         self.activity = "idle"; self.last_target = None; self.last_ac = None; self.cur_mode = None
         self.cap = self.p["cap_max_khz"]; self.cap_changed = 0
@@ -185,9 +185,15 @@ class Brain:
             if v is not None: return v
         return 100
 
+    def smart_cfg(self):
+        data = self.st.get("smart_profile_data")
+        try: return smartprofiles.validate(data) if data else smartprofiles.load(self.st.get("smart_profile", "truesense"))
+        except hw.HwError as e: self.log(f"smart profile invalid, using the built-in: {e}", 30); return smartprofiles.load("truesense")
+
     def smart_target(self):
         """Smart auto: pick the power mode from what the laptop is doing and how hot it is. Returns (mode, urgent)."""
-        s = self.c["smart"]; a = self.activity; cur = self.cur_mode; ac = self.last_ac
+        if self._smart is None: self._smart = self.smart_cfg()
+        s = self._smart; a = self.activity; cur = self.cur_mode; ac = self.last_ac
         heavy = a in ("gaming", "heavy"); hot = a == "hot"
         self.heavy_for = self.heavy_for + 1 if heavy else max(0, self.heavy_for - 1); self.idle_for = self.idle_for + 1 if a == "idle" else 0
         if hot: self.backoff_until = self.tick + s["backoff_hold_s"]
@@ -210,9 +216,10 @@ class Brain:
         if kind == "off" or self.legacy("predator-auto-off") or time.time() < self.st.get("profile_hold_until", 0) or not self.cur_mode: return
         if kind == "native": target, urgent = self.c["native"]["ac" if self.last_ac else "battery"], True        # follows the plug at once
         else: target, urgent = self.smart_target()
+        self.reason = f"{self.activity}, {'on power' if self.last_ac else 'on battery'}" + (f", {int(self.heavy_for)} s heavy" if kind == "smart" and self.heavy_for else "")
         if target == self.cur_mode: self.last_target = target; return
         if target == self.last_target and self.tick - self.last_try < 30: return                       # it already failed recently
-        up = self.RANK[target] > self.RANK.get(self.cur_mode, 2); s = self.c["smart"]
+        up = self.RANK[target] > self.RANK.get(self.cur_mode, 2); s = self._smart or self.smart_cfg()
         dwell = s["up_dwell_s"] if up else s["down_dwell_s"]
         if not urgent and self.tick - self.mode_changed < dwell: return                                # no flapping
         self.last_target, self.last_try = target, self.tick
@@ -236,7 +243,7 @@ class Brain:
         fan = "auto" if self.written in (None, (0, 0)) else f"{self.written[0]},{self.written[1]}"
         self.live = {"mode": "smart" if smart else "manual", "activity": self.activity, "fan": fan, "tcpu": round(self.tcpu or 0), "tgpu": round(self.tgpu or 0),
                      "chassis": round(self.tchassis or 0), "cpu": round(self.cpu_load), "gpu": round(self.gpu_util), "gpuw": round(self.gpu_power),
-                     "rpm1": self.rpm[0], "rpm2": self.rpm[1], "cap": self.cap // 1000, "power_mode": self.cur_mode or "?", "ac": bool(self.last_ac), "auto": self.auto_kind() != "off", "auto_mode": self.auto_kind(), "fan_curve": self.st.get("fan_curve", "truesense"), "hw_ok": self.hw_ok}
+                     "rpm1": self.rpm[0], "rpm2": self.rpm[1], "cap": self.cap // 1000, "power_mode": self.cur_mode or "?", "ac": bool(self.last_ac), "auto": self.auto_kind() != "off", "auto_mode": self.auto_kind(), "fan_curve": self.st.get("fan_curve", "truesense"), "smart_profile": self.st.get("smart_profile", "truesense"), "mode_reason": self.reason, "hw_ok": self.hw_ok}
         txt = "".join(f"{k}={v}\n" if not isinstance(v, bool) else f"{k}={int(v)}\n" for k, v in self.live.items())
         paths = [RUN + "/state", TMP_STATE] + (["/tmp/predator-state"] if self.c["compat"]["predator_widgets"] else [])
         for path in paths:
@@ -350,6 +357,15 @@ class Brain:
                 else: c = curves.load(name or "truesense"); self.st.set("fan_curve_data", None if name in curves.BUILTIN else c); self.st.set("fan_curve", name)
                 self.follower = curves.Follower(c); self.written = None; self.log(f"setting fan_curve = {name}", 20); return {"name": self.st.get("fan_curve"), "curve": c}
 
+        def smart_profile(action="get", name=None, data=None):
+            """get -> the active Smart auto profile; use -> switch to a saved one by name or to a profile sent as data (kept by the daemon)."""
+            with self.lock:
+                if action == "get": return {"name": self.st.get("smart_profile", "truesense"), "profile": self._smart or self.smart_cfg(), "names": smartprofiles.names()}
+                if action != "use": raise hw.HwError("smart_profile: get | use")
+                if data is not None: p = smartprofiles.validate(data); self.st.set("smart_profile_data", p); self.st.set("smart_profile", name or "custom")
+                else: p = smartprofiles.load(name or "truesense"); self.st.set("smart_profile_data", None if name in smartprofiles.BUILTIN else p); self.st.set("smart_profile", name)
+                self._smart = p; self.log(f"setting smart_profile = {name}", 20); return {"name": self.st.get("smart_profile"), "profile": p}
+
         def boot_look(action="get", look=None):
             if action == "get": return looks.read_boot()
             if action == "clear": looks.write_boot(None); return None
@@ -369,7 +385,7 @@ class Brain:
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "touchpad": touch}
 
 
 def main():
@@ -379,7 +395,7 @@ def main():
         print("falling back to the built-in defaults for the whole configuration", flush=True)
         cfg = config.merge(config.copy.deepcopy(config.DEFAULTS), {"user": cfg["user"]})
     os.makedirs(RUN, exist_ok=True)
-    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "smart" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
+    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "smart" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "smart_profile": "truesense", "smart_profile_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
     brain = Brain(cfg, st)
     uids = [brain.pw.pw_uid] if brain.pw else []
     server = ipc.Server(brain.handlers(), uids); server.start()

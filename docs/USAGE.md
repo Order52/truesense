@@ -21,6 +21,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `status`, `sensors` | everything / temperatures and fan RPM |
 | `power set MODE`, `next`, `prev`, `list`, `status` | eco, quiet, balanced, performance, turbo |
 | `power auto off\|native\|smart` | who picks the power mode: you (`off`), **native** (like PredatorSense on Windows: Balanced on power, Eco on battery), or **smart** (heat, load and battery aware: Performance when you game or work hard, Turbo when that is sustained and cool enough, a back-off if it overheats, Eco on battery); `on` = smart |
+| `power smart list\|current\|show NAME\|use NAME\|copy NAME [NEW]\|save NAME [--from BASE] --set key=value\|delete NAME` | Smart auto profiles (how it chooses the mode): built in `truesense` (ours), `battery-first`, `performance-first`, `silent`; built-ins are read-only, copy one to edit |
 | `power hold [MIN]`, `power release` | keep your manual choice against the automatic mode (30 min by default) |
 | `fan auto \| max \| set CPU [GPU] \| status` | fans; manual duty 20-100 % |
 | `fan smart on\|off\|toggle` | the daemon's smart curve |

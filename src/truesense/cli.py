@@ -58,6 +58,9 @@ def build():
     p = sub.add_parser("power", help="power mode (quiet balanced performance turbo eco) and the automatic profile"); ps = p.add_subparsers(dest="verb")
     ps.add_parser("status"); ps.add_parser("list"); q = ps.add_parser("set"); q.add_argument("mode", choices=list(hw.MODES))
     q = ps.add_parser("next"); q = ps.add_parser("prev")
+    q = ps.add_parser("smart", help="Smart auto profiles: list | current | show NAME | use NAME | copy NAME [NEW] | save NAME [--from BASE] --set key=value ... | delete NAME (built-in profiles are read-only: copy them to edit)")
+    q.add_argument("action", nargs="?", default="current", choices=["list", "current", "show", "use", "copy", "save", "delete"]); q.add_argument("name", nargs="?"); q.add_argument("new", nargs="?")
+    q.add_argument("--from", dest="base"); q.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     q = ps.add_parser("auto", help="automatic power mode: off | native (PredatorSense-like: power source only) | smart (heat, load and battery aware); on = smart"); q.add_argument("action", nargs="?", default="status", choices=["off", "native", "smart", "on", "toggle", "status"])
     q = ps.add_parser("hold", help="keep the current power mode against the automatic profile"); q.add_argument("minutes", nargs="?", type=float, default=30)
     ps.add_parser("release", help="end a hold")
@@ -184,6 +187,28 @@ def h_power(a):
         if want != cur: daemon_set("auto_mode", want)
         emit(want, {"off": "automatic power mode: off (you choose)", "native": "automatic power mode: native (power source only, like PredatorSense: AC balanced, battery eco)",
                     "smart": "automatic power mode: smart (heat, load and battery aware)"}[want])
+    elif v == "smart":
+        from . import smartprofiles as sp
+        act = a.action
+        def fmt(p): return "\n".join(f"  {k} = {p[k]}" for k in sp.DEFAULTS)
+        if act == "list": r = sp.names(); cur = ipc.call("smart_profile", action="get")["name"] if ipc.available() else None; emit(r, "\n".join(("* " if n == cur else "  ") + n + ("  - " + sp.BUILTIN[n]["description"] if n in sp.BUILTIN else "") for n in r))
+        elif act == "current": d = ipc.call("smart_profile", action="get"); emit(d, f"Smart auto profile in use: {d['name']}\n" + fmt(d["profile"]))
+        elif act == "show": p = sp.load(a.name or "truesense"); emit(p, f"{a.name or 'truesense'}\n" + fmt(p))
+        elif act == "use":
+            if not a.name: raise HwError("which profile? (truesense power smart list)")
+            d = ipc.call("smart_profile", action="use", name=a.name, data=None if a.name in sp.BUILTIN else sp.load(a.name)); emit(d["name"], f"Smart auto profile in use: {d['name']}")
+        elif act == "copy":
+            if not a.name: raise HwError("copy which profile?")
+            n = sp.copy(a.name, a.new); emit(n, f"copied '{a.name}' to '{n}' (edit: truesense power smart save {n} --set ac_busy=turbo)")
+        elif act == "save":
+            if not a.name: raise HwError("save under which name?")
+            base = sp.load(a.base) if a.base else (sp.load(a.name) if a.name in sp.names() and a.name not in sp.BUILTIN else dict(sp.DEFAULTS))
+            for kv in a.set:
+                k_, _, v_ = kv.partition("=")
+                if k_ not in sp.DEFAULTS or not v_: raise HwError(f"--set key=value, key one of: {', '.join(sp.DEFAULTS)}")
+                base[k_] = (v_.lower() in ("1", "true", "yes", "on")) if isinstance(sp.DEFAULTS[k_], bool) else (int(v_) if isinstance(sp.DEFAULTS[k_], int) else v_)
+            p = sp.save(a.name, base); emit(p, f"saved smart profile '{a.name}' (use it: truesense power smart use {a.name})")
+        elif act == "delete": sp.delete(a.name or ""); emit(a.name, f"deleted smart profile '{a.name}'")
     elif v == "hold": ipc.call("hold", minutes=a.minutes); emit(f"holding the current power mode for {a.minutes:g} min")
     elif v == "release": ipc.call("hold", minutes=None); emit("hold released: the automatic profile is in charge again")
 
