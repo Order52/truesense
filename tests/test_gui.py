@@ -116,12 +116,21 @@ class TestWindowLogic(unittest.TestCase):
         w.fan_link.setChecked(True); self.app.processEvents(); self.assertEqual(w.fan_pct.value(), 90); time.sleep(0.5); self.app.processEvents(); self.assertEqual(device.SIM.fan_duty, [90, 90])
         w.fan.btns[1].click(); self.app.processEvents(); self.assertFalse(w.fan_box.isVisible()); w.close()
 
+    def _wait(self, cond, timeout=4.0):
+        end = time.time() + timeout
+        while time.time() < end:
+            self.app.processEvents()
+            if cond(): return True
+            time.sleep(0.05)
+        return cond()
+
     def test_per_key_lives_in_lighting_and_hands_animations_to_the_key_service(self):
         from truesense import perkeyfx
         w = gui.Window(); w.go("keys"); self.assertEqual(w.pages.currentIndex(), gui.PAGES["lighting"]); self.assertEqual(w.light_stack.currentIndex(), 1)
-        w.board.select_group("wasd"); w.fx_cb.setCurrentIndex(w.fx_cb.findData("wave")); w.fx_speed.setValue(4); w.fx_push(); time.sleep(0.4); self.app.processEvents()
+        w.board.select_group("wasd"); w.fx_cb.setCurrentIndex(w.fx_cb.findData("wave")); w.fx_speed.setValue(4); w.fx_push()
+        self.assertTrue(self._wait(lambda: perkeyfx.get().get("mode") == "wave"), "the animation settings never reached the state")
         fx = perkeyfx.get(); self.assertEqual((fx["mode"], fx["speed"], len(fx["keys"]), len(fx["base"])), ("wave", 4, 4, 128))
-        w.fx_cb.setCurrentIndex(0); w.fx_push(); time.sleep(0.4); self.app.processEvents(); self.assertEqual(perkeyfx.get()["mode"], "off"); w.close()
+        w.fx_cb.setCurrentIndex(0); w.fx_push(); self.assertTrue(self._wait(lambda: perkeyfx.get().get("mode") == "off")); w.close()
 
     def test_lighting_profiles_work_like_the_other_profile_pages(self):
         from truesense import looks
