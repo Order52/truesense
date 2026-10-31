@@ -81,10 +81,8 @@ def capture(description=""):
 
 
 def _fan_manual(cpu, gpu):
-    import time
-    try: ipc.call("set", key="smart_fan", value=False); time.sleep(1.2)       # the daemon must stop managing the fans first
-    except HwError: pass
-    hw.fan_manual(cpu, gpu)
+    from . import control
+    control.fan("manual", cpu, gpu)
 
 
 def next_name():

@@ -25,7 +25,7 @@ DEFAULTS = {
              "long_ms": 800, "multi_ms": 450, "power_cycle": ["eco", "quiet", "balanced", "performance", "turbo"]},
     "startup": {"profile": "", "keyboard": "last", "rear": "last"},   # applied at login: last | default | none | profile:NAME (keyboard) | off (rear)
     "keyboard": {"operating_follow": False, "operating_colors": {}},
-    "audio": {"notify": True, "headset_mode": "conference", "array_mode": "conference"},
+    "audio": {"jack": "auto", "notify": True, "headset_mode": "conference", "array_mode": "conference"},
     "osd": {"style": "native"},                      # native | noctalia | none  (env TRUESENSE_OSD overrides)
     "compat": {"predator_widgets": False},           # also write /tmp/predator-state and honour ~/.cache/predator-fan-mode (old status-bar widgets)
 }
@@ -60,6 +60,7 @@ def validate(cfg):
     if f["cpu_up"] != sorted(f["cpu_up"]) or f["gpu_up"] != sorted(f["gpu_up"]): out.append("[fan] cpu_up / gpu_up must be ascending")
     c = cfg["cpu"]
     if not 25 <= c["pl_normal_w"] <= 120 or not 25 <= c["pl_gaming_w"] <= 120: out.append("[cpu] power limits must be 25..120 W")
+    if cfg["audio"]["jack"] not in ("auto", "headphones", "headset"): out.append("[audio] jack must be auto, headphones or headset")
     s = cfg["startup"]
     if not isinstance(s["keyboard"], str) or not (s["keyboard"] in ("last", "default", "none", "off") or s["keyboard"].startswith("profile:")): out.append("[startup] keyboard must be last, default, none, off or profile:NAME")
     if s["rear"] not in ("last", "default", "none", "off"): out.append("[startup] rear must be last, default, none or off")

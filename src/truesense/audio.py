@@ -42,6 +42,13 @@ def jack_status():
     hp, mic = _ctl("CARD", "Headphone Jack"), _ctl("CARD", "Headset Mic Jack")
     return {"headphones": hp == "on", "headset_mic": mic == "on", "raw": {"Headphone Jack": hp, "Headset Mic Jack": mic}}
 
+def jack_use(status=None):
+    """Which microphone the 3.5 mm jack is treated as: the setting `[audio] jack` = auto (what the codec detects), headphones (never use the headset mic), headset (always use it)."""
+    pref = _cfg()["audio"]["jack"]
+    if pref == "headset": return "headset"
+    if pref == "headphones": return "array"
+    return "headset" if (status or jack_status())["headset_mic"] else "array"
+
 def amixer_on(name): return _ctl("CARD", name) == "on"
 
 def headset_boost(level=None):
@@ -236,7 +243,7 @@ def _wait_node(dev, present, timeout=8.0):
 
 def apply_mic_policy(notify=True):
     """Point the default microphone at the right input: headset plugged -> headset filter (or raw headset mic); else the array filter (or raw array)."""
-    plugged = jack_status()["headset_mic"]; dev = "headset" if plugged else "array"; mode = voice_modes().get(dev, "off")
+    dev = jack_use(); plugged = dev == "headset"; mode = voice_modes().get(dev, "off")
     want = _pv_node(dev) if mode != "off" and _node_exists(_pv_node(dev)) else _pv_source(dev)
     if _run(["pactl", "get-default-source"]).stdout.strip() != want:
         _run(["pactl", "set-default-source", want])
@@ -246,7 +253,7 @@ def apply_mic_policy(notify=True):
 
 def _signature():
     names = _source_names()
-    return (jack_status()["headset_mic"], tuple(sorted(n for n in (_pv_node(d) for d in PV_DEV) if n in names)), tuple(sorted(voice_modes().items())))
+    return (jack_use(), tuple(sorted(n for n in (_pv_node(d) for d in PV_DEV) if n in names)), tuple(sorted(voice_modes().items())))
 
 def watch_mic():
     """Re-pick the default microphone whenever something relevant CHANGES: the headset is plugged/unplugged, a filter appears/vanishes, or a mode changes.

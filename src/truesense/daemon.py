@@ -57,7 +57,7 @@ class Brain:
         self.activity = "idle"; self.last_target = None; self.last_ac = None; self.cur_mode = None
         self.cap = self.p["cap_max_khz"]; self.cap_changed = 0
         self.cpus = sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_max_freq"))
-        self.hw_ok = True; self._last_err = 0.0; self.live = {}
+        self.hw_ok = True; self._last_err = 0.0; self.live = {}; self.lock = threading.RLock()
         self.find_hwmon()
         threading.Thread(target=self.gpu_stream, daemon=True).start()
 
@@ -225,6 +225,9 @@ class Brain:
 
     # ---- main step -----------------------------------------------------------------------------------------------------------------------
     def step(self):
+        with self.lock: self._step()
+
+    def _step(self):
         self.tick += 1
         if self.tick % 30 == 1 and not self.coretemp: self.find_hwmon()
         self.read_cpu_load()
@@ -275,6 +278,26 @@ class Brain:
             if key == "smart_fan" and not value: self.written = None
             return self.st.snapshot()
 
+        def fan(mode, cpu=None, gpu=None):
+            """One request = smart curve off + hardware write, atomically (the main loop takes the same lock)."""
+            with self.lock:
+                if mode == "smart": self.st.set("smart_fan", True); self.log("setting smart_fan = True", 20); return "smart"
+                if mode not in ("auto", "max", "manual"): raise hw.HwError(f"fan mode {mode!r}")
+                self.st.set("smart_fan", False); self.log("setting smart_fan = False (fan %s)" % mode, 20); self.written = None; self.lvl, self.calm = [0, 0], 0
+                if mode == "auto": hw.fan_auto()
+                elif mode == "max": hw.fan_max()
+                else:
+                    c = int(cpu); g = int(c if gpu is None else gpu)
+                    if not (20 <= c <= 100 and 20 <= g <= 100): raise hw.HwError("manual fan duty is 20..100 %")
+                    hw.fan_manual(c, g)
+                return mode
+
+        def power(mode, hold_minutes=None):
+            with self.lock:
+                new = hw.set_mode(mode); self.cur_mode = new
+                if hold_minutes: self.st.set("profile_hold_until", time.time() + float(hold_minutes) * 60)
+                return new
+
         def hold(minutes=None):
             if minutes is None: self.st.set("profile_hold_until", 0); return 0
             self.st.set("profile_hold_until", time.time() + float(minutes) * 60); return float(minutes)
@@ -286,7 +309,7 @@ class Brain:
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "hold": hold, "cpu_limits": limits, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "power": power, "hold": hold, "cpu_limits": limits, "touchpad": touch}
 
 
 def main():

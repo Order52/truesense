@@ -105,7 +105,7 @@ def build():
     p = sub.add_parser("audio", help="output, microphone, headset jack, Purified Voice, DTS"); au = p.add_subparsers(dest="verb")
     q = au.add_parser("output", help="speakers / headphones while the aux jack is plugged in"); q.add_argument("action", nargs="?", default="status", choices=["status", "speakers", "headphones", "toggle", "cycle"])
     q = au.add_parser("mic"); q.add_argument("action", nargs="?", default="status", choices=["status", "mute", "unmute", "toggle", "volume", "boost"]); q.add_argument("value", nargs="?", type=int); q.add_argument("--default-only", action="store_true", help="act on the default input only (default: every input)")
-    au.add_parser("jack", help="what the codec sees on the 3.5 mm jack")
+    q = au.add_parser("jack", help="what the codec sees on the 3.5 mm jack; `jack headphones|headset|auto` sets how the jack is used"); q.add_argument("use", nargs="?", choices=["auto", "headphones", "headset"])
     q = au.add_parser("voice", help="Purified Voice (AI mic noise reduction)"); q.add_argument("action", nargs="?", default="status", choices=["status", "set", "enable", "disable", "next", "apply", "watch", "notify"]); q.add_argument("a", nargs="?"); q.add_argument("b", nargs="?")
     q = au.add_parser("speaker-filter", help="noise filter on the output (off by default: it also gates music)"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "status"])
     q = au.add_parser("dts", help="Acer DTS sound through AcerUltraX"); q.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "mode", "profiles", "setup"]); q.add_argument("name", nargs="?")
@@ -130,7 +130,7 @@ def build():
     p = sub.add_parser("doctor", help="check the whole stack and say how to fix problems")
     p = sub.add_parser("selftest", help="set -> read back -> restore every firmware feature"); p.add_argument("--skip-fans", action="store_true")
     p = sub.add_parser("completion", help="shell completion script"); p.add_argument("shell", choices=["bash", "zsh", "fish"])
-    sub.add_parser("gui", help="the small optional window"); sub.add_parser("daemon", help="run the daemon (systemd does this)"); sub.add_parser("version")
+    g = sub.add_parser("gui", help="the small optional window"); g.add_argument("--page", choices=["home", "keys", "audio", "settings"], help="open on this page"); sub.add_parser("daemon", help="run the daemon (systemd does this)"); sub.add_parser("version")
     return ap
 
 
@@ -163,9 +163,8 @@ def h_power(a):
         emit(d, f"power mode: {d['mode']}" + (f"   (automatic profile {'on' if d.get('auto_profile') else 'off'}" + (f", manual choice held for {d['hold_left_s']//60} more min" if d.get("hold_left_s") else "") + ")" if "auto_profile" in d else ""))
     elif v == "list": emit(hw.supported_modes(), "  ".join(hw.supported_modes()))
     elif v == "set":
-        m = hw.set_mode(a.mode)
-        try: ipc.call("hold", minutes=30)
-        except HwError: pass
+        from . import control
+        m = control.power(a.mode, 30)
         emit(m, f"power mode: {m}   (held 30 min against the automatic profile; `truesense power release` to end)")
     elif v in ("next", "prev"):
         from . import actions; emit(actions.run("power-" + v))
@@ -175,7 +174,7 @@ def h_power(a):
 
 
 def h_fan(a):
-    from . import backend as hw, ipc
+    from . import backend as hw, ipc, control
     v = a.verb or "status"
     def off(): 
         try: daemon_set("smart_fan", False); __import__("time").sleep(1.2)
@@ -185,9 +184,9 @@ def h_fan(a):
         try: d["smart"] = ipc.call("state")["settings"]["smart_fan"]
         except HwError: d["smart"] = None
         emit(d, f"fans: {d['mode']}   CPU {d['cpu_fan_rpm']} rpm   GPU {d['gpu_fan_rpm']} rpm   smart curve: {onoff_value(d['smart'])}")
-    elif v == "auto": off(); hw.fan_auto(); emit("fans: firmware auto (they stop when cool)")
-    elif v == "max": off(); hw.fan_max(); emit("fans: MAX  (`truesense fan smart on` hands them back)")
-    elif v == "set": off(); hw.fan_manual(a.cpu, a.gpu if a.gpu is not None else a.cpu); emit(f"fans: manual {a.cpu} % / {a.gpu if a.gpu is not None else a.cpu} %")
+    elif v == "auto": control.fan("auto"); emit("fans: firmware auto (they stop when cool)")
+    elif v == "max": control.fan("max"); emit("fans: MAX  (`truesense fan smart on` hands them back)")
+    elif v == "set": control.fan("manual", a.cpu, a.gpu); emit(f"fans: manual {a.cpu} % / {a.gpu if a.gpu is not None else a.cpu} %")
     elif v == "smart": tri(a.action, lambda: ipc.call("state")["settings"]["smart_fan"], lambda x: daemon_set("smart_fan", x)["smart_fan"], "smart fan curve")
 
 
@@ -297,7 +296,11 @@ def h_audio(a):
             r = audio.mic_volume(a.value); emit(r, f"microphone volume: {r} %")
         elif act == "boost":
             r = audio.headset_boost(a.value); emit(r, f"headset mic boost: {r} (0..3, +10 dB per step)")
-    elif v == "jack": emit(audio.jack_status())
+    elif v == "jack":
+        if a.use:
+            config.write_user({"audio": {"jack": a.use}}); audio.apply_mic_policy(False)
+            emit(a.use, f"3.5 mm jack: {a.use}" + ("  (headset microphone is used even if the codec does not detect it)" if a.use == "headset" else ""))
+        else: emit({**audio.jack_status(), "setting": config.load()["audio"]["jack"], "microphone_in_use": audio.jack_use()})
     elif v == "voice":
         act = a.action
         if act == "status": emit({"modes": audio.voice_modes(), "jack": audio.jack_status()["headset_mic"], "default_source": audio._run(["pactl", "get-default-source"]).stdout.strip(), "notify": config.load()["audio"]["notify"]})
@@ -416,7 +419,7 @@ def main(argv=None):
         if a.area == "selftest":
             from . import selftest; return 0 if selftest.run(a.skip_fans) else 1
         if a.area == "gui":
-            from . import gui; return gui.main() or 0
+            from . import gui; return gui.main(a.page) or 0
         if a.area == "daemon":
             from . import daemon; daemon.main(); return 0
         if a.area == "version": emit({"truesense": __version__}, f"truesense {__version__}"); return 0

@@ -15,7 +15,7 @@ An action is `name` or `name:argument`. Each returns a short message (shown on s
   exec:<shell command>      runs as you, detached      |      notify:<text>
 """
 import os, shlex, subprocess
-from . import audio, backend as hw, config, ipc, keyboard, keyprofiles, osd, profiles, touchpad, userstate
+from . import audio, backend as hw, config, control, ipc, keyboard, keyprofiles, osd, profiles, touchpad, userstate
 from .device import HwError
 
 KB_EFFECTS = ["static", "breathing", "wave", "snake", "ripple", "neon", "raindrop", "lightning", "spot", "star", "fireball", "snow", "heartbeat"]
@@ -76,17 +76,16 @@ def run(spec, cfg=None):
     if name in ("power-next", "power-prev", "power-cycle"):
         order = [m for m in arg.split(",")] if name == "power-cycle" else cycle
         cur = hw.get_mode(); i = order.index(cur) if cur in order else -1
-        new = hw.set_mode(order[(i + (-1 if name == "power-prev" else 1)) % len(order)]); _hold(cfg); return f"Power mode: {new}"
-    if name == "power": new = hw.set_mode(arg); _hold(cfg); return f"Power mode: {new}"
+        new = control.power(order[(i + (-1 if name == "power-prev" else 1)) % len(order)], cfg["profile"]["hold_minutes"]); return f"Power mode: {new}"
+    if name == "power": new = control.power(arg, cfg["profile"]["hold_minutes"]); return f"Power mode: {new}"
     if name == "fan":
-        if arg == "smart": _daemon_set("smart_fan", True); return "Fans: smart curve"
-        _daemon_set("smart_fan", False); import time; time.sleep(1.2)
-        if arg == "auto": hw.fan_auto(); return "Fans: firmware auto"
-        if arg == "max": hw.fan_max(); return "Fans: MAX"
-        hw.fan_manual(int(arg), int(arg)); return f"Fans: {arg} %"
+        if arg == "smart": control.fan("smart"); return "Fans: smart curve"
+        if arg == "auto": control.fan("auto"); return "Fans: firmware auto"
+        if arg == "max": control.fan("max"); return "Fans: MAX"
+        control.fan("manual", int(arg)); return f"Fans: {arg} %"
     if name == "fan-max-toggle":
-        if hw.fan_state()["mode"] == "max": hw.fan_auto(); _daemon_set("smart_fan", True); return "Fans: smart curve"
-        _daemon_set("smart_fan", False); import time; time.sleep(1.2); hw.fan_max(); return "Fans: MAX"
+        if hw.fan_state()["mode"] == "max": control.fan("smart"); return "Fans: smart curve"
+        control.fan("max"); return "Fans: MAX"
     if name == "smart-fan-toggle":
         on = not _smart_on()
         if not _daemon_set("smart_fan", on): raise HwError("the TrueSense daemon is not running")
