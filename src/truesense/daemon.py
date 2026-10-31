@@ -46,7 +46,7 @@ class Brain:
         self.prev_total = self.prev_idle = None
         self.cpu_load = self.gpu_util = self.gpu_power = 0.0
         self.gpu_temp = None; self.gpu_seen = 0.0
-        self.tcpu = self.tgpu = self.tchassis = None
+        self.tcpu = self.tgpu = self.tchassis = None; self.rpm = (0, 0)
         self.hist_c, self.hist_g = [], []
         self.tick = self.calm = self.busy_hold = self.last_try = 0
         self.lvl = [0, 0]; self.changed = [0, 0]
@@ -211,7 +211,7 @@ class Brain:
         fan = "auto" if self.written in (None, (0, 0)) else f"{self.written[0]},{self.written[1]}"
         self.live = {"mode": "smart" if smart else "manual", "activity": self.activity, "fan": fan, "tcpu": round(self.tcpu or 0), "tgpu": round(self.tgpu or 0),
                      "chassis": round(self.tchassis or 0), "cpu": round(self.cpu_load), "gpu": round(self.gpu_util), "gpuw": round(self.gpu_power),
-                     "cap": self.cap // 1000, "power_mode": self.cur_mode or "?", "ac": bool(self.last_ac), "hw_ok": self.hw_ok}
+                     "rpm1": self.rpm[0], "rpm2": self.rpm[1], "cap": self.cap // 1000, "power_mode": self.cur_mode or "?", "ac": bool(self.last_ac), "auto": bool(self.st.get("auto_profile")), "hw_ok": self.hw_ok}
         txt = "".join(f"{k}={v}\n" if not isinstance(v, bool) else f"{k}={int(v)}\n" for k, v in self.live.items())
         paths = [RUN + "/state"] + (["/tmp/predator-state"] if self.c["compat"]["predator_widgets"] else [])
         for path in paths:
@@ -233,6 +233,7 @@ class Brain:
         raw_g = max(s["gpu_temp"] if s else 0, self.gpu_temp if time.time() - self.gpu_seen <= 6 and self.gpu_temp else 0)
         if raw_c <= 0: self.write_fan(0, 0); return                       # no sensors at all: firmware decides
         self.tcpu = ema(self.tcpu, raw_c, 0.4); self.tgpu = ema(self.tgpu, raw_g if raw_g > 0 else raw_c, 0.4)
+        if s: self.rpm = (s["cpu_fan_rpm"], s["gpu_fan_rpm"])
         if s and s["sys_temp"]: self.tchassis = ema(self.tchassis, s["sys_temp"], 0.2)
         self.activity = self.classify()
         if self.tick % 15 == 0: self.verify_fan()
