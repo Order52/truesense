@@ -16,7 +16,7 @@ The project is now **TrueSense**: one kernel module, one daemon, one CLI, an opt
 * **Profiles**: save and apply bundles of power, fans, lighting, battery and audio. Four ship by default.
 * Fn+F10 touchpad toggle through the same action system.
 * Audio: default microphone follows the active Purified Voice input; per-input modes; headset-mic boost; jack status.
-* **Optional window** (`truesense gui`, GTK 4 + libadwaita) and Noctalia bar widgets in `contrib/noctalia`.
+* **Optional window** (`truesense gui`, Qt 6 via PyQt6) and Noctalia bar widgets in `contrib/noctalia`.
 * A hardware simulator (`TRUESENSE_SIM=1`) and 28 unit tests including a smoke run of 119 CLI commands.
 
 ### Fixed
