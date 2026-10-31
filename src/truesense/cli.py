@@ -65,6 +65,7 @@ def build():
     q = ps.add_parser("auto", help="automatic power mode: off | native (PredatorSense-like: power source only) | smart (heat, load and battery aware); on = smart"); q.add_argument("action", nargs="?", default="status", choices=["off", "native", "smart", "on", "toggle", "status"])
     q = ps.add_parser("hold", help="keep the current power mode against the automatic profile"); q.add_argument("minutes", nargs="?", type=float, default=30)
     ps.add_parser("release", help="end a hold")
+    q = ps.add_parser("game", help="game rules: a program raises the power mode while it runs: list | add NAME MODE | remove NAME | clear"); q.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove", "clear"]); q.add_argument("name", nargs="?"); q.add_argument("mode", nargs="?", choices=list(hw.MODES))
     # fan
     p = sub.add_parser("fan", help="fans: firmware auto, max, manual %%, smart curve"); fs = p.add_subparsers(dest="verb")
     fs.add_parser("status"); fs.add_parser("auto", help="firmware control (0 rpm when cool)"); fs.add_parser("max")
@@ -114,12 +115,14 @@ def build():
     p = sub.add_parser("keyboard", help="keyboard lighting"); ks = p.add_subparsers(dest="verb")
     ks.add_parser("status"); ks.add_parser("on"); ks.add_parser("off"); ks.add_parser("toggle"); ks.add_parser("restore", help="back to the stock cyan per-key state"); ks.add_parser("list-keys")
     q = ks.add_parser("effect"); q.add_argument("name"); q.add_argument("--color", default="00aec7"); q.add_argument("--speed", type=int, default=5); q.add_argument("--brightness", type=int, default=None); q.add_argument("--direction", type=int, default=0)
-    q = ks.add_parser("fx", help="per-key animation on chosen keys (drawn by the key service, about 5 frames a second): off | pulse | wave | cycle | twinkle"); q.add_argument("mode", choices=["off", "pulse", "wave", "cycle", "twinkle"])
+    q = ks.add_parser("fx", help="per-key animation on chosen keys (drawn by the key service, about 5 frames a second): off | pulse | wave | cycle | twinkle | rainbow | scanner | comet | ripple | rain | matrix | fire | plasma | aurora | lightning | confetti | starlight | mood | breathing"); q.add_argument("mode", choices=["off"] + list(__import__("truesense.perkeyfx", fromlist=["MODES"]).MODES))
     q.add_argument("--speed", type=int, default=5, help="1..10"); q.add_argument("--keys", help="comma list of keys or groups, e.g. wasd,arrows,f5 (default: all keys)")
     q = ks.add_parser("speed", help="animation speed of the running effect, 1 (slow) .. 11 (fast)"); q.add_argument("level", type=int)
     q = ks.add_parser("color", help="change the colour of the current effect (stays in the same mode)"); q.add_argument("color")
     q = ks.add_parser("paint", help='colour some keys and keep the rest, e.g. paint w=ff0000 arrows=00ff00 esc=ffffff'); q.add_argument("items", nargs="+"); q.add_argument("--brightness", type=int, default=None)
     ks.add_parser("layout", help="key names and positions (for other tools)")
+    q = ks.add_parser("design", help="still designs: list | apply NAME | save NAME (yours go in ~/.config/truesense/designs/NAME.json)"); q.add_argument("action", choices=["list", "apply", "save"]); q.add_argument("name", nargs="?"); q.add_argument("--brightness", type=int, default=None)
+    q = ks.add_parser("image", help="paint a picture across the keys (needs Pillow)"); q.add_argument("file"); q.add_argument("--brightness", type=int, default=None)
     q = ks.add_parser("fill"); q.add_argument("color"); q.add_argument("--brightness", type=int, default=None)
     q = ks.add_parser("gradient"); q.add_argument("from_color"); q.add_argument("to_color"); q.add_argument("--brightness", type=int, default=None)
     q = ks.add_parser("rainbow"); q.add_argument("--brightness", type=int, default=None)
@@ -231,6 +234,11 @@ def h_power(a):
             p = sp.save(a.name, base); emit(p, f"saved smart profile '{a.name}' (use it: truesense power smart use {a.name})")
         elif act == "delete": sp.delete(a.name or ""); emit(a.name, f"deleted smart profile '{a.name}'")
     elif v == "hold": ipc.call("hold", minutes=a.minutes); emit(f"holding the current power mode for {a.minutes:g} min")
+    elif v == "game":
+        if a.action == "add" and not (a.name and a.mode): raise HwError("usage: truesense power game add PROGRAM MODE   (e.g. add eldenring.exe turbo)")
+        if a.action == "remove" and not a.name: raise HwError("usage: truesense power game remove PROGRAM")
+        r = ipc.call("game_rules", action=a.action, name=a.name, mode=a.mode)
+        emit(r, ("\n".join(f"  {k:<28} {m}" for k, m in sorted(r["rules"].items())) or "  (no game rules)") + (f"\n  running now: {r['running']} mode" if r["running"] else ""))
     elif v == "release": ipc.call("hold", minutes=None); emit("hold released: the automatic profile is in charge again")
 
 
@@ -419,6 +427,16 @@ def h_keyboard(a):
             if not col: raise HwError(f"'{item}': use key=RRGGBB")
             items[k_] = col
         kb.paint(items, a.brightness); done(f"painted {len(items)} key(s)")
+    elif v == "design":
+        from . import designs
+        if a.action == "list":
+            ds = designs.load_all(); emit({n: {"info": d["info"], "source": d["source"]} for n, d in ds.items()}, "\n".join(f"  {n:<12} {d['source']:<9} {d['info']}" for n, d in sorted(ds.items())))
+        elif not a.name: raise HwError("give a design name")
+        elif a.action == "apply": kb.per_key(designs.cells_of(designs.get(a.name)), a.brightness); done(f"design {a.name} applied")
+        else: done("saved to " + designs.save(a.name, kb.current_cells()))
+    elif v == "image":
+        from . import designs
+        kb.per_key(designs.image_cells(a.file), a.brightness); done("image painted")
     elif v == "layout": emit({"keys": {n: [{"cell": c, "col": c // 6, "row": c % 6} for c in cs] for n, cs in km.NAMES.items()}, "groups": sorted(km.GROUPS)})
     elif v == "fill": kb.per_key(km.to_list(km.canvas(km.hexcolor(a.color))), a.brightness); done()
     elif v == "gradient": kb.per_key(km.to_list(km.gradient(km.hexcolor(a.from_color), km.hexcolor(a.to_color))), a.brightness); done()

@@ -45,7 +45,9 @@ Areas that are switches accept `on | off | toggle | status`.
 | `startup show`, `startup set keyboard\|rear\|profile VALUE`, `startup apply` | what comes back at login: `last` (default, saved automatically), `default`, `off`, `none`; keyboard also `profile:NAME`; profile = a full profile applied first |
 | `keyboard on\|off\|toggle`, `restore`, `brightness N` (0-50), `timeout on\|off` | backlight |
 | `keyboard effect NAME --color --speed --brightness` | static breathing wave snake ripple neon raindrop lightning spot star fireball snow heartbeat (neon needs brightness 50) |
-| `keyboard fx off\|pulse\|wave\|cycle\|twinkle [--speed 1..10] [--keys wasd,arrows,f5]` | per-key animation on chosen keys (or all). The hardware effects cover the whole keyboard, so this one is drawn by the key service, about 5 frames a second; slow effects look best |
+| `keyboard fx off\|pulse\|wave\|cycle\|twinkle\|rainbow\|scanner\|comet\|ripple\|rain\|matrix\|fire\|plasma\|aurora\|lightning\|confetti\|starlight\|mood\|breathing [--speed 1..10] [--keys wasd,arrows,f5]` | per-key animation on chosen keys (or all). The hardware effects cover the whole keyboard, so this one is drawn by the key service, about 5 frames a second; slow effects look best (identical frames are not re-sent) |
+| `keyboard design list\|apply NAME\|save NAME` | still designs: built-in gaming, coding, arrows, ice, ember, stealth; yours are JSON files in `~/.config/truesense/designs/` (plain colours, no code) |
+| `keyboard image FILE` | paint a picture across the keys (scaled to the 22 x 6 key grid; needs Pillow) |
 | `keyboard color RRGGBB` | change the colour of the running effect without leaving it |
 | `keyboard paint w=ff0000 arrows=00ff00 esc=ffffff` | colour chosen keys or groups and keep every other key as it is |
 | `keyboard fill C`, `gradient C1 C2`, `rainbow`, `keys "wasd=ff0000" --base 101010`, `list-keys`, `layout` | per-key RGB |
@@ -103,3 +105,7 @@ Read the current value, write, read back, keep a restore path. Fans return to fi
 
 ## Porting to another model
 `sudo tools/collect_hardware_data.sh` (read-only) collects ACPI/codec facts. **Never publish the raw ACPI dump**: it contains firmware tables, including one that holds the OEM Windows product key.
+
+### Game rules
+
+`truesense power game add eldenring.exe turbo` raises the power mode while that program runs (works with Native and Smart auto); `list`, `remove NAME`, `clear`. Names match the process name, the program file or a Wine/Proton `.exe`. Turbo still backs off to Performance if the laptop is too hot, and a nearly empty battery wins. When the game ends the automatic profile takes over again by itself.

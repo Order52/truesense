@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.3.5 (unreleased)
+
+Ideas gathered from four related projects (Venator, jma-studio, acer-predator-helios-rgb, PreySense); everything was written from scratch.
+
+- 14 new per-key animations: rainbow, scanner, comet, ripple, rain, matrix, fire, plasma, aurora, lightning, confetti, starlight, mood, breathing. Unchanged frames are no longer re-sent.
+- `keyboard design` (built-in gaming, coding, ice, ember, stealth, arrows; your own JSON files) and `keyboard image` (picture across the keys).
+- Game rules: `power game add PROGRAM MODE` raises the power mode while a program runs.
+- The "too hot" state now releases 5 degrees below its line (no flapping).
+- `doctor` lists other power managers (tuned, tlp, auto-cpufreq, ...) that can fight the power modes.
+
 ## 0.3.4 (2026-10-31): one-line, multi-distribution installer; AUR package
 
 * **`tools/install.sh` rewritten**: detects Arch, Debian/Ubuntu, Fedora and openSUSE families, installs missing prerequisites (dkms, compiler, matching kernel headers, Python, socat, the window's Qt), handles clang-built kernels, test-builds the module before changing anything, swaps program files atomically and rolls back if the service does not start, restores SELinux contexts. New options: `--check` (read-only report), `--no-deps`, `--no-gui`, `--user=`, `--uninstall`.

@@ -13,6 +13,7 @@ Labels: **VERIFIED** = set, read back (or measured, or seen by the owner) and re
 | Smart fan (earlier ladder version) | VERIFIED | under a 24-thread load the fans reached 100/90 % within 10 s and the CPU held 88 to 90 °C |
 | Smart fan (current curve version, built-in and custom curves) | SIMULATED | same safety rules; the curve engine itself has not been run under real load |
 | Fans off (0 %) with watchdog | UNTESTED | the kernel module accepts "both 0" only since 0.3.0; how the firmware reacts to a 0 % command is unknown |
+| Game rules (`power game`) | SIMULATED | process matching tested against a fake /proc; the effect on the real laptop is not yet watched |
 | Native auto (Balanced on power, Eco on battery) | SIMULATED | modelled on how PredatorSense behaves; not compared side by side with Windows |
 | Smart auto and its profiles | SIMULATED | escalation, Turbo timing, thermal back-off, battery rules, resume-by-itself: all in tests |
 | CPU power limits (kept by the service) | PARTIAL | write, read-back and restore verified earlier (root); the "service keeps them" logic is SIMULATED |
@@ -31,6 +32,7 @@ Labels: **VERIFIED** = set, read back (or measured, or seen by the owner) and re
 | Keyboard: 13 effects, colour, speed, brightness | VERIFIED | brightness and speed read back or seen; speed range may be wider than the UI offers |
 | Per-key RGB (select, palette, gradient, rainbow, undo) | VERIFIED | all cells correct; the picture follows the real layout |
 | Per-key animations (software) | SIMULATED | drawn by the key service at about 5 frames a second |
+| 14 more per-key animations, key designs, image painting | SIMULATED | pure drawing code, tested for valid frames; not yet watched on the keyboard. Same ~5 frames a second limit |
 | Lighting profiles, boot and resume lighting | SIMULATED | applied by the service at start and after suspend |
 | Fn+F11 / Fn+F12 brightness | VERIFIED | done by the keyboard; the key service ignores these keys |
 

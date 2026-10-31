@@ -6,7 +6,7 @@ a missing/failing device never kills the daemon (it keeps waiting and retrying).
 20 % ~1700 rpm, 30 2160, 40 2850, 50 3460, 60 4070, 70 4600, 80 5100, 100 6050. Firmware Auto is the only way to reach 0 rpm, so when calm control goes back to it.
 """
 import glob, os, pwd, signal, socket, subprocess, threading, time
-from . import backend as hw, config, cpu, curves, gpuundervolt, ipc, looks, smartprofiles, undervolt, osd, state as statemod, touchpad
+from . import backend as hw, config, cpu, curves, gamerules, gpuundervolt, ipc, looks, smartprofiles, undervolt, osd, state as statemod, touchpad
 
 RUN = os.environ.get("TRUESENSE_RUN", "/run/truesense")
 FAN_OFF_START_CPU, FAN_OFF_START_GPU = 60, 55        # fans may only be turned off below these temperatures ...
@@ -127,7 +127,9 @@ class Brain:
         return (hist[-1] - hist[0]) / 4 if len(hist) == 5 else 0
 
     def classify(self):
-        if self.tcpu >= self.f["hot_cpu"] or self.tgpu >= self.f["hot_gpu"]: return "hot"
+        m = 5 if getattr(self, "_hot", False) else 0                                  # once hot, stay hot until 5 degrees below the line (no flapping at the threshold)
+        self._hot = self.tcpu >= self.f["hot_cpu"] - m or self.tgpu >= self.f["hot_gpu"] - m
+        if self._hot: return "hot"
         if self.gpu_power >= 35 or self.gpu_util >= 40: return "gaming"
         if self.cpu_load >= 55: return "heavy"
         if self.cpu_load < 8 and self.gpu_util < 10: return "idle"
@@ -234,6 +236,15 @@ class Brain:
         try: return smartprofiles.validate(data) if data else smartprofiles.load(self.st.get("smart_profile", "truesense"))
         except hw.HwError as e: self.log(f"smart profile invalid, using the built-in: {e}", 30); return smartprofiles.load("truesense")
 
+    def game_mode(self):
+        """Mode asked for by a running game rule (None if none). The process list is read every 3rd tick (cheap, and games do not start every second)."""
+        rules = self.st.get("game_rules") or {}
+        if not rules: self._game = None; return None
+        if self.tick % 3 == 0 or not hasattr(self, "_game"):
+            try: self._game = gamerules.running(rules)
+            except Exception: self._game = None
+        return self._game
+
     def smart_target(self):
         """Smart auto: pick the power mode from what the laptop is doing and how hot it is. Returns (mode, urgent)."""
         if self._smart is None: self._smart = self.smart_cfg()
@@ -261,6 +272,11 @@ class Brain:
         if time.time() < self.st.get("profile_hold_until", 0) and not self.hold_broken(): return          # your own pick is still in force
         if kind == "native": target, urgent = self.c["native"]["ac" if self.last_ac else "battery"], True        # follows the plug at once
         else: target, urgent = self.smart_target()
+        g = self.game_mode()
+        if g and self.RANK.get(g, 0) > self.RANK.get(target, 0):                                       # a configured game is running: it can only raise the mode
+            if self.activity == "hot" and g == "turbo": g = "performance"                              # same thermal back-off as Smart auto
+            if not self.last_ac and self.battery_pct() < 20: g = None                                  # a nearly empty battery wins
+            if g: target = g
         self.reason = f"{self.activity}, {'on power' if self.last_ac else 'on battery'}" + (f", {int(self.heavy_for)} s heavy" if kind == "smart" and self.heavy_for else "")
         if target == self.cur_mode: self.last_target = target; return
         if target == self.last_target and self.tick - self.last_try < 30: return                       # it already failed recently
@@ -560,6 +576,23 @@ class Brain:
                 return looks.write_boot(look)
             raise hw.HwError("boot_look: get | set | clear")
 
+        def game_rules(action="list", name=None, mode=None):
+            """Program name -> power mode while it runs. list | add | remove | clear."""
+            with self.lock:
+                rules = dict(self.st.get("game_rules") or {})
+                if action == "add":
+                    k = gamerules.clean_name(name)
+                    if mode not in gamerules.MODES: raise hw.HwError("mode: " + ", ".join(gamerules.MODES))
+                    rules[k] = mode
+                    if len(rules) > gamerules.MAX_RULES: raise hw.HwError(f"at most {gamerules.MAX_RULES} rules")
+                elif action == "remove":
+                    if gamerules.clean_name(name) not in rules: raise hw.HwError(f"no rule for '{name}'")
+                    del rules[gamerules.clean_name(name)]
+                elif action == "clear": rules = {}
+                elif action != "list": raise hw.HwError("game_rules: list | add | remove | clear")
+                if action != "list": self.st.set("game_rules", rules); self.last_target = None
+                return {"rules": rules, "running": gamerules.running(rules)}
+
         def hold(minutes=None):
             with self.lock: return self.set_hold(minutes)
 
@@ -579,7 +612,7 @@ class Brain:
             if action == "status": return cur
             return touchpad.set_enabled({"on": True, "off": False, "toggle": not cur}[action])
 
-        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "gpu_undervolt": gpu_undervolt, "battery_full": battery_full, "power": power, "boot_look": boot_look, "hold": hold, "cpu_limits": limits, "cpu_info": cpu_info, "touchpad": touch}
+        return {"ping": lambda: "pong", "state": get_state, "set": set_, "fan": fan, "fan_curve": fan_curve, "smart_profile": smart_profile, "undervolt": undervolt_, "gpu_undervolt": gpu_undervolt, "battery_full": battery_full, "power": power, "boot_look": boot_look, "hold": hold, "game_rules": game_rules, "cpu_limits": limits, "cpu_info": cpu_info, "touchpad": touch}
 
 
 def main():

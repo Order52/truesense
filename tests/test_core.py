@@ -155,6 +155,7 @@ class TestDaemonLogic(Base):
         h["set"](key="smart_fan", value=True)
         for bad in ({"key": "bogus", "value": True}, {"key": "smart_fan", "value": "yes"}):
             with self.assertRaises(device.HwError): h["set"](**bad)
+        self.drive(b, 14, 70, 60, 90)                                                                 # settle: busy but not hot (the hot state releases 5 degrees below its line)
         device.SIM.mode = 6; b.cur_mode = "eco"; b.busy_hold = 20; h["hold"](minutes=30); self.drive(b, 35, 70, 60, 90); self.assertEqual(device.SIM.mode, 6)
         h["hold"](minutes=None); self.drive(b, 35, 70, 60, 90); self.assertEqual(device.SIM.mode, 4)      # auto takes over: performance (turbo stays blocked after the earlier overheat)
 
@@ -327,12 +328,38 @@ class TestDaemonLogic(Base):
         from truesense import perkeyfx, keymap
         base = ["00aec7"] * 126 + ["000000"] * 2; w, a, esc = keymap.NAMES["w"][0], keymap.NAMES["a"][0], keymap.NAMES["esc"][0]
         for mode in perkeyfx.MODES:
-            f0 = perkeyfx.render(mode, 0.0, base, [w, a], 5); f1 = perkeyfx.render(mode, 1.7, base, [w, a], 5)
+            f0 = perkeyfx.render(mode, 0.0, base, [w, a], 5); seen = {tuple(perkeyfx.render(mode, 0.37 * i, base, [w, a], 5)[c] for c in (w, a)) for i in range(60)}
             self.assertEqual(len(f0), 128); self.assertEqual(f0[esc], (0x00, 0xAE, 0xC7), f"{mode}: keys that were not chosen must keep their colour")
-            self.assertTrue(f0[w] != f1[w] or f0[a] != f1[a], f"{mode} must change over time")
+            self.assertGreater(len(seen), 1, f"{mode} must change over time")
+        self.assertEqual(sorted(perkeyfx.MODES)[:0], [])
         wave = perkeyfx.render("wave", 0.5, base, None, 5); self.assertGreater(len({wave[c] for c in range(0, 126, 6)}), 5)       # a wave over all keys shows many colours
         with self.assertRaises(device.HwError): perkeyfx.set_fx("disco")
         with self.assertRaises(device.HwError): perkeyfx.set_fx("wave", speed=50)
+
+    def test_game_rules_raise_the_mode_while_the_game_runs(self):
+        from truesense import gamerules
+        b = self.make(); h = b.handlers(); self.drive(b, 40, 45, 45, 2); self.assertEqual(device.SIM.mode, 1)        # idle on power: balanced
+        r = h["game_rules"](action="add", name="Game.EXE", mode="performance"); self.assertIn("game.exe", r["rules"])
+        for bad in ({"action": "add", "name": "x", "mode": "warp"}, {"action": "add", "name": "../x", "mode": "turbo"}, {"action": "remove", "name": "nothing"}, {"action": "zap"}):
+            with self.assertRaises(device.HwError): h["game_rules"](**bad)
+        real = gamerules.running; gamerules.running = lambda rules, proc="/proc": "performance"
+        try:
+            self.drive(b, 40, 50, 50, 5); self.assertEqual(device.SIM.mode, 4, "a running game rule raises the mode even when the load is light")
+            gamerules.running = lambda rules, proc="/proc": "turbo"; self.drive(b, 40, 93, 93, 99); self.assertNotEqual(device.SIM.mode, 5, "turbo still backs off when hot")
+        finally: gamerules.running = real
+        self.drive(b, 80, 45, 45, 2); self.assertEqual(device.SIM.mode, 1, "back to the automatic profile when the game ends")
+        h["game_rules"](action="clear"); self.assertEqual(h["game_rules"](action="list")["rules"], {})
+
+    def test_game_rule_matching_reads_process_names(self):
+        import os as _os
+        from truesense import gamerules
+        with tempfile.TemporaryDirectory() as d:
+            def proc(pid, comm, *args):
+                _os.makedirs(f"{d}/{pid}"); open(f"{d}/{pid}/comm", "w").write(comm + "\n"); open(f"{d}/{pid}/cmdline", "wb").write(b"\0".join(a.encode() for a in args) + b"\0")
+            proc(10, "bash", "/bin/bash"); proc(11, "hl2_linux", "/home/u/hl2_linux", "-game", "hl2"); proc(12, "wine64-preloader", "Z:\\games\\EldenRing.exe")
+            self.assertEqual(gamerules.running({"hl2_linux": "performance"}, d), "performance")
+            self.assertEqual(gamerules.running({"eldenring.exe": "turbo", "hl2_linux": "performance"}, d), "turbo")        # the highest mode wins
+            self.assertIsNone(gamerules.running({"notepad.exe": "turbo"}, d)); self.assertIsNone(gamerules.running({}, d))
 
     def test_fans_off_is_guarded(self):
         b = self.make(); h = b.handlers(); self.drive(b, 5, 45, 45, 2)
@@ -479,3 +506,33 @@ class TestCli(Base):
 
 
 if __name__ == "__main__": unittest.main()
+
+
+class TestDesigns(unittest.TestCase):
+    def test_builtin_designs_are_valid_and_user_files_win(self):
+        import tempfile, json as _json, os as _os
+        from truesense import designs
+        with tempfile.TemporaryDirectory() as d:
+            _os.environ["XDG_CONFIG_HOME"] = d
+            try:
+                ds = designs.load_all(); self.assertTrue({"gaming", "coding", "stealth"} <= set(ds))
+                for n in ds: cv = designs.cells_of(ds[n]); self.assertEqual(len(cv), 128)
+                _os.makedirs(designs.user_dir())
+                with open(_os.path.join(designs.user_dir(), "gaming.json"), "w") as f: _json.dump({"base": "ffffff"}, f)
+                with open(_os.path.join(designs.user_dir(), "broken.json"), "w") as f: f.write("{nope")
+                with open(_os.path.join(designs.user_dir(), "badkey.json"), "w") as f: _json.dump({"keys": {"nokey": "ffffff"}}, f)
+                ds = designs.load_all(); self.assertEqual(ds["gaming"]["source"], "yours"); self.assertNotIn("broken", ds); self.assertNotIn("badkey", ds)
+                p = designs.save("mine", [(1, 2, 3)] * 128); self.assertTrue(_os.path.exists(p))
+                with self.assertRaises(device.HwError): designs.save("../x", [])
+                self.assertEqual(designs.cells_of(designs.get("mine"))[7], (1, 2, 3))
+            finally: _os.environ.pop("XDG_CONFIG_HOME", None)
+
+    def test_image_is_scaled_to_the_key_grid(self):
+        import tempfile, os as _os
+        from truesense import designs
+        try: from PIL import Image
+        except ImportError: self.skipTest("Pillow not installed")
+        with tempfile.TemporaryDirectory() as d:
+            p = _os.path.join(d, "a.png"); Image.new("RGB", (40, 12), (200, 10, 20)).save(p)
+            cv = designs.image_cells(p); self.assertEqual(len(cv), 128); self.assertEqual(cv[5], (200, 10, 20)); self.assertEqual(cv[127], (0, 0, 0))
+            with self.assertRaises(device.HwError): designs.image_cells(_os.path.join(d, "missing.png"))

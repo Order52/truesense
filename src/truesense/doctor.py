@@ -97,6 +97,16 @@ def c_conflicts():
     return OK, "no conflicting driver loaded; old drivers are blocked from loading", ""
 
 
+def c_power_managers():
+    """Other daemons that change CPU governors or power limits can fight the power modes (they do not touch the firmware path)."""
+    units = ("tuned", "tlp", "auto-cpufreq", "system76-power", "thermald", "power-profiles-daemon")
+    on = [u for u in units if active(u + ".service")]
+    if not on: return OK, "no other power manager is running", ""
+    risky = [u for u in on if u in ("tuned", "tlp", "auto-cpufreq", "system76-power")]
+    if risky: return WARN, "also running: " + ", ".join(on), "these can override CPU frequency or limits; consider: sudo systemctl disable --now " + " ".join(risky)
+    return INFO, "also running: " + ", ".join(on) + " (they do not touch the firmware power modes)", ""
+
+
 def c_daemon():
     if not active("truesense.service"): return FAIL, "truesense.service is not running", "sudo systemctl enable --now truesense.service ; journalctl -u truesense -b"
     try: st = ipc.call("state")
@@ -181,7 +191,7 @@ def c_fans():
 
 
 CHECKS = [("Model", c_model), ("Python", c_python), ("Kernel", c_kernel), ("Kernel headers", c_headers), ("DKMS", c_dkms), ("Kernel module", c_module), ("Device", c_device),
-          ("Conflicts", c_conflicts), ("Daemon", c_daemon), ("Service version", c_service_version), ("User services", c_user_services), ("udev / keyboard", c_udev), ("Config", c_config), ("Secure Boot", c_secure_boot),
+          ("Conflicts", c_conflicts), ("Power managers", c_power_managers), ("Daemon", c_daemon), ("Service version", c_service_version), ("User services", c_user_services), ("udev / keyboard", c_udev), ("Config", c_config), ("Secure Boot", c_secure_boot),
           ("Audio", c_audio), ("Fans", c_fans), ("Window", c_window), ("Status bars", c_bars)]
 
 
