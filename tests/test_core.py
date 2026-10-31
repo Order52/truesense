@@ -164,7 +164,7 @@ class TestModules(unittest.TestCase):
         # a cheap static check for names used but never defined/imported (what a compiler would not catch)
         for m in pkgutil.iter_modules(truesense.__path__):
             if m.name in ("gui", "__main__"): continue
-            src = open(os.path.join(truesense.__path__[0], m.name + ".py")).read(); tree = ast.parse(src)
+            src = truesense.util.read(os.path.join(truesense.__path__[0], m.name + ".py")); tree = ast.parse(src)
             defined = set(dir(builtins)) | {"__file__", "__name__", "__doc__"}
             for n in ast.walk(tree):
                 if isinstance(n, (ast.Import, ast.ImportFrom)): defined |= {(a.asname or a.name).split(".")[0] for a in n.names}

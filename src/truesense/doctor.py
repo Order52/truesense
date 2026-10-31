@@ -16,7 +16,21 @@ def sh(*cmd, timeout=6):
 
 
 def loaded(mod): return os.path.isdir(f"/sys/module/{mod}")
-def active(unit, user=False): return sh("systemctl", *(["--user"] if user else []), "is-active", unit).stdout.strip() == "active"
+
+
+def as_user(cmd):
+    """Run a user-session command for the person who invoked sudo (a root doctor would otherwise inspect root's empty session)."""
+    u = os.environ.get("SUDO_USER")
+    if os.geteuid() == 0 and u and u != "root":
+        import pwd
+        uid = pwd.getpwnam(u).pw_uid
+        return ["runuser", "-u", u, "--", "env", f"XDG_RUNTIME_DIR=/run/user/{uid}", f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus"] + cmd
+    return cmd
+
+
+def active(unit, user=False):
+    cmd = ["systemctl", *(["--user"] if user else []), "is-active", unit]
+    return sh(*(as_user(cmd) if user else cmd)).stdout.strip() == "active"
 
 
 def kver(): return os.uname().release

@@ -193,13 +193,13 @@ def voice_set(dev, mode):
     """Configure one input's filter (restarts PipeWire once, at configuration time only)."""
     if dev not in PV_DEV: raise HwError("device: headset | array")
     if mode == "off":
-        if os.path.exists(_conf_path(dev)): os.remove(_conf_path(dev)); _reload()
+        if os.path.exists(_conf_path(dev)): os.remove(_conf_path(dev)); _reload(); _wait_node(dev, False)
         return "off"
     if mode not in MODES: raise HwError("mode: off | conference | personal")
     if not PLUGIN: raise HwError("RNNoise LADSPA plugin missing (Arch: sudo pacman -S noise-suppression-for-voice)")
     os.makedirs(CONF_DIR, exist_ok=True)
     new = _pv_conf(dev, mode)
-    if not (os.path.exists(_conf_path(dev)) and util.read(_conf_path(dev)) == new): util.write(_conf_path(dev), new); _reload()
+    if not (os.path.exists(_conf_path(dev)) and util.read(_conf_path(dev)) == new): util.write(_conf_path(dev), new); _reload(); _wait_node(dev, True)
     return mode
 
 def voice_modes():
@@ -223,7 +223,16 @@ def voice_next(dev=None):
     cur = voice_modes()[dev]; new = {"off": "conference", "conference": "personal", "personal": "off"}.get(cur, "conference")
     voice_set(dev, new); return dev, new
 
-def _node_exists(name): return any(l.split("\t")[1:2] == [name] for l in _run(["pactl", "list", "short", "sources"]).stdout.splitlines())
+def _source_names(): return {l.split("\t")[1] for l in _run(["pactl", "list", "short", "sources"]).stdout.splitlines() if "\t" in l}
+def _node_exists(name): return name in _source_names()
+
+def _wait_node(dev, present, timeout=8.0):
+    """After a PipeWire reload the filter node takes a moment to appear (or vanish)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        if _node_exists(_pv_node(dev)) == present: return True
+        time.sleep(0.2)
+    return False
 
 def apply_mic_policy(notify=True):
     """Point the default microphone at the right input: headset plugged -> headset filter (or raw headset mic); else the array filter (or raw array)."""
@@ -235,16 +244,22 @@ def apply_mic_policy(notify=True):
     if notify: _say(f"Microphone: {'Headset' if plugged else 'Mic array'} - {MODE_LABEL[mode]}", "mic")
     return {"device": dev, "mode": mode, "default_source": want}
 
+def _signature():
+    names = _source_names()
+    return (jack_status()["headset_mic"], tuple(sorted(n for n in (_pv_node(d) for d in PV_DEV) if n in names)), tuple(sorted(voice_modes().items())))
+
 def watch_mic():
-    """Edge-triggered: reacts only when the headset is plugged/unplugged (never fights a manual choice in between)."""
+    """Re-pick the default microphone whenever something relevant CHANGES: the headset is plugged/unplugged, a filter appears/vanishes, or a mode changes.
+    Edge-triggered, so it never fights a manual choice made in between (e.g. Shift+F5)."""
     last = None
     while True:
-        cur = jack_status()["headset_mic"]
-        if cur != last:
-            time.sleep(0.8)                                                  # let PipeWire create/remove the headset source first
-            try: print(apply_mic_policy(_cfg()["audio"]["notify"]), flush=True)
+        try: sig = _signature()
+        except Exception as e: print("mic watcher:", e, flush=True); time.sleep(3); continue
+        if sig != last:
+            time.sleep(0.8)                                                  # let PipeWire finish creating/removing nodes
+            try: print(apply_mic_policy(_cfg()["audio"]["notify"] and (last is None or sig[0] != last[0])), flush=True)
             except Exception as e: print("mic policy failed:", e, flush=True)
-            last = cur
+            last = sig
         time.sleep(1.0)
 
 
@@ -276,8 +291,14 @@ def speaker_filter_on(): return os.path.exists(SPK_CONF)
 
 
 # ---- DTS sound (AcerUltraX) ---------------------------------------------------------------------------------------------------------------
+def _sudo_home():
+    """When run with sudo (installer/doctor) look in the invoking user's home, not root's."""
+    import pwd
+    try: return pwd.getpwnam(os.environ.get("SUDO_USER", "")).pw_dir
+    except KeyError: return os.path.expanduser("~")
+
 def _dts_bin():
-    return shutil.which("acerultrax-cli") or next((p for p in (os.path.expanduser("~/.local/bin/acerultrax-cli"), "/usr/local/bin/acerultrax-cli", "/usr/bin/acerultrax-cli") if os.path.exists(p)), None)
+    return shutil.which("acerultrax-cli") or next((p for p in (os.path.expanduser("~/.local/bin/acerultrax-cli"), _sudo_home() + "/.local/bin/acerultrax-cli", "/usr/local/bin/acerultrax-cli", "/usr/bin/acerultrax-cli") if os.path.exists(p)), None)
 
 def dts(*args, timeout=30):
     b = _dts_bin()

@@ -245,7 +245,7 @@ def h_keyboard(a):
         else: kb.set_brightness(a.level); emit(a.level, f"keyboard brightness: {a.level} / {kb.MAX_BRIGHT}")
     elif v == "timeout": tri(a.action, hw.get_kb_timeout, hw.set_kb_timeout, "backlight timeout (off after 30 s)")
     elif v == "operating": tri(a.action, lambda: ipc.call("state")["settings"]["operating_follow"], lambda x: daemon_set("operating_follow", x)["operating_follow"], "operating-mode colour follows the power mode")
-    elif v == "profile": keyprofiles.cli(a.verb2, a.name, a.spec)
+    elif v == "profile": r = keyprofiles.command(a.verb2, a.name, a.spec); emit(r, "\n".join(r) or "(no lighting profiles)" if isinstance(r, list) else r)
 
 
 def h_audio(a):

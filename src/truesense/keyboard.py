@@ -26,7 +26,16 @@ def _hidraw():
         if d[:3] == b"\x06\x02\xff": return "/dev/" + os.path.basename(h)   # usage page 0xFF02
     raise HwError("keyboard lighting interface (usage page 0xFF02) not found")
 
+SIM = {"brightness": 25, "packets": [], "frames": 0}      # TRUESENSE_SIM=1: a fake keyboard (the tests run the keyboard commands against it)
+
+def _sim(): return bool(os.environ.get("TRUESENSE_SIM"))
+
 def _send(pkts):
+    if _sim():
+        for p in pkts:
+            SIM["packets"].append(bytes(p))
+            if p[0] == 0x08: SIM["brightness"] = p[4]
+        return
     node = _hidraw()
     try: fd = os.open(node, os.O_RDWR)
     except PermissionError: raise HwError(f"no permission on {node}: add yourself to group plugdev and install the udev rule")
@@ -53,6 +62,7 @@ def _get_feature(fd, n=8):
 
 def get_brightness():
     """Current keyboard brightness (0..50) as the firmware reports it: byte 4 of the GET_REPORT after the `88` packet (verified: tracks writes)."""
+    if _sim(): return SIM["brightness"]
     fd = os.open(_hidraw(), os.O_RDWR)
     try:
         buf = bytearray(b"\x00" + bytes([0x88, 0, 0, 0, 0, 0, 0, 0x77])); fcntl.ioctl(fd, 0xC0000000 | (len(buf) << 16) | (ord("H") << 8) | 0x06, buf)
@@ -67,6 +77,7 @@ def per_key(colors, brightness=None):
     if not 0 <= brightness <= MAX_BRIGHT: raise HwError(f"brightness 0..{MAX_BRIGHT}")
     cells = list(colors) + [(0, 0, 0)] * (128 - len(colors))
     data = b"".join(bytes([0, r, g, b]) for r, g, b in cells[:128])
+    if _sim(): SIM["frames"] += 8; SIM["brightness"] = brightness; return
     node = _hidraw()
     try: fd = os.open(node, os.O_RDWR)
     except PermissionError: raise HwError(f"no permission on {node}: group plugdev + udev rule")
