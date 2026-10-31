@@ -1,8 +1,9 @@
 # Release notes
 
-## Unreleased
+## 0.3.9 (2026-10-31): one place for profiles
 
 - **Home:** removed the profile picker at the top. It duplicated the Profiles page, which stays as the single place to pick, apply, save and delete profiles (Home keeps the Profiles tile).
+- The test for the Profiles page now also checks that Home has no second picker.
 
 ## 0.3.8 (2026-10-31): layout fixes on the Lighting and Undervolt pages
 
