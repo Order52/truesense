@@ -294,6 +294,37 @@ class TestDaemonLogic(Base):
             for lv in (0, 3, 2, 1): self.assertEqual(audio.headset_boost(lv), lv)
         finally: audio._amixer = real
 
+    def test_first_install_defaults_leave_the_firmware_alone(self):
+        import tempfile
+        from truesense import cpu
+        d = tempfile.mkdtemp() + "/"
+        for n in ("constraint_0_power_limit_uw", "constraint_1_power_limit_uw"): open(d + n, "w").write("95000000")          # what the firmware set
+        daemon.RAPL = d; cpu.RAPL = d
+        cfg = config.load("/nonexistent", None); cfg["user"] = "no-such-user"
+        st = state.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "native" if cfg["daemon"]["auto_profile"] else "off", "pl_user": None,
+                          "profile_hold_until": 0}, tempfile.mkdtemp() + "/s.json")
+        daemon.RUN = tempfile.mkdtemp(); daemon.TMP_STATE = tempfile.mkdtemp() + "/ts"; b = daemon.Brain(cfg, st); b.say = lambda *a, **k: None; b.last_ac = True; b.read_cpu_load = lambda: None
+        b.find_hwmon = lambda: None; b.coretemp = None; b.gpu_temp = 0; daemon.hw.on_ac = lambda: True
+        self.assertEqual((b.auto_kind(), st.get("smart_fan"), b.smart_active()), ("native", False, False))
+        self.drive(b, 40, 88, 70, 95)                                                                  # hot and busy: still nothing of ours in the way
+        self.assertEqual(device.SIM.fan, "auto", "fans stay on the firmware's own control until you choose smart")
+        self.assertEqual(b.cap, cfg["cpu"]["cap_max_khz"], "no CPU clock cap")
+        self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), "95000000", "power limits stay as the firmware set them")
+        self.assertEqual(device.SIM.mode, 1)                                                           # native auto: Balanced on power
+        st.set("smart_fan", True); self.drive(b, 5, 60, 55, 30); self.assertTrue(b.smart_active()); self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), "80000000")       # smart on: ours
+        st.set("smart_fan", False); self.drive(b, 5, 60, 55, 30); self.assertEqual(open(d + "constraint_0_power_limit_uw").read(), "95000000", "switching smart off hands the firmware's limits back")
+
+    def test_per_key_animations_only_touch_the_chosen_keys(self):
+        from truesense import perkeyfx, keymap
+        base = ["00aec7"] * 126 + ["000000"] * 2; w, a, esc = keymap.NAMES["w"][0], keymap.NAMES["a"][0], keymap.NAMES["esc"][0]
+        for mode in perkeyfx.MODES:
+            f0 = perkeyfx.render(mode, 0.0, base, [w, a], 5); f1 = perkeyfx.render(mode, 1.7, base, [w, a], 5)
+            self.assertEqual(len(f0), 128); self.assertEqual(f0[esc], (0x00, 0xAE, 0xC7), f"{mode}: keys that were not chosen must keep their colour")
+            self.assertTrue(f0[w] != f1[w] or f0[a] != f1[a], f"{mode} must change over time")
+        wave = perkeyfx.render("wave", 0.5, base, None, 5); self.assertGreater(len({wave[c] for c in range(0, 126, 6)}), 5)       # a wave over all keys shows many colours
+        with self.assertRaises(device.HwError): perkeyfx.set_fx("disco")
+        with self.assertRaises(device.HwError): perkeyfx.set_fx("wave", speed=50)
+
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run
         device.SIM.run = lambda c: "err no such device\n"

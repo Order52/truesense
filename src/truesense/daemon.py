@@ -54,7 +54,7 @@ class Brain:
         self.tcpu = self.tgpu = self.tchassis = None; self.rpm = (0, 0)
         self.hist_c, self.hist_g = [], []
         self.tick = self.calm = self.busy_hold = self.last_try = 0
-        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self._smart = None; self.uv_since = None; self.gpu_uv_since = None; self.hold_ctx = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
+        self.lvl = [0, 0]; self.changed = [0, 0]; self.heavy_for = self.idle_for = 0; self.pl_orig = None; self.pl_touched = False; self._smart = None; self.uv_since = None; self.gpu_uv_since = None; self.hold_ctx = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
         self.written = None                      # (cpu, gpu) last written, (0, 0) = firmware Auto
         self.activity = "idle"; self.last_target = None; self.last_ac = None; self.cur_mode = None
         self.cap = self.p["cap_max_khz"]; self.cap_changed = 0
@@ -159,6 +159,14 @@ class Brain:
     # ---- CPU power limit + thermal governor -------------------------------------------------------------------------------------------
     def enforce_power_limit(self, force_now=False):
         u = self.st.get("pl_user")
+        if self.pl_orig is None: self.pl_orig = {n: num(RAPL + n) for n in ("constraint_0_power_limit_uw", "constraint_1_power_limit_uw")}          # what the firmware set, kept to hand back
+        if not u and not self.smart_active() and not force_now:
+            if self.pl_touched:
+                for n, v in self.pl_orig.items():
+                    if v is not None and num(RAPL + n) != v: wr(RAPL + n, int(v))
+                self.pl_touched = False
+            return
+        self.pl_touched = True
         if u: want = {"constraint_0_power_limit_uw": int(u["pl1"] * 1_000_000), "constraint_1_power_limit_uw": int(u["pl2"] * 1_000_000)}      # your own limits
         else:
             pl = int((self.p["pl_gaming_w"] if self.activity == "gaming" else self.p["pl_normal_w"]) * 1_000_000); want = {"constraint_0_power_limit_uw": pl, "constraint_1_power_limit_uw": pl}
@@ -166,7 +174,9 @@ class Brain:
             if num(RAPL + n) != v: wr(RAPL + n, v)
 
     def thermal_governor(self):
-        if not self.p["gov_enabled"]: return
+        if not self.p["gov_enabled"] or not self.smart_active():
+            if self.cap < self.p["cap_max_khz"]: self.cap = self.p["cap_max_khz"]; self.apply_cap()                  # not managing the CPU: give the full clock back
+            return
         p = self.p; new = self.cap
         if self.tcpu >= p["gov_hi"] and self.tick - self.cap_changed >= 2: new = max(p["cap_min_khz"], self.cap - p["cap_down_khz"])
         elif self.tcpu <= p["gov_lo"] and self.cap < p["cap_max_khz"] and self.tick - self.cap_changed >= 3: new = min(p["cap_max_khz"], self.cap + p["cap_up_khz"])
@@ -189,6 +199,11 @@ class Brain:
             v = num(p)
             if v is not None: return v
         return 100
+
+    def smart_active(self):
+        """TrueSense's own power management (CPU clock cap by temperature, automatic power limits) only runs when you chose a smart feature. Otherwise the firmware is left
+        alone, like PredatorSense on Windows."""
+        return bool(self.st.get("smart_fan")) or self.auto_kind() == "smart" or bool(self.st.get("pl_user"))
 
     def bucket(self): return "busy" if self.activity in ("gaming", "heavy", "hot") else "light"
 
@@ -520,7 +535,7 @@ def main():
         print("falling back to the built-in defaults for the whole configuration", flush=True)
         cfg = config.merge(config.copy.deepcopy(config.DEFAULTS), {"user": cfg["user"]})
     os.makedirs(RUN, exist_ok=True)
-    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "smart" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "pl_user": None, "smart_profile": "truesense", "smart_profile_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
+    st = statemod.State({"smart_fan": cfg["daemon"]["smart_fan"], "auto_profile": cfg["daemon"]["auto_profile"], "auto_mode": "native" if cfg["daemon"]["auto_profile"] else "off", "fan_curve": "truesense", "fan_curve_data": None, "pl_user": None, "smart_profile": "truesense", "smart_profile_data": None, "operating_follow": cfg["keyboard"]["operating_follow"], "profile_hold_until": 0})
     st.set("uv_applied", None); st.set("gpu_uv_applied", None)                                       # offsets never survive a reboot, so nothing is applied now
     brain = Brain(cfg, st)
     uids = [brain.pw.pw_uid] if brain.pw else []

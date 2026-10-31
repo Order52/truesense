@@ -5,6 +5,9 @@
 The project is now **TrueSense**: one kernel module, one daemon, one CLI, an optional window. Tested only on the **Acer Predator Helios 16 PH16-71** (BIOS V1.18, CachyOS, kernel 7.3.0-4 and 6.18 LTS, PipeWire 1.6). See [docs/STATUS.md](docs/STATUS.md).
 
 ### Added in this release (later)
+* **Fresh installs behave like PredatorSense on Windows**: firmware fan control, Native auto mode control, and nothing of ours touching clocks or power limits until you pick a smart feature (switching it off hands the firmware's values back).
+* **Per-key animations** (pulse, wave, colour cycle, twinkle) on chosen keys, drawn in software by the key service; per-key colours now live in Lighting as a tab.
+* Fixed a crash risk when closing the window while a background refresh was finishing.
 * **CPU power limits moved to the Undervolt page** and fixed: the service used to overwrite your PL1/PL2 every few seconds; it now keeps them until you go back to automatic. Safety zones (safe, past the safety line, beyond the danger line) with warnings for CPU limits, CPU undervolt and GPU undervolt; beyond the danger line you must type APPLY (window) or pass `--force` (CLI).
 * Headset mic boost fixed (it read the channel count instead of the value). The self-test now covers it and the mic mute.
 * Per-key colour picture follows the real PH16-71 keyboard layout.

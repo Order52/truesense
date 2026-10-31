@@ -101,6 +101,8 @@ def run(cfg=None):
             k["long_ms"], k["multi_ms"] = new["long_ms"], new["multi_ms"]; g.long_s, g.multi_s = k["long_ms"] / 1000, k["multi_ms"] / 1000
             print("key bindings reloaded:", {x: k[x] for x in ("tap", "double", "triple", "long", "fn_esc")}, flush=True)
     threading.Thread(target=watch_config, daemon=True, name="config-watch").start()
+    from . import perkeyfx
+    threading.Thread(target=perkeyfx.loop, daemon=True, name="perkey-animations").start()
     with open(node, "rb", buffering=0) as f:
         while True:
             r = f.read(8)

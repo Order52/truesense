@@ -9,7 +9,7 @@ USER_PATH = os.path.expanduser("~/.config/truesense/config.toml")
 
 DEFAULTS = {
     "user": "",
-    "daemon": {"smart_fan": True, "auto_profile": True},
+    "daemon": {"smart_fan": False, "auto_profile": True},                  # first install = PredatorSense defaults: firmware fans, native auto mode, nothing of ours in the way
     "fan": {
         "levels": [30, 40, 50, 60, 70, 85, 100],          # fan %
         "cpu_up": [52, 60, 68, 75, 80, 85, 89],           # deg C at which each level is entered

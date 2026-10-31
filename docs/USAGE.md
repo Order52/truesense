@@ -2,6 +2,9 @@
 
 `truesense` is the installed command (from a checkout: `./truesense`). `--json` works anywhere and prints machine-readable output. `truesense <area> --help` lists the sub-commands.
 
+## Defaults
+A fresh install behaves like PredatorSense on Windows: the fans are on the firmware's own Auto control, the power mode follows the power source (Native auto: Balanced on power, Eco on battery), the CPU's clocks and power limits are left to the firmware, lighting is untouched, and there is no undervolt. TrueSense's own management (the smart fan curve, Smart auto, the thermal clock cap and automatic power limits) only starts when you choose it, and switching it off hands the firmware's values back. Settings, Reset all (or choosing the default of any profile) returns to this state.
+
 ## Install, check, remove
 ```
 sudo tools/install.sh                  # module (DKMS), daemon, user services, udev rule, health timer
@@ -37,6 +40,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `startup show`, `startup set keyboard\|rear\|profile VALUE`, `startup apply` | what comes back at login: `last` (default, saved automatically), `default`, `off`, `none`; keyboard also `profile:NAME`; profile = a full profile applied first |
 | `keyboard on\|off\|toggle`, `restore`, `brightness N` (0-50), `timeout on\|off` | backlight |
 | `keyboard effect NAME --color --speed --brightness` | static breathing wave snake ripple neon raindrop lightning spot star fireball snow heartbeat (neon needs brightness 50) |
+| `keyboard fx off\|pulse\|wave\|cycle\|twinkle [--speed 1..10] [--keys wasd,arrows,f5]` | per-key animation on chosen keys (or all). The hardware effects cover the whole keyboard, so this one is drawn by the key service, about 5 frames a second; slow effects look best |
 | `keyboard color RRGGBB` | change the colour of the running effect without leaving it |
 | `keyboard paint w=ff0000 arrows=00ff00 esc=ffffff` | colour chosen keys or groups and keep every other key as it is |
 | `keyboard fill C`, `gradient C1 C2`, `rainbow`, `keys "wasd=ff0000" --base 101010`, `list-keys`, `layout` | per-key RGB |

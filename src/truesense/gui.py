@@ -3,7 +3,7 @@
 Run: truesense gui        Needs python-pyqt6 (Arch: `pacman -S python-pyqt6`); runs natively on Wayland (Hyprland) and X11.
 """
 import os, shlex, sys, threading, time
-from . import actions, audio, backend as hw, config, control, cpu, curves, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, profiles, smartprofiles, undervolt, userstate
+from . import actions, audio, backend as hw, config, control, cpu, curves, gpuundervolt, ipc, keybinds, keyboard, keymap, looks, perkeyfx, profiles, smartprofiles, undervolt, userstate
 from .device import HwError
 
 try:
@@ -156,7 +156,7 @@ JACK_HINT = {"auto": "Uses what the codec detects when you plug something in.",
 
 
 AUTOSTART = os.path.expanduser("~/.config/autostart/truesense.desktop")
-PAGES = {"home": 0, "lighting": 1, "keys": 2, "battery": 3, "audio": 4, "settings": 5, "curves": 6, "smart": 7, "predator": 8, "undervolt": 9}
+PAGES = {"home": 0, "lighting": 1, "battery": 2, "audio": 3, "settings": 4, "curves": 5, "smart": 6, "predator": 7, "undervolt": 8}      # "keys" opens Lighting on its Per-key tab
 
 
 class Segmented(QWidget if Qt else object):
@@ -472,15 +472,23 @@ class Window(QMainWindow if Qt else object):
     def __init__(self):
         super().__init__(); self.setWindowTitle("TrueSense")
         geo = QApplication.primaryScreen().availableGeometry(); self.setFixedSize(480, min(760, geo.height() - 60))   # a fixed size makes tiling WMs (Hyprland, sway) float it
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.refreshed.connect(self._apply); self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.refreshed.connect(self._apply); self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
-        for build in (self.p_home, self.p_lighting, self.p_keys, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
+        for build in (self.p_home, self.p_lighting, self.p_battery, self.p_audio, self.p_settings, self.p_curves, self.p_smart, self.p_predator, self.p_undervolt): build()
         self.pages.currentChanged.connect(lambda i: self.uv_refresh() if i == PAGES["undervolt"] else None)
         self.pages.currentChanged.connect(lambda i: self.full_refresh("audio" if i == PAGES["audio"] else "home"))
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(1000); self.full_refresh(); self.tick()
 
     # ---- plumbing --------------------------------------------------------------------------------------------------------------------
+    def closeEvent(self, e):
+        """Stop the timer and cut the worker threads off from the widgets: a late result must never land in a window that is going away."""
+        self.closing = True; self.timer.stop()
+        for sig in (self.bus.message, self.bus.refreshed, self.bus.boot_text, self.bus.uv):
+            try: sig.disconnect()
+            except TypeError: pass
+        super().closeEvent(e)
+
     def say(self, t):
         try: self.bus.message.emit(t)
         except RuntimeError: pass                      # the window closed while a worker thread was finishing
@@ -497,7 +505,9 @@ class Window(QMainWindow if Qt else object):
         self.statusBar().setStyleSheet("QStatusBar { color: #ff7b72; }" if t.startswith("Error") else "")
         self.statusBar().showMessage(t, 9000 if t.startswith("Error") else 6000)
 
-    def go(self, name): self.pages.setCurrentIndex(PAGES[name])
+    def go(self, name):
+        if name == "keys": self.pages.setCurrentIndex(PAGES["lighting"]); self.light_tabs.set_index(1); self.light_stack.setCurrentIndex(1); return
+        self.pages.setCurrentIndex(PAGES[name])
 
     def do(self, fn, ok="done", refresh=True):
         """Run a backend call off the UI thread; show its result or its error."""
@@ -609,7 +619,7 @@ class Window(QMainWindow if Qt else object):
         self.fan_link.setChecked(bool(userstate.get("fan_link", True))); self.loading = False; self.fan_two.setVisible(not self.fan_link.isChecked()); self.fan_one.setVisible(self.fan_link.isChecked())
         v.addWidget(self.fan_box); self.fan_box.setVisible(False)
         g = QGridLayout(); g.setSpacing(8)
-        for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Per-key colours", "palette", "keys"), ("PREDATOR key", "settings", "predator"), ("Undervolt", "performance", "undervolt"),
+        for n, (label, ic, page) in enumerate((("Lighting", "keyboard", "lighting"), ("Fan curves", "fan", "curves"), ("PREDATOR key", "settings", "predator"), ("Undervolt", "performance", "undervolt"),
                                                ("Battery and Screen", "battery", "battery"), ("Audio", "audio", "audio"), ("Settings", "settings", "settings"), ("Quit", "power", None))):
             b_ = self.btn(label, (lambda pg=page: self.go(pg)) if page else self.close); b_.setIcon(make_icon(ic)); b_.setIconSize(QSize(18, 18)); b_.setMinimumHeight(42); g.addWidget(b_, n // 2, n % 2)
         lay.addSpacing(4); lay.addLayout(g); lay.addStretch()
@@ -646,7 +656,7 @@ class Window(QMainWindow if Qt else object):
     # ---- Lighting: keyboard and rear bar on one page, one at a time ------------------------------------------------------------------------
     def p_lighting(self):
         lay = self.page("Lighting")
-        self.light_tabs = Segmented(["Keyboard", "Rear bar", "Profiles"], tiles=True, icons=["keyboard", "bar", "palette"]); lay.addWidget(self.light_tabs); stack = QStackedWidget(); lay.addWidget(stack)
+        self.light_tabs = Segmented(["Keyboard", "Per-key", "Rear bar", "Profiles"], tiles=True, icons=["keyboard", "palette", "bar", "manual"]); lay.addWidget(self.light_tabs); stack = QStackedWidget(); lay.addWidget(stack); self.light_stack = stack
         self.light_tabs.picked.connect(stack.setCurrentIndex); self.light_tabs.set_index(0)
         kb = QWidget(); v = QVBoxLayout(kb); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
         self.kb_on = self.switch(v, "Backlight", lambda x: self.do(lambda: actions.run("keyboard:on" if x else "keyboard:off"), lambda r: r, refresh=False)); self.sep(v)
@@ -656,7 +666,7 @@ class Window(QMainWindow if Qt else object):
         self.kb_color.changed.connect(lambda h_: self.live("kbc", lambda: keyboard.set_color(h_)))
         self.sep(v); self.line(v, "Lighting mode", self.kb_fx); self.line(v, "Colour", self.kb_color)
         self.kb_speed = self.slider(v, "Effect speed", 1, 11, 1, lambda x: self.live("kbs", lambda: keyboard.set_speed(x))); self.sep(v)
-        self.line(v, "Default", self.btn("Reset to default", lambda: self.do(lambda: keyboard.restore_default(None), "Keyboard back to the stock look"))); v.addStretch(); stack.addWidget(kb)
+        self.line(v, "Default", self.btn("Reset to default", lambda: self.do(lambda: keyboard.restore_default(None), "Keyboard back to the stock look"))); v.addStretch(); stack.addWidget(kb); stack.addWidget(self.keys_tab())
         rr = QWidget(); v = QVBoxLayout(rr); v.setContentsMargins(0, 6, 0, 0); v.setSpacing(12)
         self.rear_on = self.switch(v, "Light", lambda x: self.do(lambda: actions.run("rear:on" if x else "rear:off"), lambda r: r, refresh=False)); self.sep(v)
         self.rear_fx = Segmented([m.capitalize() for m in hw.REAR_MODES]); self.rear_fx.picked.connect(lambda i: self.rear_apply()); self.line(v, "Effect", self.rear_fx)
@@ -726,8 +736,9 @@ class Window(QMainWindow if Qt else object):
         self.loading = True; self.rear_on.setChecked(True); self.loading = False
 
     # ---- Per-key -------------------------------------------------------------------------------------------------------------------------
-    def p_keys(self):
-        lay = self.page("Per-key colours"); self.history, self.redo_stack, self.recent = [], [], []
+    def keys_tab(self):
+        """Per-key colours: a tab of the Lighting page (the keyboard as a picture, a palette, tools, and software animations)."""
+        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(0, 6, 0, 0); lay.setSpacing(14); self.history, self.redo_stack, self.recent = [], [], []
         lay.addWidget(self.hint("Click a key, drag a box around several, or Ctrl+click to add. Right-click a key to pick up its colour. Changes show on the keyboard as you make them."))
         self.board = PerKeyBoard(); self.board.selection_changed.connect(self.sel_changed); self.board.picked.connect(lambda h: self.set_colour(h, apply=False)); lay.addWidget(self.board)
         self.sel_cb = QComboBox(); self.sel_cb.addItem("Select…", None); [self.sel_cb.addItem(l, g) for l, g in KB_GROUPS]; self.sel_cb.addItem("Nothing", "none"); self.sel_cb.addItem("Invert selection", "invert")
@@ -747,12 +758,16 @@ class Window(QMainWindow if Qt else object):
         self.line(v, "Gradient across the selection", self.g1, self.g2, self.btn("Apply", self.apply_gradient))
         self.line(v, "Selection", self.btn("Rainbow", self.apply_rainbow), self.btn("Clear (off)", lambda: self.set_colour("000000")))
         self.undo_btn = self.btn("Undo", self.undo); self.redo_btn = self.btn("Redo", self.redo); self.line(v, "History", self.undo_btn, self.redo_btn); self.undo_btn.setEnabled(False); self.redo_btn.setEnabled(False)
+        v = self.card(lay, "Animation")
+        v.addWidget(self.hint("The keyboard cannot animate single keys by itself, so TrueSense draws it: about 5 frames a second, while the key service runs. Slow effects look best. It animates the selected keys, or every key if none are selected."))
+        self.fx_cb = QComboBox(); self.fx_cb.addItem("Off (static colours)", "off"); [self.fx_cb.addItem(label, k) for k, label in perkeyfx.MODES.items()]; self.fx_cb.setMinimumWidth(170)
+        self.fx_cb.activated.connect(lambda i: self.fx_push()); self.line(v, "Mode", self.fx_cb); self.fx_speed = self.slider(v, "Speed", 1, 10, 1, lambda x: self.fx_push())
         v = self.card(lay, "Whole keyboard")
         self.pk_level = self.slider(v, "Brightness", 0, 50, 5, lambda x: self.live("pkb", lambda: keyboard.set_brightness(x)))
         self.line(v, "Fill and presets", self.btn("Fill all", self.fill_all), self.btn("Rainbow", self.rainbow_all))
         self.line(v, "Reset", self.btn("Reset to stock", self.reset_keys))
         self.pk_name = QLineEdit(); self.pk_name.setPlaceholderText("name, e.g. my-keys"); self.pk_name.setMinimumWidth(130); self.line(v, "Save as a look", self.pk_name, self.btn("Save", self.save_perkey_look))
-        lay.addStretch()
+        lay.addStretch(); return w
 
     def sel_changed(self):
         n = len(self.board.sel); names = self.board.selected_names()
@@ -764,7 +779,15 @@ class Window(QMainWindow if Qt else object):
         """Show new colours on the picture, remember them for undo, and send them to the keyboard (newest wins while you drag)."""
         self.history.append(self.snapshot()); self.history = self.history[-40:]; self.redo_stack.clear(); self.board.set_cells(cells); self.sync_history(); self.upload()
 
+    def fx_active(self): return self.fx_cb.currentData() != "off"
+
+    def fx_push(self):
+        """Hand the animation settings (mode, speed, which keys, the colours underneath) to the key service."""
+        mode, speed, keys, base = self.fx_cb.currentData(), self.fx_speed.value(), sorted(self.board.sel) or None, list(self.board.cells)
+        self.do(lambda: perkeyfx.set_fx(mode, speed, keys, base), lambda r: "Animation off" if mode == "off" else f"Animation: {perkeyfx.MODES[mode]} (the key service draws it)", refresh=False)
+
     def upload(self):
+        if self.fx_active(): self.fx_push(); return                       # an animation is running: it draws the frames, just give it the new colours
         cells = [tuple(bytes.fromhex(c)) for c in self.board.cells]; self.live("paint", lambda: keyboard.per_key(cells, None))
 
     def sync_history(self): self.undo_btn.setEnabled(bool(self.history)); self.redo_btn.setEnabled(bool(self.redo_stack))
@@ -862,14 +885,14 @@ class Window(QMainWindow if Qt else object):
         self.autostart = self.switch(v, "Open this window at login", self.set_autostart, "Writes ~/.config/autostart/truesense.desktop. Hyprland needs `exec-once = truesense gui` (or uwsm) to run autostart entries.")
         self.autostart.setChecked(os.path.exists(AUTOSTART)); v.addWidget(self.hint("Lighting at boot and login is set in Lighting, Profiles. The PREDATOR key has its own page."))
         v = self.card(lay, "Reset")
-        self.line(v, "Everything back to defaults", self.btn("Reset all…", self.reset_all)); v.addWidget(self.hint("Fan curve and Smart auto profile to `truesense`, PREDATOR key to `default`, smart fan and Smart auto on, power limits automatic, lighting to stock, undervolt off. Your saved profiles are kept."))
+        self.line(v, "Everything back to defaults", self.btn("Reset all…", self.reset_all)); v.addWidget(self.hint("Back to how a fresh install behaves, like PredatorSense on Windows: Native auto mode control, firmware fans, power limits left to the firmware, lighting stock, undervolt off, PREDATOR key `default`. Your saved profiles are kept."))
         lay.addStretch()
 
     def reset_all(self):
         if QMessageBox.question(self, "Reset to defaults", "Reset the fan curve, Smart auto profile, PREDATOR key, power limits, lighting and undervolt to their defaults?\n\nYour saved profiles are not deleted.") != QMessageBox.StandardButton.Yes: return
         def go():
-            steps = (lambda: ipc.call("fan_curve", action="use", name="truesense"), lambda: ipc.call("smart_profile", action="use", name="truesense"), lambda: ipc.call("set", key="smart_fan", value=True),
-                     lambda: ipc.call("set", key="auto_mode", value="smart"), lambda: keybinds.use("default"), lambda: ipc.call("cpu_limits", reset=True),
+            steps = (lambda: ipc.call("fan_curve", action="use", name="truesense"), lambda: ipc.call("smart_profile", action="use", name="truesense"), lambda: control.fan("auto"),
+                     lambda: ipc.call("set", key="auto_mode", value="native"), lambda: keybinds.use("default"), lambda: ipc.call("cpu_limits", reset=True),
                      lambda: ipc.call("undervolt", action="boot_clear"), lambda: ipc.call("undervolt", action="reset"), lambda: ipc.call("gpu_undervolt", action="boot_clear"), lambda: ipc.call("gpu_undervolt", action="reset"),
                      lambda: keyboard.restore_default(None), lambda: hw.rear_set("static", "00aec7", 3, 100, 1))
             for fn in steps:
@@ -1340,6 +1363,7 @@ class Window(QMainWindow if Qt else object):
         if not slider.isSliderDown(): slider.setValue(value)            # a refresh must never move a slider while it is being dragged
 
     def _apply(self, d):
+        if self.closing: return
         self.loading = True
         try:
             if "state" in d:
@@ -1403,7 +1427,7 @@ def main(page=None):
         probe.write((page or "home").encode()); probe.flush(); probe.waitForBytesWritten(300); return 0
     QLocalServer.removeServer(name); server = QLocalServer(); server.listen(name)
     w = Window(); w.show()
-    if page in PAGES: w.pages.setCurrentIndex(PAGES[page])
+    if page in PAGES or page == "keys": w.go(page)
     def handoff():
         c = server.nextPendingConnection()
         if c and c.waitForReadyRead(300):

@@ -76,7 +76,7 @@ def get_brightness():
         return _get_feature(fd)[4]
     finally: os.close(fd)
 
-def per_key(colors, brightness=None):
+def per_key(colors, brightness=None, remember=True):
     """Direct/per-key upload (handoff 19b, byte-identical to the Windows capture): 128 cells, 4 bytes each (00 R G B), 8 x 64-byte output reports.
     colors: list of up to 128 (r,g,b); missing cells are black. cell = col*6 + row (see re/reference/keymap_ph16-71_verified.json)."""
     if brightness is None:                                   # keep what the user set with Fn+F11/F12; never upload into darkness
@@ -84,7 +84,10 @@ def per_key(colors, brightness=None):
     if not 0 <= brightness <= MAX_BRIGHT: raise HwError(f"brightness 0..{MAX_BRIGHT}")
     cells = list(colors) + [(0, 0, 0)] * (128 - len(colors))
     data = b"".join(bytes([0, r, g, b]) for r, g, b in cells[:128])
-    if _sim(): SIM["frames"] += 8; SIM["brightness"] = brightness; userstate.set("keyboard", {"mode": "perkey", "brightness": brightness, "cells": _hexcells(cells)}); return
+    if _sim():
+        SIM["frames"] += 8; SIM["brightness"] = brightness
+        if remember: userstate.set("keyboard", {"mode": "perkey", "brightness": brightness, "cells": _hexcells(cells)})
+        return
     node = _hidraw()
     try: fd = os.open(node, os.O_RDWR)
     except PermissionError: raise HwError(f"no permission on {node}: group plugdev + udev rule")
@@ -98,7 +101,7 @@ def per_key(colors, brightness=None):
         time.sleep(0.05)
         feat(_pkt(0x08, 0x02, 0x33, 0x05, brightness, 0x08, 0x01))
     finally: os.close(fd)
-    userstate.set("keyboard", {"mode": "perkey", "brightness": brightness, "cells": _hexcells(cells)})
+    if remember: userstate.set("keyboard", {"mode": "perkey", "brightness": brightness, "cells": _hexcells(cells)})
 
 def restore_default(brightness=12):
     """The state PredatorSense left on Windows: cells 0..125 = #00aec7, brightness 12 (identical frames to re/battery_ui.pcapng)."""
