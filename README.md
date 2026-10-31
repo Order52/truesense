@@ -26,19 +26,21 @@ Power modes, fans, GPU mode, battery, the rear light bar, per-key keyboard RGB, 
 
 ## Install
 
-One command from a clone (it is safe to re-run; it upgrades):
+**One line** (any supported distribution; it installs what is missing, builds the module, starts the service, then runs the checker):
 
 ```
-git clone https://github.com/Order52/truesense && cd truesense && sudo tools/install.sh
+curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
+```
+
+**From a clone**, or to look first: `git clone https://github.com/Order52/truesense && cd truesense && tools/install.sh --check` (read-only report), then `sudo tools/install.sh`.
+**Arch / CachyOS / Manjaro (AUR):** `yay -S truesense` once the package is published (see [docs/INSTALL.md](docs/INSTALL.md)); until then `cd packaging/arch && makepkg -si`.
+
+```
 truesense doctor          # checks everything and says how to fix what is wrong
-truesense gui             # the window (needs python-pyqt6)
+truesense gui             # the window
 ```
 
-Or without cloning (read the script first; set `TRUESENSE_SHA256` to pin the download): `curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash`.
-
-What the installer does: removes older helper drivers from earlier versions of this project (backing them up), builds the DKMS module for every installed kernel (so kernel updates keep working), installs the service, the user services, a udev rule, completions, a launcher and a health timer, then runs `truesense doctor`. `sudo tools/uninstall.sh [--purge]` removes everything. On Arch there is also a `PKGBUILD` (`cd packaging/arch && makepkg -si`).
-
-**Needs:** Linux 6.6 or newer, `dkms` and the headers of your kernel, Python 3.11+, systemd. Optional: `python-pyqt6` (window), PipeWire and the RNNoise plugin (microphone noise reduction), `socat` (instant status-bar buttons), `nvidia-utils`.
+The installer detects Arch, Debian/Ubuntu, Fedora and openSUSE families, installs the prerequisites (dkms, compiler, kernel headers, Python, socat, the window's Qt) with the system package manager, test-builds the kernel module before touching anything, swaps the program files atomically and rolls back if the service does not start. Options, offline install, uninstall and per-distribution notes: [docs/INSTALL.md](docs/INSTALL.md). Only Arch/CachyOS has been tested on real hardware; the other families are covered by unit tests of the detection logic only (see [docs/STATUS.md](docs/STATUS.md)).
 
 ## A first look
 

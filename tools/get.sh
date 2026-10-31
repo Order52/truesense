@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# One-line installer:  curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
-# Downloads a tagged release, optionally checks a pinned SHA-256, and runs tools/install.sh.
-#   TRUESENSE_VERSION=0.3.3   which release (default: the one this script was published with)
-#   TRUESENSE_SHA256=...      refuse to install unless the tarball matches
-# Prefer to read first: git clone https://github.com/Order52/truesense && less truesense/tools/install.sh
-set -euo pipefail
-VERSION="${TRUESENSE_VERSION:-0.3.3}"
-[ "$(id -u)" -eq 0 ] || { echo "run with sudo: curl -fsSL <url> | sudo bash" >&2; exit 1; }
-for c in curl tar sha256sum; do command -v "$c" >/dev/null || { echo "missing: $c" >&2; exit 1; }; done
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-url="https://github.com/Order52/truesense/archive/refs/tags/v${VERSION}.tar.gz"
-echo "downloading $url"
-curl -fsSL --retry 3 -o "$tmp/ts.tar.gz" "$url"
-sum="$(sha256sum "$tmp/ts.tar.gz" | cut -d' ' -f1)"; echo "sha256: $sum"
-if [ -n "${TRUESENSE_SHA256:-}" ] && [ "$sum" != "$TRUESENSE_SHA256" ]; then echo "checksum mismatch, refusing to install" >&2; exit 1; fi
-mkdir "$tmp/src"; tar -xzf "$tmp/ts.tar.gz" -C "$tmp/src" --strip-components=1
-[ -x "$tmp/src/tools/install.sh" ] || { echo "unexpected archive layout" >&2; exit 1; }
-"$tmp/src/tools/install.sh" "$@"
+# One-line installer. Downloads the newest TrueSense release from GitHub and runs tools/install.sh.
+#   curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
+#   ... | sudo bash -s -- --no-gui          (extra options go to install.sh)
+# Environment: TRUESENSE_VERSION=0.3.4 (pin a version), TRUESENSE_SHA256=<hash> (verify the download)
+set -Eeuo pipefail
+REPO=Order52/truesense
+[ "$(id -u)" -eq 0 ] || { echo "run as root:  curl -fsSL https://raw.githubusercontent.com/$REPO/main/tools/get.sh | sudo bash" >&2; exit 1; }
+for c in curl tar; do command -v "$c" >/dev/null || { echo "$c is required (install it with your package manager)" >&2; exit 1; }; done
+VERSION="${TRUESENSE_VERSION:-}"
+if [ -z "$VERSION" ]; then                                   # newest tag by version order (no jq needed)
+  VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/tags?per_page=100" | sed -n 's/.*"name": *"v\([0-9][0-9.]*\)".*/\1/p' | sort -V | tail -n1)
+  [ -n "$VERSION" ] || { echo "could not find the latest version (GitHub unreachable or rate-limited): set TRUESENSE_VERSION=x.y.z" >&2; exit 1; }
+fi
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+echo "TrueSense $VERSION: downloading"
+curl -fsSL -o "$TMP/ts.tar.gz" "https://github.com/$REPO/archive/refs/tags/v$VERSION.tar.gz"
+[ -z "${TRUESENSE_SHA256:-}" ] || echo "$TRUESENSE_SHA256  $TMP/ts.tar.gz" | sha256sum -c -
+tar -xzf "$TMP/ts.tar.gz" -C "$TMP"
+cd "$TMP"/truesense-*/ && exec bash tools/install.sh "$@"

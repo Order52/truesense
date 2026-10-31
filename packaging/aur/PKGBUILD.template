@@ -1,0 +1,59 @@
+# Maintainer: TrueSense contributors
+# Acer Predator Helios 16 (PH16-71): fans, power modes, battery, GPU mode, lighting, Fn keys, audio helpers.
+# Maintainer: (AUR maintainer: fill in)
+pkgname=truesense
+pkgver=0.3.4
+pkgrel=1
+pkgdesc='Hardware control for the Acer Predator Helios 16 PH16-71: fans, power, battery, lighting, undervolt, kernel module, daemon, CLI and window'
+arch=('any')
+url='https://github.com/Order52/truesense'
+license=('MIT')
+depends=('python' 'dkms' 'systemd' 'socat')
+optdepends=('linux-headers: build the kernel module (any installed kernel needs its own headers)'
+            'noise-suppression-for-voice: Purified Voice (RNNoise) microphone noise reduction'
+            'python-pyqt6: optional window (truesense gui)'
+            'nvidia-utils: GPU temperature and power'
+            'alsa-tools: codec diagnostics')
+backup=('etc/truesense/config.toml')
+install=truesense.install
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('@SHA@')
+
+package() {
+    _src="$srcdir/$pkgname-$pkgver"
+    install -d "$pkgdir/usr/lib/truesense"
+    cp -r "$_src/src/truesense" "$pkgdir/usr/lib/truesense/"
+    find "$pkgdir/usr/lib/truesense" -name __pycache__ -prune -exec rm -rf {} +
+    install -Dm755 /dev/stdin "$pkgdir/usr/bin/truesense" <<'WRAP'
+#!/bin/sh
+exec env PYTHONPATH=/usr/lib/truesense python3 -m truesense "$@"
+WRAP
+    install -Dm755 "$_src/tools/truesense-fast" "$pkgdir/usr/bin/truesense-fast"
+    install -Dm755 "$_src/packaging/health.sh" "$pkgdir/usr/lib/truesense/health.sh"
+    for f in truesense.service truesense-health.service truesense-health.timer; do
+        sed -e 's|@PREFIX@|/usr|g' -e 's|@MODPROBE@|/usr/bin/modprobe|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/$f"
+    done
+    for f in truesense-keys.service truesense-audio.service truesense-startup.service truesense-update.service truesense-update.timer; do
+        sed 's|@PREFIX@|/usr|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/$f"
+    done
+    sed 's|@PREFIX@|/usr|g' "$_src/packaging/truesense.desktop" | install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/truesense.desktop"
+    install -Dm644 "$_src/src/truesense/data/truesense.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/truesense.svg"; install -Dm644 "$_src/packaging/icons/truesense-256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/truesense.png"
+    install -Dm644 "$_src/packaging/70-truesense.rules" "$pkgdir/usr/lib/udev/rules.d/70-truesense.rules"
+    install -Dm644 "$_src/packaging/truesense.modprobe.conf" "$pkgdir/usr/lib/modprobe.d/truesense.conf"
+    install -Dm644 "$_src/packaging/truesense.modules-load.conf" "$pkgdir/usr/lib/modules-load.d/truesense.conf"
+    install -d "$pkgdir/usr/share/truesense/profiles"
+    install -m644 "$_src"/packaging/profiles/*.toml "$pkgdir/usr/share/truesense/profiles/"
+    install -d "$pkgdir/usr/src/truesense-wmi-0.3.4"
+    install -m644 "$_src"/kernel/truesense-wmi/{truesense_wmi.c,Makefile,dkms.conf} "$pkgdir/usr/src/truesense-wmi-0.3.4/"
+    install -Dm644 /dev/stdin "$pkgdir/etc/truesense/config.toml" <<'CFG'
+# TrueSense system configuration. Built-in defaults apply to everything not set here.
+# user = "your-login-name"   # who may talk to the daemon besides root
+CFG
+    for sh in bash zsh fish; do   # shell completions, generated from the CLI itself
+        case $sh in bash) d=usr/share/bash-completion/completions/truesense;; zsh) d=usr/share/zsh/site-functions/_truesense;; fish) d=usr/share/fish/vendor_completions.d/truesense.fish;; esac
+        install -d "$pkgdir/$(dirname $d)"; PYTHONPATH="$_src/src" python3 -m truesense completion $sh > "$pkgdir/$d"
+    done
+    install -Dm644 "$_src/LICENSE" "$pkgdir/usr/share/licenses/truesense/LICENSE"
+    install -Dm644 "$_src/README.md" "$pkgdir/usr/share/doc/truesense/README.md"
+    install -Dm644 "$_src/docs/STATUS.md" "$pkgdir/usr/share/doc/truesense/STATUS.md"
+}

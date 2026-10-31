@@ -1,5 +1,12 @@
 # Release notes
 
+## 0.3.4 (2026-10-31): one-line, multi-distribution installer; AUR package
+
+* **`tools/install.sh` rewritten**: detects Arch, Debian/Ubuntu, Fedora and openSUSE families, installs missing prerequisites (dkms, compiler, matching kernel headers, Python, socat, the window's Qt), handles clang-built kernels, test-builds the module before changing anything, swaps program files atomically and rolls back if the service does not start, restores SELinux contexts. New options: `--check` (read-only report), `--no-deps`, `--no-gui`, `--user=`, `--uninstall`.
+* **`tools/get.sh`** now installs the newest release automatically; extra options pass through (`... | sudo bash -s -- --no-gui`).
+* **AUR packaging**: `packaging/aur/PKGBUILD.template` and `tools/aur-publish.sh` (the build was verified locally from the v0.3.3 tarball). Publishing needs the maintainer's AUR account.
+* **docs/INSTALL.md**. Only Arch/CachyOS is tested on real hardware; other families are covered by detection unit tests only.
+
 ## 0.3.3 (2026-10-31): MIT licence and legal clean-up
 
 * **Relicensed to MIT** (the kernel module is dual MIT / GPL-2.0-only so the kernel accepts it). SPDX identifiers in every source file; the LICENSE is installed with the program.
