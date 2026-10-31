@@ -26,11 +26,18 @@ local busy = {}
 local function live(key, build)
   if busy[key] then busy[key] = "again"; return end
   busy[key] = true
-  noctalia.runStream(build() .. "; echo done", function()
-    local again = busy[key] == "again"; busy[key] = nil
-    if again then live(key, build) end
+  noctalia.runStream(build() .. " 2>&1; echo done", function(line)
+    local msg = tostring(line or "")
+    if msg:lower():find("error") or msg:lower():find("no animation") then
+      noctalia.runAsync("noctalia msg osd-show alert-triangle '" .. msg:gsub("'", ""):sub(1, 80) .. "'")
+    end
+    if msg:find("done") then
+      local again = busy[key] == "again"; busy[key] = nil
+      if again then live(key, build) end
+    end
   end)
 end
+
 local function clean(h) return (tostring(h):gsub("[^%x]", ""):sub(1, 6)) end
 
 local function tabs()
@@ -72,7 +79,7 @@ function render()
       ui.colorPicker({ value = "#" .. st.hex, swatches = SW, onChange = "onKbColorLive", onChangeEnd = "onKbColor" }),
       cap("Brightness  " .. st.level .. " / 50  (Fn+F11 / Fn+F12 also work)"),
       ui.slider({ min = 0, max = 50, step = 5, value = st.level, controlSize = "md", onChange = "onKbLevel", onDragEnd = "onKbLevelEnd" }),
-      cap("Effect speed  " .. st.kspeed .. " / 11"),
+      cap("Effect speed  " .. st.kspeed .. " / 11   (for animated effects: pick one above first)"),
       ui.slider({ min = 1, max = 11, step = 1, value = st.kspeed, controlSize = "md", onChange = "onKbSpeed", onDragEnd = "onKbSpeedEnd" }),
       ui.row({ gap = 4 }, {
         ui.button({ text = "Fill all keys", flexGrow = 1, controlSize = "sm", variant = "ghost", onClick = "onKbFill" }),
