@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.3.13 (2026-10-31): one keyboard handle per process, faster commands
 
 **Much faster, measured** (details and the full table in docs/PERFORMANCE.md)
 - The keyboard's HID interface took 50 ms to open and was opened for every single operation. Each process now opens it once and keeps it (a read costs 0.5 ms instead of 52 ms), safely: one lock so transfers never interleave, one automatic reopen if the handle goes stale, and a clear message when you lack permission. `truesense status` 241 to 137 ms, `truesense keyboard status` 170 to 108 ms, the window's full refresh 212 to 115 ms, per-key frames about 235 to 188 ms.
