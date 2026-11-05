@@ -63,8 +63,10 @@ class Brain:
         self.gpu_temp = None; self.gpu_seen = 0.0
         self.tcpu = self.tgpu = self.tchassis = None; self.rpm = (0, 0)
         self.hist_c, self.hist_g = [], []
-        self.tick = self.calm = self.busy_hold = self.last_try = 0
-        self.lvl = [0, 0]; self.changed = [0, 0]; self.fan_off = False; self.heavy_for = self.idle_for = 0; self.pl_orig = None; self.pl_touched = False; self._smart = None; self.uv_since = None; self.gpu_uv_since = None; self.hold_ctx = None; self.reason = ""; self.backoff_until = 0; self.mode_changed = -999; self.follower = None
+        self.tick = self.calm = self.busy_hold = 0
+        self.clock = time.monotonic                                  # a test swaps in a clock it controls; every Smart auto timer below is in REAL seconds
+        self.mode_changed_t = self.last_try_t = self.last_say_t = -1e9; self.turbo_block_t = 0.0; self._busy_kind = None; self._busy_strong = -1e9; self._t_prev = None
+        self.lvl = [0, 0]; self.changed = [0, 0]; self.fan_off = False; self.heavy_for = self.idle_for = 0.0; self.pl_orig = None; self.pl_touched = False; self._smart = None; self.uv_since = None; self.gpu_uv_since = None; self.hold_ctx = None; self.reason = ""; self.follower = None
         self.written = None                      # (cpu, gpu) last written, (0, 0) = firmware Auto
         self.activity = "idle"; self.last_target = None; self.last_ac = None; self.cur_mode = None
         self.cap = self.p["cap_max_khz"]; self.cap_changed = 0
@@ -133,6 +135,8 @@ class Brain:
         if len(hist) > 5: hist.pop(0)
         return (hist[-1] - hist[0]) / 4 if len(hist) == 5 else 0
 
+    def now(self): return self.clock()
+
     def classify(self):
         m = 5 if getattr(self, "_hot", False) else 0                                  # once hot, stay hot until 5 degrees below the line (no flapping at the threshold)
         self._hot = self.tcpu >= self.f["hot_cpu"] - m or self.tgpu >= self.f["hot_gpu"] - m
@@ -141,6 +145,14 @@ class Brain:
         if self.cpu_load >= 55: return "heavy"
         if self.cpu_load < 8 and self.gpu_util < 10: return "idle"
         return "browsing"
+
+    def busy_latched(self, a, now, hold):
+        """For the POWER-MODE decision only: "gaming" / "heavy" start at once but end only after busy_hold_s without either, so a menu, a loading screen or a frame cap does not look like
+        "browsing" and drop the mode. (The fans keep using the plain classification.)"""
+        if a in ("gaming", "heavy"): self._busy_kind, self._busy_strong = a, now; return a
+        if a != "hot" and self._busy_kind and hold > 0 and now - self._busy_strong < hold: return self._busy_kind
+        if a != "hot": self._busy_kind = None
+        return a
 
     def floor_pct(self):
         f = 60 if (self.activity == "gaming" and self.gpu_power >= 80) else 50 if self.activity == "gaming" else 40 if self.activity == "heavy" else 0
@@ -233,7 +245,7 @@ class Brain:
         if not c: return False
         low = (not self.last_ac) and self.battery_pct() < self._smart_low()
         if c["ac"] != self.last_ac or c["bucket"] != self.bucket() or self.activity == "hot" or low:
-            self.set_hold(0); self.mode_changed = -999; self.last_target = None; return True
+            self.set_hold(0); self.mode_changed_t = -1e9; self.last_target = None; return True
         return False
 
     def _smart_low(self): return (self._smart or self.smart_cfg())["battery_low_pct"]
@@ -261,17 +273,23 @@ class Brain:
         return self._game
 
     def smart_target(self):
-        """Smart auto: pick the power mode from what the laptop is doing and how hot it is. Returns (mode, urgent)."""
+        """Smart auto: pick the power mode from what the laptop is doing and how hot it is. Returns (mode, urgent). All timers are real seconds."""
         if self._smart is None: self._smart = self.smart_cfg()
-        s = self._smart; a = self.activity; cur = self.cur_mode; ac = self.last_ac
+        s = self._smart; cur = self.cur_mode; ac = self.last_ac; now = self.now(); a = self.busy_latched(self.activity, now, s["busy_hold_s"]); self.latched = a != self.activity
+        dt = 0.0 if self._t_prev is None else max(0.0, min(5.0, now - self._t_prev)); self._t_prev = now
         heavy = a in ("gaming", "heavy"); hot = a == "hot"
-        self.heavy_for = self.heavy_for + 1 if heavy else max(0, self.heavy_for - 1); self.idle_for = self.idle_for + 1 if a == "idle" else 0
-        if hot: self.backoff_until = self.tick + s["backoff_hold_s"]
+        self.heavy_for = self.heavy_for + dt if heavy else max(0.0, self.heavy_for - dt); self.idle_for = self.idle_for + dt if a == "idle" else 0.0
+        if hot: self.turbo_block_t = now + s["backoff_hold_s"]
         if ac:
             if heavy or hot:
                 t = s["ac_busy"]
-                if s["ac_turbo"] and self.heavy_for >= s["turbo_after_s"] and self.tcpu < s["turbo_max_cpu"] and self.tgpu < s["turbo_max_gpu"] and self.tick >= self.backoff_until: t = "turbo"
-                if hot and cur == "turbo": return "performance", True                      # thermal back-off, at once
+                if hot and cur == "turbo": self.turbo_block_t = max(self.turbo_block_t, now + s["turbo_retry_s"]); return "performance", True          # thermal back-off, at once
+                if s["ac_turbo"]:
+                    cpu_cap, gpu_cap = s["turbo_max_cpu"], s["turbo_max_gpu"]
+                    if cur == "turbo":                                                                  # already in Turbo: stay until it really reaches the limit (no margin to LEAVE)
+                        if self.tcpu < cpu_cap and self.tgpu < gpu_cap: t = "turbo"
+                        else: self.turbo_block_t = max(self.turbo_block_t, now + s["turbo_retry_s"]); return "performance", True              # too hot: step down and do not retry for a while
+                    elif self.activity in ("gaming", "heavy") and self.heavy_for >= s["turbo_after_s"] and self.tcpu < cpu_cap - s["turbo_margin_c"] and self.tgpu < gpu_cap - s["turbo_margin_c"] and now >= self.turbo_block_t: t = "turbo"      # to ENTER it: well below the limit
                 return t, False
             if a == "browsing" or self.idle_for < s["idle_after_s"]: return s["ac_browsing"], False
             return s["ac_idle"], False
@@ -292,16 +310,19 @@ class Brain:
             if self.activity == "hot" and g == "turbo": g = "performance"                              # same thermal back-off as Smart auto
             if not self.last_ac and self.battery_pct() < 20: g = None                                  # a nearly empty battery wins
             if g: target = g
-        self.reason = f"{self.activity}, {'on power' if self.last_ac else 'on battery'}" + (f", {int(self.heavy_for)} s heavy" if kind == "smart" and self.heavy_for else "")
+        self.reason = f"{self.activity}, {'on power' if self.last_ac else 'on battery'}" + (f", {int(self.heavy_for)} s heavy" if kind == "smart" and self.heavy_for else "") + (" (holding the busy mode through a quiet moment)" if kind == "smart" and getattr(self, "latched", False) else "")
         if target == self.cur_mode: self.last_target = target; return
-        if target == self.last_target and self.tick - self.last_try < 30: return                       # it already failed recently
+        now = self.now()
+        if target == self.last_target and now - self.last_try_t < 30: return                           # it already failed recently
         up = self.RANK[target] > self.RANK.get(self.cur_mode, 2); s = self._smart or self.smart_cfg()
         dwell = s["up_dwell_s"] if up else s["down_dwell_s"]
-        if not urgent and self.tick - self.mode_changed < dwell: return                                # no flapping
-        self.last_target, self.last_try = target, self.tick
+        if not urgent and (now - self.mode_changed_t < dwell or (kind == "smart" and now - self.mode_changed_t < s["min_change_s"])): return        # no flapping
+        self.last_target, self.last_try_t = target, now; before = self.cur_mode
         try:
-            self.cur_mode = hw.set_mode(target); self.mode_changed = self.tick
-            self.say(f"Power mode: {target} ({kind} auto: {self.activity if self.activity not in ('idle', 'browsing') else ('on power' if self.last_ac else 'on battery')})")
+            self.cur_mode = hw.set_mode(target); self.mode_changed_t = now
+            self.log(f"auto power mode: {before} -> {target} ({kind} auto: {self.reason}; CPU {round(self.tcpu or 0)} C, GPU {round(self.tgpu or 0)} C, GPU {round(self.gpu_util)} %)", 0)
+            if now - self.last_say_t >= 30 or urgent:                                                    # one notification at most every 30 s (the journal has every change)
+                self.last_say_t = now; self.say(f"Power mode: {target} ({kind} auto: {self.activity if self.activity not in ('idle', 'browsing') else ('on power' if self.last_ac else 'on battery')})")
         except hw.HwError as e: self.log(f"auto profile: {e}", 30)
 
     def operating_lighting(self):
@@ -469,7 +490,7 @@ class Brain:
             if key == "auto_mode":
                 if value not in ("off", "native", "smart"): raise hw.HwError("auto_mode: off | native | smart")
                 self.st.set("auto_mode", value); self.st.set("auto_profile", value != "off"); self.log(f"setting auto_mode = {value}", 20)
-                if value != "off": self.set_hold(0); self.mode_changed = -999; self.last_target = None; self.heavy_for = 0         # choosing auto means: take over now
+                if value != "off": self.set_hold(0); self.mode_changed_t = -1e9; self.last_target = None; self.heavy_for = 0.0         # choosing auto means: take over now
                 return self.st.snapshot()
             if key not in ("smart_fan", "auto_profile", "operating_follow"): raise hw.HwError(f"unknown setting {key!r}")
             if not isinstance(value, bool): raise hw.HwError("value must be true or false")

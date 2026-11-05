@@ -16,15 +16,20 @@ LABELS = {"ac_idle": "On power, idle", "ac_browsing": "On power, everyday use", 
 NUMS = {"turbo_after_s": (5, 300, "Heavy load for this long before Turbo (s)"), "turbo_max_cpu": (60, 95, "No Turbo above this CPU temperature (°C)"),
         "turbo_max_gpu": (55, 85, "No Turbo above this GPU temperature (°C)"), "backoff_hold_s": (10, 600, "After overheating, wait before Turbo again (s)"),
         "idle_after_s": (10, 600, "Idle for this long before the idle mode (s)"), "battery_low_pct": (5, 50, "Below this battery level, force Eco (%)"),
-        "up_dwell_s": (2, 120, "Wait before moving to a faster mode (s)"), "down_dwell_s": (2, 300, "Wait before moving to a slower mode (s)")}
+        "up_dwell_s": (2, 120, "Wait before moving to a faster mode (s)"), "down_dwell_s": (2, 300, "Wait before moving to a slower mode (s)"),
+        "busy_hold_s": (0, 600, "Stay in the gaming / heavy mode this long after the load drops (s)"), "min_change_s": (2, 600, "At least this long between automatic mode changes (s)"),
+        "turbo_margin_c": (0, 20, "Enter Turbo only this far below its temperature limits (°C)"), "turbo_retry_s": (10, 900, "After Turbo reaches its limit, wait before trying it again (s)")}
 DEFAULTS = {"ac_idle": "balanced", "ac_browsing": "balanced", "ac_busy": "performance", "ac_turbo": True, "turbo_after_s": 30, "turbo_max_cpu": 85, "turbo_max_gpu": 75,
             "backoff_hold_s": 90, "idle_after_s": 60, "battery_idle": "eco", "battery_browsing": "eco", "battery_busy": "balanced", "battery_hot": "quiet", "battery_low_pct": 20,
-            "up_dwell_s": 5, "down_dwell_s": 30}
+            "up_dwell_s": 5, "down_dwell_s": 60, "busy_hold_s": 60, "min_change_s": 45, "turbo_margin_c": 6, "turbo_retry_s": 180}
 
 BUILTIN = {
     "native": {"description": "PredatorSense default: Balanced on power, Eco on battery, nothing else (no load or heat logic, like Native auto)", **DEFAULTS, "ac_idle": "balanced", "ac_browsing": "balanced", "ac_busy": "balanced",
-               "ac_turbo": False, "battery_idle": "eco", "battery_browsing": "eco", "battery_busy": "eco", "battery_hot": "eco", "up_dwell_s": 2, "down_dwell_s": 2},
+               "ac_turbo": False, "battery_idle": "eco", "battery_browsing": "eco", "battery_busy": "eco", "battery_hot": "eco", "up_dwell_s": 2, "down_dwell_s": 2,
+               "busy_hold_s": 0, "min_change_s": 2, "turbo_margin_c": 0, "turbo_retry_s": 10},
     "truesense": {"description": "Our profile for this laptop: Balanced day to day, Performance when you game, Turbo only when sustained and cool, Eco on battery", **DEFAULTS},
+    "steady": {"description": "For long games and cooling that is not the laptop's own (external fans): Performance when busy, never Turbo, and it changes mode only after minutes of quiet", **DEFAULTS,
+               "ac_turbo": False, "busy_hold_s": 180, "down_dwell_s": 180, "min_change_s": 180, "up_dwell_s": 8},
     "battery-first": {"description": "Longest battery and quietest: no Turbo, light modes everywhere", **DEFAULTS, "ac_idle": "quiet", "ac_browsing": "quiet", "ac_turbo": False,
                       "battery_idle": "eco", "battery_browsing": "eco", "battery_busy": "quiet", "battery_low_pct": 30, "down_dwell_s": 20},
     "performance-first": {"description": "Fastest: Performance for everyday use on power, Turbo after 10 s of heavy load", **DEFAULTS, "ac_idle": "balanced", "ac_browsing": "performance",

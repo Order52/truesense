@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**Smart auto no longer flaps** (found while gaming with external fans: the CPU sat on the 85 degree Turbo line and the mode bounced between Performance and Turbo)
+- Measured on the previous code, replaying a long game with the CPU on the Turbo line: **32 mode changes in 15 minutes** (Performance, Turbo, Performance... about every 30 s). Now: 1.
+- All Smart auto timers are real seconds. They used to count service ticks (one tick is 1 to 2 s), so "30 s" varied between 30 and 60.
+- Turbo is entered only well below its limit (`turbo_margin_c`, 6 degrees) and left only at the limit, followed by a retry pause (`turbo_retry_s`, 180 s). The old logic entered and left at the same line.
+- A quiet moment in a game (menu, loading screen, frame cap) no longer looks like "browsing": the busy mode is held for `busy_hold_s` (60 s). The hold keeps the current mode; it never starts Turbo. Fans are unaffected (they use the plain classification).
+- At least `min_change_s` (45 s) between automatic changes; heat protection still acts at once. The default down-dwell is 60 s (was 30 ticks).
+- Every automatic change is logged with its reason and temperatures, and desktop notifications are limited to one per 30 s.
+- New built-in profile **steady** (no Turbo, minutes between changes) for long games and external cooling. Old Smart profiles keep working (missing settings use the defaults); native stays as simple as PredatorSense.
+
 **No sound? Detected and repaired**
 - Found on the PH16-71: at boot the sound DSP (SOF) rejected a stream while WirePlumber probed the card, so the card was left with only `off` and `pro-audio` profiles: no speaker or headphone output, only the DTS sink in front of nothing, and `truesense doctor` still said "Audio OK". Direct ALSA playback worked, so the hardware was fine; restarting WirePlumber brought the HiFi profiles and the output back.
 - `truesense audio repair` (and Audio, *Fix sound* in the window) restarts WirePlumber when needed and verifies that a hardware output exists afterwards. It never writes codec settings.

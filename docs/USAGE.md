@@ -115,3 +115,17 @@ Read the current value, write, read back, keep a restore path. Fans return to fi
 ### Game rules
 
 `truesense power game add eldenring.exe turbo` raises the power mode while that program runs (works with Native and Smart auto); `list`, `remove NAME`, `clear`. Names match the process name, the program file or a Wine/Proton `.exe`. Turbo still backs off to Performance if the laptop is too hot, and a nearly empty battery wins. When the game ends the automatic profile takes over again by itself.
+
+### Smart auto: keeping the mode steady
+
+Smart auto picks the power mode from load, heat and the power source. To stop it flapping (for example in a long game, or with external cooling that keeps temperatures near a limit) it uses **real seconds** (not service ticks) and four settings you can edit in the Smart page or with `truesense power smart save NAME --set key=value`:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `busy_hold_s` | 60 | Stay in the gaming / heavy mode this long after the load drops: a menu, a loading screen or a frame cap does not look like "browsing". It only keeps the current mode, it never starts Turbo |
+| `min_change_s` | 45 | At least this long between two automatic mode changes (heat protection still acts at once) |
+| `turbo_margin_c` | 6 | Enter Turbo only this far below its temperature limits (85 °C CPU, 75 °C GPU); leave it only at the limit |
+| `turbo_retry_s` | 180 | After Turbo reaches its limit, wait this long before trying it again |
+
+`down_dwell_s` is 60 s by default. The built-in profile **steady** never enters Turbo and changes mode only after about three minutes of quiet. `truesense power smart use steady`. Every automatic change is written to the journal with its reason (`journalctl -u truesense`), so you can see exactly why it happened.
+

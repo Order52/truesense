@@ -142,12 +142,15 @@ class TestDaemonLogic(Base):
         st = state.State({"smart_fan": True, "auto_profile": True, "operating_follow": False, "profile_hold_until": 0}, tempfile.mkdtemp() + "/s.json")
         daemon.RUN = tempfile.mkdtemp(); daemon.TMP_STATE = tempfile.mkdtemp() + "/ts"; b = daemon.Brain(cfg, st); b.say = lambda *a, **k: None; b.last_ac = True
         daemon.hw.on_ac = lambda: True                                           # not the real charger state
+        b.fake_t = 0.0; b.clock = lambda: b.fake_t                              # Smart auto timers are real seconds: the test clock moves one second per step
         b.read_cpu_load = lambda: None                                          # the test sets cpu_load itself; the real /proc/stat must not pull it down
         b.find_hwmon = lambda: None; b.coretemp = None; b.gpu_temp = 0          # the test drives the temperatures; real sensors must not leak in
         return b
 
     def drive(self, b, n, cpu, gpu, load):
-        for _ in range(n): device.SIM.temps = (cpu, 55, gpu); b.cpu_load = load; b.step()
+        for _ in range(n):
+            device.SIM.temps = (cpu, 55, gpu); b.cpu_load = load; b.step()
+            if hasattr(b, "fake_t"): b.fake_t += 1.0
 
     def test_idle_heavy_hot_and_back(self):
         b = self.make(); self.drive(b, 25, 45, 45, 2); self.assertEqual(device.SIM.fan, "auto")
@@ -187,7 +190,7 @@ class TestDaemonLogic(Base):
         b = self.make(); h = b.handlers(); h["set"](key="auto_mode", value="smart")
         self.drive(b, 70, 40, 40, 5); self.assertEqual(device.SIM.mode, 1)                       # idle on AC: balanced
         self.drive(b, 10, 70, 60, 90); self.assertEqual(device.SIM.mode, 4)                      # heavy load: performance first
-        self.drive(b, 35, 70, 60, 90); self.assertEqual(device.SIM.mode, 5)                      # sustained and cool enough: turbo
+        self.drive(b, 70, 70, 60, 90); self.assertEqual(device.SIM.mode, 5)                      # sustained, cool enough and not changed for a while (45 s minimum between changes): turbo
         self.drive(b, 10, 93, 70, 95); self.assertEqual(device.SIM.mode, 4)                      # hot: back off from turbo at once
         self.drive(b, 40, 70, 60, 90); self.assertEqual(device.SIM.mode, 4)                      # and stay there during the back-off hold
         self.drive(b, 100, 40, 40, 3); self.assertIn(device.SIM.mode, (1, 4))
@@ -957,3 +960,78 @@ class TestSoundRepair(unittest.TestCase):
         self.use(); st, msg, fix = doctor.c_audio()
         self.assertEqual(st, doctor.WARN if self.audio.sound_state()["ok"] is False and doctor.active("pipewire.service", True) else st)
         if doctor.active("pipewire.service", True): self.assertIn("NO SOUND OUTPUT", msg); self.assertIn("truesense audio repair", fix)
+
+
+class TestSmartAutoSteadiness(Base):
+    """Smart auto must not flap: a CPU sitting on the Turbo temperature line, a menu in the middle of a game, the tick length, and the 'steady' profile."""
+    make = TestDaemonLogic.make; drive = TestDaemonLogic.drive
+
+    def play(self, b, seconds, cpu_of, gpu=65, load=16, gpu_util=98, gpu_power=71, dt=1.0):
+        """Step the service for `seconds` of game time; returns the list of (time, mode) every time the power mode changed."""
+        changes = []; last = device.SIM.mode; t = 0.0
+        while t < seconds:
+            device.SIM.temps = (int(round(cpu_of(t))), 55, gpu); b.cpu_load = load; b.gpu_util = gpu_util; b.gpu_power = gpu_power; b.step(); b.fake_t += dt; t += dt
+            if device.SIM.mode != last: changes.append((round(b.fake_t), device.SIM.mode)); last = device.SIM.mode
+        return changes
+
+    def smart(self, profile=None):
+        b = self.make(); h = b.handlers(); h["set"](key="auto_mode", value="smart")
+        if profile: h["smart_profile"](action="use", name=profile)
+        self.drive(b, 70, 40, 40, 5); self.assertEqual(device.SIM.mode, 1); return b, h
+
+    def test_a_cpu_sitting_on_the_turbo_line_does_not_make_the_mode_flap(self):
+        import math
+        b, _ = self.smart()
+        # the real session: GPU at 98 %, CPU between 80 and 89 C for minutes (the old logic went Turbo, Performance, Turbo... every few seconds at 85 C)
+        changes = self.play(b, 900, lambda t: 84.5 + 4.5 * math.sin(t / 9.0))
+        self.assertLessEqual(len(changes), 2, f"mode changes during 15 minutes at the Turbo line: {changes}")
+        self.assertEqual(device.SIM.mode, 4, "it settles on Performance")
+
+    def test_turbo_is_entered_well_below_its_limit_and_left_only_at_it_with_a_long_retry_pause(self):
+        b, _ = self.smart()
+        changes = self.play(b, 200, lambda t: 70)                                   # cool: it goes up to Turbo (after the 30 s of heavy load and the 45 s minimum gap)
+        self.assertEqual(device.SIM.mode, 5, changes)
+        changes = self.play(b, 20, lambda t: 86); self.assertEqual(device.SIM.mode, 4, "at the limit it steps down at once"); t_down = b.fake_t
+        self.play(b, 120, lambda t: 70); self.assertEqual(device.SIM.mode, 4, "and does not climb back for 180 s even though it is cool again")
+        self.play(b, 120, lambda t: 70); self.assertEqual(device.SIM.mode, 5, "after the pause it may try again"); self.assertGreaterEqual(b.fake_t - t_down, 180)
+        self.play(b, 60, lambda t: 82); self.assertEqual(device.SIM.mode, 5, "82 C is under the limit: it stays (the old logic left Turbo near its entry temperature)")
+
+    def test_a_quiet_moment_in_a_game_keeps_the_mode(self):
+        b, _ = self.smart()
+        self.play(b, 40, lambda t: 70); self.assertEqual(device.SIM.mode, 4)                  # 40 s of game: Performance (Turbo would need 30 s of load and a 45 s gap)
+        quiet = self.play(b, 45, lambda t: 70, load=20, gpu_util=15, gpu_power=18)       # a menu or a loading screen: GPU nearly idle
+        self.assertEqual((quiet, device.SIM.mode), ([], 4), "a 45 s menu does not drop the mode")
+        self.assertIn("holding the busy mode", b.reason)
+        self.play(b, 400, lambda t: 50, load=3, gpu_util=2, gpu_power=5); self.assertIn(device.SIM.mode, (1, 2), "really quiet for minutes: it does come back down")
+
+    def test_a_quiet_moment_never_starts_turbo(self):
+        b, _ = self.smart()
+        self.play(b, 20, lambda t: 70)                                                  # busy for 20 s only (Turbo needs 30)
+        self.play(b, 120, lambda t: 70, load=20, gpu_util=15, gpu_power=18); self.assertNotEqual(device.SIM.mode, 5, "a held quiet moment keeps the current mode, it never raises it")
+
+    def test_the_steady_profile_never_enters_turbo_and_changes_rarely(self):
+        import math
+        b, _ = self.smart("steady")
+        changes = self.play(b, 900, lambda t: 70 + 8 * math.sin(t / 15.0))
+        self.assertNotIn(5, [m for _, m in changes], "no Turbo with the steady profile"); self.assertLessEqual(len(changes), 1, changes)
+
+    def test_timers_are_real_seconds_whatever_the_tick_length(self):
+        for dt in (1.0, 2.0):                                                           # the service ticks every 1 s or every 2 s
+            b, _ = self.smart(); changes = self.play(b, 140, lambda t: 70, dt=dt)
+            went_turbo = [t for t, m in changes if m == 5]
+            self.assertTrue(went_turbo, (dt, changes)); self.assertGreaterEqual(went_turbo[0], 70 + 30, f"Turbo not before 30 s of heavy load (dt={dt}): {changes}")                # the game starts at t=70
+
+    def test_every_automatic_change_is_in_the_journal_with_its_reason(self):
+        import io
+        import contextlib
+        b, _ = self.smart(); buf = io.StringIO()
+        with contextlib.redirect_stdout(buf): self.play(b, 30, lambda t: 70)
+        out = buf.getvalue(); self.assertIn("auto power mode: balanced -> performance", out); self.assertRegex(out, r"CPU \d+ C, GPU \d+ C, GPU 98 %"); self.assertIn("smart auto: gaming", out)
+
+    def test_new_profile_settings_exist_validate_and_old_profiles_still_load(self):
+        from truesense import smartprofiles as sp
+        d = sp.load("truesense"); self.assertEqual((d["busy_hold_s"], d["min_change_s"], d["turbo_margin_c"], d["turbo_retry_s"], d["down_dwell_s"]), (60, 45, 6, 180, 60))
+        old = {k: v for k, v in d.items() if k not in ("busy_hold_s", "min_change_s", "turbo_margin_c", "turbo_retry_s")}; self.assertEqual(sp.validate(old)["busy_hold_s"], 60)
+        for key, bad in (("busy_hold_s", 601), ("turbo_margin_c", 21), ("turbo_retry_s", 5), ("min_change_s", 1)):
+            with self.assertRaises(device.HwError): sp.validate({**d, key: bad})
+        n = sp.load("native"); self.assertEqual((n["busy_hold_s"], n["min_change_s"]), (0, 2), "native stays as simple as PredatorSense")
