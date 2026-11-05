@@ -883,3 +883,77 @@ class TestDoctorDkms(unittest.TestCase):
         d = self.doctor; self.install("linuwu-sense", "7.3.0-test")
         st, msg, _ = d.c_conflicts(); self.assertEqual(st, d.WARN); self.assertIn("old DKMS", msg); self.assertIn("linuwu-sense", msg)
         import shutil; shutil.rmtree(f"{self.root}/linuwu-sense"); self.assertNotIn("old DKMS", d.c_conflicts()[1])
+
+
+class FakeSoundSystem:
+    """pactl and systemctl as they behaved on the PH16-71 when the sound died: the card is `off` with only off/pro-audio profiles and no hardware sink, until WirePlumber is restarted."""
+    CARD = "alsa_card.pci-0000_00_1f.3-platform-skl_hda_dsp_generic"
+    HW = "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink"
+    HIFI = ["HiFi (Headphones, Mic1, Mic2)", "HiFi (Mic1, Mic2, Speaker)"]
+
+    def __init__(self, broken=True, restart_fixes=True, hifi_listed=False, card=True):
+        self.broken, self.restart_fixes, self.card = broken, restart_fixes, card
+        self.offered = ["off", *self.HIFI, "pro-audio"] if (not broken or hifi_listed) else ["off", "pro-audio"]
+        self.profile = "off" if broken else "HiFi (Mic1, Mic2, Speaker)"; self.sink = not broken; self.calls = []
+
+    def run(self, cmd):
+        import subprocess
+        self.calls.append(list(cmd)); out = ""
+        if cmd[:4] == ["pactl", "list", "short", "cards"]: out = f"71\t{self.CARD}\talsa\n" if self.card else ""
+        elif cmd[:4] == ["pactl", "list", "short", "sinks"]: out = "37\tacerultrax_sink\tPipeWire\n" + (f"4126\t{self.HW}\tPipeWire\n" if self.sink else "")
+        elif cmd == ["pactl", "list", "cards"]:
+            profs = "".join(f"\t\t{p}: {p} (sinks: 1, sources: 2, priority: 1, available: yes)\n" for p in self.offered)
+            out = f"Card #71\n\tName: {self.CARD}\n\tProfiles:\\n".replace("\\n", "\n") + profs + f"\tActive Profile: {self.profile}\n\tPorts:\n"
+        elif cmd[:2] == ["pactl", "set-card-profile"] and cmd[3] in self.offered: self.profile = cmd[3]; self.sink = cmd[3] in self.HIFI
+        elif cmd[0] == "systemctl" and "restart" in cmd and "wireplumber.service" in cmd and self.restart_fixes: self.offered = ["off", *self.HIFI, "pro-audio"]; self.profile = self.HIFI[1]; self.sink = True
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+
+
+class TestSoundRepair(unittest.TestCase):
+    def setUp(self):
+        from truesense import audio
+        self.audio = audio; self.real_run = audio._run
+
+    def tearDown(self): self.audio._run = self.real_run
+
+    def use(self, **kw): f = FakeSoundSystem(**kw); self.audio._run = f.run; return f
+
+    def test_a_card_that_is_off_with_no_output_sink_is_detected_and_explained(self):
+        self.use(); st = self.audio.sound_state()
+        self.assertIs(st["ok"], False); self.assertEqual(st["profile"], "off"); self.assertFalse(st["hifi_offered"]); self.assertIn("switched off", st["problem"]); self.assertIn("profiles are missing", st["problem"])
+
+    def test_a_healthy_card_and_a_missing_card_are_not_touched(self):
+        f = self.use(broken=False); self.assertIs(self.audio.sound_state()["ok"], True)
+        r = self.audio.repair(); self.assertEqual((r["fixed"], r["changed"], r["steps"]), (True, False, [])); self.assertEqual([c for c in f.calls if c[0] == "systemctl" or c[1:2] == ["set-card-profile"]], [], "nothing is restarted or switched")
+        self.use(card=False); self.assertIsNone(self.audio.sound_state()["ok"]); self.assertFalse(self.audio.repair()["fixed"])
+
+    def test_repair_restarts_wireplumber_when_the_profiles_are_missing(self):
+        f = self.use(); r = self.audio.repair(timeout=1.0, poll=0.01)
+        self.assertTrue(r["fixed"]); self.assertTrue(r["changed"]); self.assertIn("restarted WirePlumber", r["steps"][0]); self.assertEqual(r["state"]["ok"], True)
+        self.assertTrue(any(c[0] == "systemctl" and "restart" in c and "wireplumber.service" in c for c in f.calls)); self.assertEqual(f.profile, f.HIFI[1])
+
+    def test_repair_just_picks_the_profile_when_the_card_still_offers_it(self):
+        f = self.use(hifi_listed=True); r = self.audio.repair(timeout=1.0, poll=0.01)
+        self.assertTrue(r["fixed"]); self.assertEqual(r["steps"], ["selected the speaker profile"]); self.assertFalse(any(c[0] == "systemctl" for c in f.calls), "no restart needed")
+
+    def test_repair_reports_honestly_when_a_restart_does_not_help(self):
+        f = self.use(restart_fixes=False); r = self.audio.repair(timeout=0.3, poll=0.01)
+        self.assertFalse(r["fixed"]); self.assertIs(r["state"]["ok"], False); self.assertTrue(r["steps"])
+        self.assertFalse(any(c[1:2] == ["set-card-profile"] and c[3].startswith("HiFi") for c in f.calls), "it never forces a profile the card does not offer")
+
+    def test_the_repair_never_touches_the_codec(self):
+        f = self.use(); self.audio.repair(timeout=1.0, poll=0.01)
+        self.assertFalse(any("reconfig" in " ".join(c) or c[0] in ("amixer", "hda-verb", "tee") for c in f.calls))
+
+    def test_the_login_service_repairs_a_missing_output_once_and_leaves_a_healthy_one_alone(self):
+        from unittest import mock
+        said = []
+        with mock.patch.object(self.audio.time, "sleep", lambda s: None), mock.patch.object(self.audio, "_say", lambda *a, **k: said.append(a)):
+            f = self.use(); self.audio.autorepair(delays=(1, 2)); self.assertEqual(f.profile, f.HIFI[1]); self.assertEqual(len(said), 1)
+            said.clear(); f2 = self.use(broken=False); self.audio.autorepair(delays=(1, 2)); self.assertEqual(said, []); self.assertFalse(any(c[0] == "systemctl" for c in f2.calls))
+
+    def test_doctor_no_longer_calls_a_dead_output_healthy(self):
+        from truesense import doctor
+        self.use(); st, msg, fix = doctor.c_audio()
+        self.assertEqual(st, doctor.WARN if self.audio.sound_state()["ok"] is False and doctor.active("pipewire.service", True) else st)
+        if doctor.active("pipewire.service", True): self.assertIn("NO SOUND OUTPUT", msg); self.assertIn("truesense audio repair", fix)

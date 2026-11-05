@@ -9,12 +9,24 @@ Start with `truesense doctor`: it checks the model, kernel, headers, DKMS, modul
 | The window does not start | `sudo pacman -S python-pyqt6` (Arch); everything else works without it |
 | The PREDATOR key does nothing | `systemctl --user status truesense-keys`; the udev rule must give your seat access to the keyboard's hidraw node (`doctor` checks) |
 | Fan or mode change is ignored | another tool is fighting TrueSense (`tuned`, `auto-cpufreq`, old scripts). Stop it |
+| No sound at all (only an `AcerUltraX` output, `doctor` says NO SOUND OUTPUT) | `truesense audio repair`: WirePlumber built the sound card without its speaker profiles at boot; details below |
 | Headset microphone missing after boot | plug the headset in again (the codec classifies it on the plug event), or set Audio, 3.5 mm jack, Headset to force it. **Never write the codec `reconfig` file** |
 | A firmware value reads -1 right after a write | normal: the firmware needs a moment; the tool retries for a second |
 | Lighting resets after suspend | set a lighting profile for boot (Lighting, Profiles, At boot): the service re-applies it after every resume |
 | Undervolt "readback differs" | the BIOS or microcode locks undervolting on your unit; nothing was changed (it rolls back) |
 | `truesense gui` crashes with a Wayland message | harmless Qt noise is silenced; for real crashes run `truesense gui` in a terminal and open an issue with the output |
 | Install fails on "kernel headers" | install the headers matching `uname -r` (`linux-cachyos-headers`, `linux-headers`, ...) and re-run the installer |
+
+
+## There is no sound at all (the DTS sink is the only output)
+
+**Symptom:** nothing plays; `wpctl status` shows only `AcerUltraX` under Sinks, `pactl list cards` shows the `sof-hda-dsp` card on profile `off` (it offers only `off` and `pro-audio`), `truesense doctor` says `NO SOUND OUTPUT`, and the kernel log has `sof-audio-pci-intel-tgl ... ipc tx error ... STREAM_PCM_PARAMS ipc failed` around the time the card was probed at boot.
+
+**Cause (seen on the PH16-71):** WirePlumber probed the card while the sound DSP rejected a stream, so it built the card without its HiFi (speaker / headphone) profiles. The hardware and the ALSA UCM files were fine: direct playback with `aplay -D hw:1,0 ...` worked.
+
+**Fix:** `truesense audio repair` (or Audio, *Fix sound* in the window). It restarts WirePlumber so it probes the card again, then verifies that a hardware output exists. The login audio service does the same by itself 20 s and 90 s after login when the output is missing. Nothing is written to the sound chip, and `reconfig` is never touched.
+
+If it does not help: `journalctl -k -b | grep -i sof` for the real error, a reboot, and check that `sof-firmware`, `alsa-ucm-conf` and your kernel were updated together.
 
 ## Getting help
 

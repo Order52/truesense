@@ -1,5 +1,13 @@
 # Release notes
 
+## Unreleased
+
+**No sound? Detected and repaired**
+- Found on the PH16-71: at boot the sound DSP (SOF) rejected a stream while WirePlumber probed the card, so the card was left with only `off` and `pro-audio` profiles: no speaker or headphone output, only the DTS sink in front of nothing, and `truesense doctor` still said "Audio OK". Direct ALSA playback worked, so the hardware was fine; restarting WirePlumber brought the HiFi profiles and the output back.
+- `truesense audio repair` (and Audio, *Fix sound* in the window) restarts WirePlumber when needed and verifies that a hardware output exists afterwards. It never writes codec settings.
+- `truesense doctor` now reports `NO SOUND OUTPUT` with the fix instead of a green Audio line, and the Audio page shows whether the output exists.
+- The login audio service repairs a missing output by itself, 20 s and 90 s after login.
+
 ## 0.3.14 (2026-10-31): a faster doctor
 
 - `truesense doctor` no longer runs the `dkms` command, which took 1 to 1.3 s here (two of its checks used it): it reads DKMS's own directories instead and falls back to the command only on systems that keep them elsewhere. Same answers, `doctor` about 1.1 s to 0.09 s on the installed copy.

@@ -320,6 +320,18 @@ class TestWindowLogic(unittest.TestCase):
         env = dict(os.environ, PYTHONPATH=os.path.join(os.path.dirname(__file__), "..", "src"), QT_QPA_PLATFORM="offscreen")
         self.assertEqual(subprocess.run([_sys.executable, "-c", code], env=env, capture_output=True, text=True).stdout.split(), ["False", "True"])
 
+    def test_the_audio_page_shows_whether_there_is_a_sound_output_and_can_repair_it(self):
+        from truesense import audio
+        w = gui.Window(); w.show(); w.go("audio"); self.app.processEvents()
+        w._apply({"sound": {"ok": False, "problem": "the sound card is switched off; its speaker and headphone profiles are missing"}}); self.assertIn("No sound output", w.snd_lbl.text()); self.assertIn("Fix sound", w.snd_lbl.text())
+        w._apply({"sound": {"ok": True}}); self.assertIn("output is present", w.snd_lbl.text()); w._apply({"sound": {"ok": None, "problem": "x"}}); self.assertIn("No sound card", w.snd_lbl.text())
+        calls = []; real = audio.repair; audio.repair = lambda: (calls.append(1), {"fixed": True, "changed": True, "steps": ["restarted WirePlumber"], "state": {"ok": True}})[1]
+        msgs = []; w.bus.message.connect(msgs.append)
+        try:
+            w.sound_fix(); self.assertTrue(self._wait(lambda: calls and w.snd_btn.isEnabled())); self.assertTrue(any("repaired" in m for m in msgs), msgs)
+        finally: audio.repair = real
+        w.close()
+
     def test_designs_and_pictures_paint_the_picture(self):
         from truesense import designs
         w = gui.Window(); w.go("keys"); names = [w.ds_cb.itemData(i) for i in range(w.ds_cb.count())]; self.assertIn("gaming", names)

@@ -362,6 +362,7 @@ class Bus(QObject if Qt else object):
     game = pyqtSignal(dict) if Qt else None
     pm = pyqtSignal(dict) if Qt else None
     sens = pyqtSignal(dict) if Qt else None
+    snd = pyqtSignal(dict) if Qt else None
 
 
 class ColorButton(QPushButton if Qt else object):
@@ -658,7 +659,7 @@ class Window(QMainWindow if Qt else object):
         super().__init__(); self.setWindowTitle("TrueSense")
         self.apply_size_mode(bool(userstate.get("gui_fixed", True)), save=False)
         self.wheel_guard = WheelGuard(self); QApplication.instance().installEventFilter(self.wheel_guard)
-        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.bus.game.connect(lambda r: self.game_show(r)); self.bus.pm.connect(lambda r: self.pm_show(r)); self.bus.sens.connect(lambda r: self._sens_show(r)); self.sensing = False; self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
+        self.bus = Bus(); self.bus.message.connect(self._msg); self.bus.boot_text.connect(lambda s: self.boot_lbl.setText(s)); self.bus.uv.connect(self._uv_show); self.bus.batt.connect(self._batt_show); self.bus.report.connect(self._show_report); self.bus.upd.connect(self._upd_show); self.bus.refreshed.connect(self._apply); self.bus.game.connect(lambda r: self.game_show(r)); self.bus.pm.connect(lambda r: self.pm_show(r)); self.bus.sens.connect(lambda r: self._sens_show(r)); self.bus.snd.connect(lambda r: self.snd_btn.setEnabled(True)); self.sensing = False; self.closing = False; self.busy = {}; self.pending = {}; self.loading = False; self.last_action = 0.0; self.refreshing = False; self.ticks = 0; self.rear_last = 100
         self.cfg = config.load(); self.src = ""
         self.pages = QStackedWidget(); self.setCentralWidget(self.pages); self.statusBar().showMessage("Ready")
         self.nav = [0]; self.nav_fwd = []; self.navigating = False; self.nav_filter = NavFilter(self); QApplication.instance().installEventFilter(self.nav_filter)
@@ -1320,7 +1321,10 @@ class Window(QMainWindow if Qt else object):
         self.full_btn.setEnabled(act or (bool(r.get("limit")) and bool(r.get("ac")))); self.full_lbl.setText(f"Battery {r.get('capacity')} %. " + ("Charging to full this time." if act else ("Plug in the charger to use this." if not r.get("ac") else ("The 80 % limit is off already." if not r.get("limit") else ""))))
 
     def p_audio(self):
-        lay = self.page("Audio"); v = self.card(lay, "Output")
+        lay = self.page("Audio")
+        v = self.card(lay, "Sound output"); self.snd_lbl = self.hint("Checking that the sound card has an output…"); v.addWidget(self.snd_lbl)
+        self.snd_btn = self.btn("Fix sound", self.sound_fix); self.line(v, "No sound at all?", self.snd_btn, sub="Restarts the audio session manager (WirePlumber) so it probes the sound card again, and checks that an output exists. Nothing is written to the sound chip.")
+        v = self.card(lay, "Output")
         self.out = self.seg(v, "Play sound on", ["Speakers", "Headphones"], lambda i: self.do(lambda: audio.set_output(("speakers", "headphones")[i]), f"Output: {('speakers', 'headphones')[i]}"))
         self.spk = self.switch(v, "Noise filter on the speakers", lambda x: self.do(lambda: audio.speaker_filter(bool(x)), "Speaker noise filter " + ("on" if x else "off")), "Off by default: it also gates music. For calls on the speakers."); self.sep(v)
         self.dts = self.switch(v, "Acer DTS sound", lambda x: self.do(lambda: audio.dts_power(x), "DTS " + ("on" if x else "off")), "This laptop plays on the speakers or the headphone jack, not both at once.")
@@ -1334,6 +1338,17 @@ class Window(QMainWindow if Qt else object):
         self.v_head = self.seg(v, "Headset (AI noise reduction)", [x.capitalize() for x in VOICE], lambda i: self.do(lambda: (audio.voice_set("headset", VOICE[i]), audio.apply_mic_policy(False))[0], f"Headset mic: {VOICE[i]}"))
         self.v_arr = self.seg(v, "Built-in (AI noise reduction)", [x.capitalize() for x in VOICE], lambda i: self.do(lambda: (audio.voice_set("array", VOICE[i]), audio.apply_mic_policy(False))[0], f"Built-in mics: {VOICE[i]}")); self.sep(v)
         self.v_note = self.switch(v, "Notify when the microphone changes", lambda x: self.do(lambda: config.write_user({"audio": {"notify": x}}), "Saved")); lay.addStretch()
+
+    def sound_fix(self):
+        self.snd_btn.setEnabled(False)
+        def work():
+            try: r = audio.repair(); msg = ("Sound output repaired: " + "; ".join(r["steps"])) if r["fixed"] and r["changed"] else ("The sound output is there: nothing to repair" if r["fixed"] else "Could not repair the sound output (" + "; ".join(r["steps"]) + "). Check the kernel log for 'sof' errors and try a reboot.")
+            except Exception as e: msg = f"Error: {e}"
+            self.say(msg)
+            try: self.bus.snd.emit({"enable": True})
+            except RuntimeError: pass
+            self.full_refresh("audio")
+        threading.Thread(target=work, daemon=True).start()
 
     def jack_pick(self, i):
         val = JACK[i][0]; self.jack_hint.setText(JACK_HINT[val])
@@ -2052,7 +2067,7 @@ class Window(QMainWindow if Qt else object):
                 except Exception: pass
             if scope in ("audio", "audio_fast"):
                 get("out", audio.output_status); get("jack", audio.jack_status); get("mic", audio.mic_state); get("boost", audio.headset_boost); get("voice", audio.voice_modes)
-                get("jackset", lambda: config.load()["audio"]["jack"]); get("spkf", audio.speaker_filter_on)
+                get("jackset", lambda: config.load()["audio"]["jack"]); get("spkf", audio.speaker_filter_on); get("sound", audio.sound_state)
                 if scope == "audio": get("dts", lambda: "DTS:            on" in audio.dts_status())      # slow (starts a helper): only when the page opens or after a change
             elif scope == "home_fast":
                 get("state", lambda: ipc.call("state")); live = (d.get("state") or {}).get("live") or {}
@@ -2106,6 +2121,8 @@ class Window(QMainWindow if Qt else object):
                 if d.get(k) is not None: w.setChecked(bool(d[k]))
             if "usb" in d: self.usb.set_index(hw.USB_LEVELS.index(d["usb"]) if d["usb"] in hw.USB_LEVELS else -1)
             if "gpu" in d: self.gpu.set_index(list(hw.GPU_MODES).index(d["gpu"]) if d["gpu"] in hw.GPU_MODES else -1)
+            if "sound" in d:
+                st = d["sound"]; self.snd_lbl.setText("The sound card's output is present." if st.get("ok") else ("No sound card was found." if st.get("ok") is None else "No sound output: " + st.get("problem", "unknown") + ". Press Fix sound."))
             if "out" in d: self.out.set_index({"speakers": 0, "headphones": 1}.get(d["out"]["active"], -1))
             if "jackset" in d:
                 keys = [k for k, _ in JACK]; self.jack.set_index(keys.index(d["jackset"]) if d["jackset"] in keys else 0); self.jack_hint.setText(JACK_HINT.get(d["jackset"], ""))

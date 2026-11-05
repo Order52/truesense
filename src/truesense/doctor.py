@@ -224,6 +224,10 @@ def c_audio():
     bits = [f"PipeWire {'running' if pw else 'NOT running'}", "RNNoise plugin " + ("found" if audio.PLUGIN else "missing (Purified Voice off)"), "AcerUltraX " + ("found" if audio._dts_bin() else "not installed (optional)")]
     try: j = audio.jack_status(); bits.append("jack: headphones " + ("in" if j["headphones"] else "out") + ", headset mic " + ("detected" if j["headset_mic"] else "not detected"))
     except Exception: pass
+    try: st = audio.sound_state() if pw else {"ok": None}
+    except Exception: st = {"ok": None}
+    if st.get("ok") is False: return WARN, "NO SOUND OUTPUT: " + st["problem"] + "; " + "; ".join(bits), "truesense audio repair   (restarts WirePlumber so it probes the card again)"
+    if st.get("ok"): bits.insert(1, "output sink present")
     return (OK if pw else WARN), "; ".join(bits), "" if pw else "systemctl --user start pipewire"
 
 

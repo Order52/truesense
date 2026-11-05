@@ -94,6 +94,70 @@ def set_output(which):
     if got != which: raise HwError(f"profile readback {got} != {which}")
     return got
 
+# ---- "there is no sound": detect and repair ------------------------------------------------------------------------------------------------
+# Seen on the PH16-71 (Nov 2026): at boot the sound DSP (SOF) rejected a stream while WirePlumber probed the card (`ipc tx error ... -22` in the kernel log), so WirePlumber built the
+# card with only `off` and `pro-audio` profiles: no speaker/headphone sink at all, only the virtual DTS sink in front of nothing. The hardware and the UCM profiles were fine
+# (direct ALSA playback worked); restarting WirePlumber so that it probes the card again brought the HiFi profiles and the sink back. Nothing here touches the codec.
+def _profiles_offered(block):
+    out, on = [], False
+    for line in block.splitlines():
+        s = line.strip()
+        if s.startswith("Profiles:"): on = True; continue
+        if s.startswith("Active Profile:"): break
+        if on and s and ": " in s: out.append(s.split(": ", 1)[0])
+    return out
+
+
+def sound_state():
+    """{"ok": True} when the card has an output sink; {"ok": False, "problem": ...} when it does not; {"ok": None} when there is no such card to judge."""
+    card = _card()
+    if not card: return {"ok": None, "problem": "no sound card known to PipeWire"}
+    blk = _run(["pactl", "list", "cards"]).stdout.split("Name: " + card, 1)[1].split("\nCard #", 1)[0]
+    prof = next((l.split(":", 1)[1].strip() for l in blk.splitlines() if "Active Profile:" in l), "?"); offered = _profiles_offered(blk)
+    hw = [s for s in _sinks() if s.startswith("alsa_output." + CARD_MATCH)]
+    if hw: return {"ok": True, "card": card, "profile": prof, "sinks": hw}
+    hifi = any(p in offered for p in PROFILE.values())
+    why = "the sound card is switched off" if prof == "off" else f"the sound card has no output (profile: {prof})"
+    return {"ok": False, "card": card, "profile": prof, "offered": offered, "hifi_offered": hifi, "problem": why + ("" if hifi else "; its speaker and headphone profiles are missing")}
+
+
+def repair(timeout=10.0, poll=0.25):
+    """Bring the sound output back: if the card still offers its HiFi profiles, pick one; otherwise restart WirePlumber so it probes the card again (it then restores the saved profile).
+    Verifies that a hardware sink exists afterwards. Returns {"fixed", "changed", "steps", "state"}; never writes codec settings."""
+    st = sound_state(); steps = []
+    if st["ok"] is not False: return {"fixed": st["ok"] is True, "changed": False, "steps": steps, "state": st}
+
+    def wait_for_sink():
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if sound_state()["ok"] is True: return True
+            time.sleep(poll)
+        return False
+    if st["hifi_offered"]:
+        _run(["pactl", "set-card-profile", st["card"], PROFILE["speakers"]]); steps.append("selected the speaker profile")
+        if wait_for_sink(): return {"fixed": True, "changed": True, "steps": steps, "state": sound_state()}
+    _run(["systemctl", "--user", "restart", "wireplumber.service"]); steps.append("restarted WirePlumber so it probes the sound card again")
+    if not wait_for_sink():
+        now = sound_state()
+        if now.get("ok") is False and now.get("hifi_offered"):
+            _run(["pactl", "set-card-profile", now["card"], PROFILE["speakers"]]); steps.append("selected the speaker profile"); wait_for_sink()
+    final = sound_state()
+    return {"fixed": final["ok"] is True, "changed": True, "steps": steps, "state": final}
+
+
+def autorepair(delays=(20, 90)):
+    """Run from the login audio service: a few checks after login, and a repair when the output is missing (at most once per check)."""
+    for i, d in enumerate(delays):
+        time.sleep(d if i == 0 else d - delays[i - 1])
+        try:
+            if sound_state()["ok"] is False:
+                r = repair(); print(f"sound output was missing: {'; '.join(r['steps'])}: {'FIXED' if r['fixed'] else 'still missing'}", flush=True)
+                if r["fixed"]: _say("Sound output repaired")
+                return
+            return
+        except Exception as e: print("sound check failed:", e, flush=True)
+
+
 def _sinks(): return [l.split("\t")[1] for l in _run(["pactl", "list", "short", "sinks"]).stdout.splitlines() if len(l.split("\t")) > 1]
 def _default_sink(): return _run(["pactl", "get-default-sink"]).stdout.strip()
 
@@ -264,6 +328,8 @@ def _signature():
 def watch_mic():
     """Re-pick the default microphone whenever something relevant CHANGES: the headset is plugged/unplugged, a filter appears/vanishes, or a mode changes.
     Edge-triggered, so it never fights a manual choice made in between (e.g. Shift+F5)."""
+    import threading
+    threading.Thread(target=autorepair, daemon=True, name="sound-autorepair").start()
     last = None
     while True:
         try: sig = _signature()

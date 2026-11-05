@@ -160,6 +160,7 @@ def build(only=None):
     q = au.add_parser("mic"); q.add_argument("action", nargs="?", default="status", choices=["status", "mute", "unmute", "toggle", "volume", "boost"]); q.add_argument("value", nargs="?", type=int); q.add_argument("--default-only", action="store_true", help="act on the default input only (default: every input)")
     q = au.add_parser("jack", help="what the codec sees on the 3.5 mm jack; `jack headphones|headset|auto` sets how the jack is used"); q.add_argument("use", nargs="?", choices=["auto", "headphones", "headset"])
     q = au.add_parser("voice", help="Purified Voice (AI mic noise reduction)"); q.add_argument("action", nargs="?", default="status", choices=["status", "set", "enable", "disable", "next", "apply", "watch", "notify"]); q.add_argument("a", nargs="?"); q.add_argument("b", nargs="?")
+    au.add_parser("repair", help="no sound? restart WirePlumber so it probes the sound card again, and check that an output exists")
     q = au.add_parser("speaker-filter", help="noise filter on the output (off by default: it also gates music)"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "status"])
     q = au.add_parser("dts", help="Acer DTS sound through AcerUltraX"); q.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "mode", "profiles", "setup"]); q.add_argument("name", nargs="?")
     # keys
@@ -515,6 +516,14 @@ def h_audio(a):
         elif act == "notify":
             if a.a not in ("on", "off"): raise HwError("usage: truesense audio voice notify on|off")
             config.write_user({"audio": {"notify": a.a == "on"}}); emit(f"mic mode notification: {a.a}")
+    elif v == "repair":
+        st = audio.sound_state()
+        if st["ok"] is None: emit(st, "no sound card found in PipeWire: " + st["problem"])
+        elif st["ok"]: emit(st, "the sound output is there (" + ", ".join(st["sinks"]) + "): nothing to repair")
+        else:
+            print("problem: " + st["problem"] + "\nrepairing (restarting WirePlumber if needed)...", flush=True); r = audio.repair()
+            emit(r, ("FIXED: " if r["fixed"] else "NOT FIXED: ") + "; ".join(r["steps"]) + ("" if r["fixed"] else "\nCheck the kernel log (journalctl -k -b | grep -i sof) and try a reboot."))
+            return 0 if r["fixed"] else 1
     elif v == "speaker-filter":
         if a.action == "status": emit(audio.speaker_filter_on(), f"speaker filter: {onoff_value(audio.speaker_filter_on())}")
         else: audio.speaker_filter(a.action == "on"); emit(f"speaker filter: {a.action}")
@@ -527,6 +536,7 @@ def h_audio(a):
             print(audio.dts_mode(a.name))
         elif act == "profiles": print(audio.dts("profiles"))
         elif act == "setup": print(audio.dts("setup", timeout=1800))
+    return None
 
 
 def h_keys(a):
