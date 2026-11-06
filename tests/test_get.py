@@ -25,11 +25,16 @@ class FakeGitHub:
     def __init__(self, files):
         files_ = files
         class H(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"                                       # explicit, with a length and a closed connection on every answer (what GitHub's CDN does)
+
+            def reply(self, code, body=b""):
+                self.send_response(code); self.send_header("Content-Length", str(len(body))); self.send_header("Connection", "close"); self.end_headers(); self.wfile.write(body); self.close_connection = True
+
             def do_GET(self):
                 body = files_.get(self.path.split("?")[0])
-                if isinstance(body, int): self.send_response(body); self.end_headers(); return
-                if body is None: self.send_response(404); self.end_headers(); return
-                self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+                if isinstance(body, int): self.reply(body)
+                elif body is None: self.reply(404)
+                else: self.reply(200, body)
             def log_message(self, *a): pass
         self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H); self.url = f"http://127.0.0.1:{self.srv.server_port}"
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()

@@ -22,12 +22,12 @@ fi
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 ASSET="truesense-$VERSION.tar.gz"; REL="$WEB/$REPO/releases/download/v$VERSION"
 echo "TrueSense $VERSION: downloading"
-CODE=$(curl -sSL -o "$TMP/SHA256SUMS" -w '%{http_code}' "$REL/SHA256SUMS" || echo 000)
+CODE=$(curl --retry 3 --retry-delay 2 -sSL -o "$TMP/SHA256SUMS" -w '%{http_code}' "$REL/SHA256SUMS" || echo 000)
 case $CODE in
   200)
     WANT=$(awk -v f="$ASSET" '{n=$2; sub(/^\*/,"",n); if (n==f) print $1}' "$TMP/SHA256SUMS" | head -n1)
     [ -n "$WANT" ] || die "SHA256SUMS of v$VERSION does not list $ASSET: refusing"
-    curl -fsSL -o "$TMP/ts.tar.gz" "$REL/$ASSET"
+    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/ts.tar.gz" "$REL/$ASSET"
     GOT=$(sha256sum "$TMP/ts.tar.gz" | awk '{print $1}')
     [ "$GOT" = "$WANT" ] || die "checksum mismatch for $ASSET (expected ${WANT:0:12}..., got ${GOT:0:12}...): refusing to install"
     echo "  checksum verified (${GOT:0:12}...)"
@@ -40,7 +40,7 @@ case $CODE in
     # no list: only an old release may be fetched without one (a missing list on a new release is refused, never skipped)
     if [ "$(printf '%s\n%s\n' "$SUMS_FROM" "$VERSION" | sort -V | head -n1)" = "$SUMS_FROM" ]; then die "v$VERSION has no SHA256SUMS: refusing to install something that cannot be verified"; fi
     echo "  (this release predates published checksums)"
-    curl -fsSL -o "$TMP/ts.tar.gz" "$WEB/$REPO/archive/refs/tags/v$VERSION.tar.gz" ;;
+    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/ts.tar.gz" "$WEB/$REPO/archive/refs/tags/v$VERSION.tar.gz" ;;
   *) die "could not fetch the release checksums (HTTP $CODE): try again later" ;;
 esac
 [ -z "${TRUESENSE_SHA256:-}" ] || echo "$TRUESENSE_SHA256  $TMP/ts.tar.gz" | sha256sum -c -

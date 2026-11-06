@@ -16,7 +16,7 @@ for u in "$TMP"/units/*.service "$TMP"/units/*.timer; do
   # ExecStopPost uses /bin/sh and cat: present everywhere; --user units are verified the same way
   out=$(systemd-analyze verify "$u" 2>&1) || true
   # systemd-analyze also complains that a unit's [Install] target or a dependency is unknown to THIS machine: only real configuration errors matter here
-  errs=$(printf '%s\n' "$out" | grep -Ev "^$|Failed to (load|prepare)|not found|No such file|Cannot add dependency|is not a valid|multi-user.target|default.target|timers.target|graphical-session|pipewire|wireplumber|systemd-modules-load" || true)
+  errs=$(printf '%s\n' "$out" | grep -E "$(basename "$u")|$TMP/units/" | grep -Ev "^$|Failed to (load|prepare)|not found|No such file|Cannot add dependency|is not a valid|multi-user.target|default.target|timers.target|graphical-session|pipewire|wireplumber|systemd-modules-load" || true)
   if [ -n "$errs" ]; then echo "FAIL $(basename "$u")"; printf '%s\n' "$errs" | sed 's/^/    /'; bad=1; else echo "ok   $(basename "$u")"; fi
 done
 echo; echo "hardening exposure of the daemon (lower is better; it must stay root with sysfs access):"

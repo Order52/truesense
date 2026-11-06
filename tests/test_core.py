@@ -724,6 +724,7 @@ class TestUpdateWithoutPolkitAgent(unittest.TestCase):
         from truesense import update
         if _os.geteuid() == 0: self.skipTest("root")
         _w = _os.environ.get("WAYLAND_DISPLAY"); _os.environ["WAYLAND_DISPLAY"] = "wayland-test"
+        _which = update.shutil.which; update.shutil.which = lambda n: f"/usr/bin/{n}" if n in ("pkexec", "sudo") else None          # a CI runner has no pkexec: the test must not depend on what is installed
         try:
             self.assertEqual(update.elevate_command("/x/install.sh", gui=True, agent=True)[0], "pkexec")
             self.assertEqual(update.elevate_command("/x/install.sh", gui=True, agent=False)[0], "sudo", "no agent: pkexec would fail without a prompt")
@@ -739,6 +740,7 @@ class TestUpdateWithoutPolkitAgent(unittest.TestCase):
                 self.assertIn("truesense update apply", str(cm.exception))
             finally: update.check, update.installed_version = real_check, real_iv
         finally:
+            update.shutil.which = _which
             if _w is None: _os.environ.pop("WAYLAND_DISPLAY", None)
             else: _os.environ["WAYLAND_DISPLAY"] = _w
 

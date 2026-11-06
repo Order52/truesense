@@ -33,7 +33,9 @@ def _say(text, icon="audio"): return osd.show(text, icon, _cfg())
 
 # ---- ALSA helpers ---------------------------------------------------------------------------------------------------------------------
 def card_index():
-    for l in util.read("/proc/asound/cards").splitlines():
+    try: cards = util.read("/proc/asound/cards")
+    except OSError: return "1"                                            # no sound subsystem at all (a server, a container): callers then fail with a clear message from amixer
+    for l in cards.splitlines():
         if "sof-hda-dsp" in l: return l.split()[0]
     return "1"
 
