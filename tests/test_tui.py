@@ -29,9 +29,12 @@ class TuiCase(unittest.TestCase):
         device.SIM.reset(); self.saved = (ipc.available, audio._run, userstate.PATH)
         ipc.available = lambda *a, **k: False                                   # never the real service
         audio._run = lambda cmd: subprocess.CompletedProcess(cmd, 1, "", "")   # never the real sound system
+        self.dts_calls = []; self.real_dts, self.real_bin = audio.dts, audio._dts_bin
+        def no_dts(*a, timeout=30): self.dts_calls.append(a); raise device.HwError("AcerUltraX is not available in the tests")
+        audio.dts = no_dts; audio._dts_bin = lambda: None                       # never the real AcerUltraX: a mode change would change your real sound
         userstate.PATH = os.path.join(tempfile.mkdtemp(), "user.json")
 
-    def tearDown(self): ipc.available, audio._run, userstate.PATH = self.saved
+    def tearDown(self): ipc.available, audio._run, userstate.PATH = self.saved; audio.dts, audio._dts_bin = self.real_dts, self.real_bin
 
 
 class TestDrawing(TuiCase):
@@ -199,6 +202,14 @@ class TestCli(unittest.TestCase):
         r = subprocess.run(["python3", "-m", "truesense", "tui"], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, timeout=20)
         self.assertEqual(r.returncode, 1); self.assertIn("needs a terminal", r.stderr)
         r = subprocess.run(["python3", "-m", "truesense", "tui", "-h"], capture_output=True, text=True, env=env, timeout=20); self.assertIn("--page", r.stdout)
+
+
+class TestMenuEntry(unittest.TestCase):
+    def test_the_application_menu_entry_opens_the_tui_in_a_terminal_and_is_installed_everywhere(self):
+        root = os.path.join(os.path.dirname(__file__), ".."); rd = lambda p: open(os.path.join(root, p)).read()
+        d = dict(l.split("=", 1) for l in rd("packaging/truesense-tui.desktop").splitlines() if "=" in l)
+        self.assertEqual(d["Exec"], "@PREFIX@/bin/truesense tui"); self.assertEqual(d["Terminal"], "true"); self.assertEqual(d["Type"], "Application"); self.assertIn("Name", d); self.assertIn("Icon", d)
+        for f in ("tools/install.sh", "tools/uninstall.sh", "packaging/arch/PKGBUILD", "packaging/aur/PKGBUILD.template"): self.assertIn("truesense-tui.desktop", rd(f), f)
 
 
 if __name__ == "__main__": unittest.main()

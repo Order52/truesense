@@ -1,12 +1,13 @@
 # Release notes
 
-## Unreleased
+## 0.3.15 (2026-11-06): a terminal UI, steadier Smart auto, sound repair, DTS on USB headsets
 
 **New: `truesense tui`, the full control surface in the terminal**
 - Seven pages (Dashboard, Fans, Power, Lighting, Audio, Profiles, System) covering what the window does apart from per-key painting, images and undervolting: power mode and Smart auto, fans with separate CPU/GPU sliders and a guarded stop, curves, battery limit and charging, GPU mode, keyboard and light-bar effects with any hex colour, sound repair, DTS on every output, microphone, profiles and boot looks, and the health check.
 - A live dashboard (temperatures, fan speeds, load, power, battery, with sparkline history) that reuses the service's readings, so it costs one firmware read a second.
 - Keyboard (arrows or hjkl, Enter, Tab, 1-7, `?`) and mouse (tabs, rows, options, sliders, wheel). Resizes live, works from 44x12 up, and falls back to plain ASCII and no colour where the terminal needs it (tested on xterm, linux console, vt100).
 - Built on Python's own `curses`: nothing new to install, first paint in about 50 ms, 0.3 % CPU idle. Changes are applied off the UI thread and reported at the bottom; sliders write once when you pause.
+- It is in the application menu too: **TrueSense (terminal)** opens it in your terminal (installer and both Arch packages; the uninstaller removes it).
 - 29 new tests draw every page at five sizes into a text grid and drive keys and clicks; the terminal layer itself was checked in a pseudo-terminal with an emulator.
 
 **Smart auto no longer flaps** (found while gaming with external fans: the CPU sat on the 85 degree Turbo line and the mode bounced between Performance and Turbo)
