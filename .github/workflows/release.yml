@@ -2,13 +2,14 @@ name: Release
 
 # Push a tag (python3 tools/release.py prepare X.Y.Z --title "..." --push does everything) and this publishes the release:
 # verified version, full tests, a reproducible source tarball, an Arch package, SHA256SUMS, build provenance attestations, and the notes from RELEASE_NOTES.md.
-# Run it by hand (Actions, Release, Run workflow) to re-publish an existing tag or to rehearse: "dry run" builds everything and publishes nothing.
+# Run it by hand (Actions, Release, Run workflow): give a tag to re-publish it, or leave the tag empty (dry run on) to rehearse the whole pipeline from main: it builds and checks
+# everything and publishes nothing.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
   workflow_dispatch:
     inputs:
-      tag: { description: "Existing tag to (re)publish, e.g. v0.3.16", required: true }
+      tag: { description: "Existing tag to (re)publish, e.g. v0.3.16 (empty: rehearse from main)", required: false, default: "" }
       dry_run: { description: "Build and check everything, publish nothing", type: boolean, default: true }
 
 concurrency:
@@ -34,11 +35,15 @@ jobs:
         with: { python-version: "3.13" }
       - name: The tag, every versioned file and the release notes agree
         id: v
+        env: { DRY: "${{ github.event.inputs.dry_run }}" }
         run: |
-          python3 tools/release.py check --tag "$TAG"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          python3 tools/release.py notes "${TAG#v}" > /dev/null
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then python3 tools/release.py check --tag "$TAG"
+          elif [ "$DRY" = true ]; then echo "rehearsal from $TAG: not a version tag, so no tag check"; python3 tools/release.py check
+          else echo "::error::$TAG is not a version tag: only a dry run may build from a branch"; exit 1; fi
+          v=$(python3 tools/release.py version); echo "version=$v" >> "$GITHUB_OUTPUT"
+          python3 tools/release.py notes "$v" > /dev/null
       - name: The tagged commit is on main (nobody releases a side branch by accident)
+        if: startsWith(env.TAG, 'v')
         run: git merge-base --is-ancestor "$TAG" origin/main || { echo "::error::$TAG is not on main"; exit 1; }
       - name: Full test suite and lint
         env: { QT_QPA_PLATFORM: offscreen }

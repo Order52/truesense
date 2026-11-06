@@ -3,6 +3,7 @@
 """Release tooling: one place that knows where the version number lives.
 
   tools/release.py check [--tag vX.Y.Z]     every file agrees on one version (and it matches the tag, when given); CI runs this on every push and on release
+  tools/release.py version                  the current version (what the pipeline builds when it rehearses from a branch)
   tools/release.py notes X.Y.Z              the release notes of that version (from RELEASE_NOTES.md) as GitHub release text
   tools/release.py prepare X.Y.Z --title T  bump everything, turn "## Unreleased" into this version, run the gate, commit and tag  (--push also pushes: CI then publishes)
 
@@ -142,6 +143,7 @@ def prepare(root, new, ttl, gate=True, push=False, dry=False):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter); sub = p.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("check"); c.add_argument("--tag")
+    sub.add_parser("version")
     n = sub.add_parser("notes"); n.add_argument("version")
     r = sub.add_parser("prepare"); r.add_argument("version"); r.add_argument("--title", default=""); r.add_argument("--no-gate", action="store_true"); r.add_argument("--push", action="store_true"); r.add_argument("--dry-run", action="store_true")
     a = p.parse_args(argv)
@@ -149,6 +151,7 @@ def main(argv=None):
         problems = check(ROOT, a.tag)
         if problems: print("version problems:\n  " + "\n  ".join(problems), file=sys.stderr); return 1
         print(f"version {current()}: every file agrees" + (f" (tag {a.tag})" if a.tag else "")); return 0
+    if a.cmd == "version": print(current()); return 0
     if a.cmd == "notes": print(notes(ROOT, a.version.lstrip("v"))); return 0
     prepare(ROOT, a.version.lstrip("v"), a.title, not a.no_gate, a.push, a.dry_run); return 0
 
