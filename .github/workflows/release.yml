@@ -28,9 +28,9 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ env.TAG }}", fetch-depth: 0 }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: { python-version: "3.13" }
       - name: The tag, every versioned file and the release notes agree
         id: v
@@ -59,7 +59,7 @@ jobs:
       id-token: write          # build provenance is signed with the workflow's own identity (Sigstore), no keys to manage
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ env.TAG }}" }
       - name: Source tarball (the same layout GitHub's archive has, byte-for-byte reproducible)
         run: |
@@ -76,7 +76,7 @@ jobs:
           v='${{ needs.verify.outputs.version }}'; tar -tzf "dist/truesense-$v.tar.gz" > list.txt
           for f in tools/install.sh tools/get.sh src/truesense/tui.py src/truesense/__init__.py kernel/truesense-wmi/truesense_wmi.c packaging/truesense.service; do grep -q "truesense-$v/$f" list.txt || { echo "::error::tarball lacks $f"; exit 1; }; done
       - name: Upload for the next jobs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with: { name: dist-source, path: dist, if-no-files-found: error }
 
   package-arch:
@@ -87,14 +87,14 @@ jobs:
     container: archlinux:latest
     steps:
       - run: pacman -Syu --noconfirm base-devel git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ env.TAG }}" }
       - name: makepkg (unprivileged)
         run: |
           useradd -m builder; chown -R builder: "$GITHUB_WORKSPACE"
           su builder -c "cd '$GITHUB_WORKSPACE/packaging/arch' && makepkg -f --nodeps --noconfirm"
           mkdir dist && cp packaging/arch/*.pkg.tar.zst dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: dist-arch, path: dist, if-no-files-found: error }
 
   publish:
@@ -107,16 +107,16 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ env.TAG }}" }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { pattern: "dist-*", path: dist, merge-multiple: true }
       - name: SHA256SUMS
         run: |
           cd dist && sha256sum truesense-*.tar.gz truesense-*.pkg.tar.zst > SHA256SUMS && cat SHA256SUMS
       - name: Build provenance (who built these files, from which commit, by which workflow)
         if: github.event.inputs.dry_run != 'true'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with: { subject-path: "dist/truesense-*" }
       - name: Create or update the GitHub release
         if: github.event.inputs.dry_run != 'true'
@@ -153,7 +153,7 @@ jobs:
         env: { KEY: "${{ secrets.AUR_SSH_PRIVATE_KEY }}" }
         run: |
           if [ -n "$KEY" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "AUR_SSH_PRIVATE_KEY is not set, skipping (publish by hand with tools/aur-publish.sh)"; fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.gate.outputs.go == '1'
         with: { ref: "${{ env.TAG }}" }
       - name: Push the new PKGBUILD

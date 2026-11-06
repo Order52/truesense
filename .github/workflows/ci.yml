@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: "3.13" }
       - name: "Python (ruff.toml: real bugs and unused code)"
         run: pip install ruff && ruff check .
@@ -54,8 +54,8 @@ jobs:
       matrix:
         python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: "${{ matrix.python }}", allow-prereleases: true }
       - name: Qt for the window tests (they skip without it)
         run: |
@@ -90,7 +90,7 @@ jobs:
       - name: Tools for checkout
         run: |
           if command -v apt-get >/dev/null; then apt-get update -qq && apt-get install -y -qq git; elif command -v dnf >/dev/null; then dnf install -y git; else pacman -Sy --noconfirm git; fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the distribution's compiler and kernel headers
         run: ${{ matrix.setup }}
       - name: Build against every installed kernel (warnings on)
@@ -113,7 +113,7 @@ jobs:
           - { name: openSUSE, image: "opensuse/tumbleweed:latest", family: suse, prep: "zypper --non-interactive install git tar gzip" }
     steps:
       - run: ${{ matrix.prep }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: tools/install.sh --check recognises the distribution and names the right packages
         run: |
           out=$(bash tools/install.sh --check 2>&1 || true); echo "$out"
@@ -128,7 +128,7 @@ jobs:
     container: archlinux:latest
     steps:
       - run: pacman -Syu --noconfirm base-devel git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: makepkg as an unprivileged user
         run: |
           useradd -m builder; chown -R builder: "$GITHUB_WORKSPACE"
