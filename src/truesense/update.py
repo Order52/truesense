@@ -92,13 +92,15 @@ def check(force=False, hours=None):
 def _safe_extract(tar, dest):
     base = os.path.realpath(dest)
     for m in tar.getmembers():
+        if m.name.startswith("/") or ".." in m.name.split("/"): raise HwError(f"the download contains an unsafe path ({m.name}); refusing")      # explicit: Python versions differ in what extraction tolerates
         target = os.path.realpath(os.path.join(dest, m.name))
         if not (target == base or target.startswith(base + os.sep)): raise HwError(f"the download contains an unsafe path ({m.name}); refusing")
         if m.issym() or m.islnk():
             link = os.path.realpath(os.path.join(os.path.dirname(target), m.linkname))
             if not link.startswith(base + os.sep): raise HwError(f"the download contains an unsafe link ({m.name}); refusing")
         if m.isdev(): raise HwError("the download contains a device file; refusing")
-    tar.extractall(dest)
+    if hasattr(tarfile, "data_filter"): tar.extractall(dest, filter="data")          # Python 3.11.4+: also refuses special files, absolute links and the like
+    else: tar.extractall(dest)  # every member was checked above
 
 
 SUMS_REQUIRED_FROM = (0, 3, 16)         # releases built by the release pipeline carry SHA256SUMS; from this version on a missing list is refused, never skipped

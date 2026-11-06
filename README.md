@@ -3,6 +3,7 @@
 <h1 align="center">TrueSense for the Acer Predator Helios 16 (PH16-71)</h1>
 
 <p align="center">
+  <a href="https://github.com/Order52/truesense/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Order52/truesense/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-MIT-blue"></a>
   <img alt="Version" src="https://img.shields.io/badge/version-0.3.15-58a6ff">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Linux%206.6%2B-lightgrey">
@@ -32,12 +33,16 @@ Power modes, fans, GPU mode, battery, the rear light bar, per-key keyboard RGB, 
 curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
 ```
 
+The download is checked against the release's `SHA256SUMS` before anything runs as root (releases from 0.3.16 are built by CI with signed provenance: `gh attestation verify`). **Update** the same way: the window's Update button, `sudo truesense update apply`, or the line above again; a failed update rolls back by itself. **Something stopped?** `truesense service check`, then `truesense service repair`.
+
 **From a clone**, or to look first: `git clone https://github.com/Order52/truesense && cd truesense && tools/install.sh --check` (read-only report), then `sudo tools/install.sh`.
 **Arch / CachyOS / Manjaro (AUR):** `yay -S truesense` once the package is published (see [docs/INSTALL.md](docs/INSTALL.md)); until then `cd packaging/arch && makepkg -si`.
 
 ```
 truesense doctor          # checks everything and says how to fix what is wrong
 truesense gui             # the window
+truesense service check   # every unit, the module and the socket; `service repair` fixes what is down
+truesense probe           # read-only report of this laptop (for support of similar models)
 truesense tui             # the same, in the terminal (keyboard and mouse; nothing to install)
 ```
 
