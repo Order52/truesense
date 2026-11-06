@@ -59,7 +59,7 @@ Areas that are switches accept `on | off | toggle | status`.
 | `audio jack [auto\|headphones\|headset]` | how the 3.5 mm jack is used: auto = what the codec detects, headphones = never use the headset mic, headset = always use it (try this when the codec misses a headset plugged in at boot) |
 | `audio mic status\|mute\|unmute\|toggle\|boost`, `audio jack` | microphones, headset-mic boost, what the codec sees on the jack |
 | `audio voice status\|headset MODE\|array MODE\|apply\|watch` | AI noise reduction; MODE = off, conference, personal |
-| `audio speaker-filter`, `audio dts` | noise filter on the output (off by default); Acer DTS via AcerUltraX |
+| `audio speaker-filter`, `audio dts` | noise filter on the output (off by default); Acer DTS via AcerUltraX: `dts on/off`, `dts mode <name>` (every output), `dts devices`, `dts all [mode]` (give every output, USB and Bluetooth headsets included, DTS now) |
 | `keys show\|set GESTURE ACTION\|reset\|test ACTION\|actions\|timing` | the PREDATOR key (see below) |
 | `keys profile list\|current\|show NAME\|use NAME\|copy NAME [NEW]\|save NAME [--from BASE] [--tap A --double A --triple A --long A --fn-esc A --long-ms N --multi-ms N]\|delete NAME` | PREDATOR key profiles: built in `default` (the standard behaviour), `gaming`, `work`, `lights`; built-ins are read-only, copy to edit |
 | `profile list\|show\|save\|apply\|delete\|next` | bundles of power, fans, lighting, battery, audio |

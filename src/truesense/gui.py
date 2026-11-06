@@ -194,6 +194,7 @@ FAN_MODES = ["Smart", "Auto", "Max", "Manual"]
 KB_EFFECTS = ["static", "breathing", "wave", "snake", "ripple", "neon", "raindrop", "lightning", "spot", "star", "fireball", "snow", "heartbeat"]
 KEY_GROUPS = ["all", "wasd", "arrows", "fkeys", "numrow", "letters", "numpad", "esc", "space", "enter", "predator", "lshift"]
 VOICE = ["off", "conference", "personal"]
+DTS_MODES = ["Music", "Movie", "Voice", "Game1", "Game2", "Game3", "Plain"]
 GESTURES = [("tap", "Tap"), ("double", "Double tap"), ("triple", "Triple tap"), ("long", "Long press"), ("fn_esc", "Fn + Esc")]
 START = [("last", "Last used"), ("default", "Stock"), ("off", "Off"), ("none", "Leave")]
 JACK = [("auto", "Auto"), ("headphones", "Headphones"), ("headset", "Headset")]
@@ -1328,6 +1329,10 @@ class Window(QMainWindow if Qt else object):
         self.out = self.seg(v, "Play sound on", ["Speakers", "Headphones"], lambda i: self.do(lambda: audio.set_output(("speakers", "headphones")[i]), f"Output: {('speakers', 'headphones')[i]}"))
         self.spk = self.switch(v, "Noise filter on the speakers", lambda x: self.do(lambda: audio.speaker_filter(bool(x)), "Speaker noise filter " + ("on" if x else "off")), "Off by default: it also gates music. For calls on the speakers."); self.sep(v)
         self.dts = self.switch(v, "Acer DTS sound", lambda x: self.do(lambda: audio.dts_power(x), "DTS " + ("on" if x else "off")), "This laptop plays on the speakers or the headphone jack, not both at once.")
+        self.dts_mode = QComboBox(); self.dts_mode.addItems(DTS_MODES); self.dts_mode.setMinimumWidth(150); self.dts_mode.activated.connect(lambda i: self.do(lambda: audio.dts_mode(DTS_MODES[i]), f"DTS sound: {DTS_MODES[i]} on every output"))
+        self.line(v, "DTS sound mode", self.dts_mode, sub="Applies to every output: speakers, the jack, USB and Bluetooth headsets, controllers. Plain is no processing.")
+        self.dts_btn = self.btn("Use DTS on every output", lambda: self.do(lambda: "; ".join(audio.dts_cover(force=True)) or "DTS is on for every output", lambda r: "DTS: " + r))
+        self.dts_lbl = self.hint("Outputs: …"); self.line(v, "A headset still sounds flat?", self.dts_btn, sub="New outputs get DTS by themselves when you plug them in. This does it again for all of them now (and adds a headphone EQ to headsets)."); v.addWidget(self.dts_lbl)
         v = self.card(lay, "3.5 mm jack")
         self.jack = self.seg(v, "I plugged in", [l for _, l in JACK], self.jack_pick); self.jack_hint = self.hint(""); v.addWidget(self.jack_hint)
         self.jack_state = QLabel("Looking at the 3.5 mm jack…"); self.jack_state.setObjectName("hint"); v.addWidget(self.jack_state)
@@ -2068,7 +2073,7 @@ class Window(QMainWindow if Qt else object):
             if scope in ("audio", "audio_fast"):
                 get("out", audio.output_status); get("jack", audio.jack_status); get("mic", audio.mic_state); get("boost", audio.headset_boost); get("voice", audio.voice_modes)
                 get("jackset", lambda: config.load()["audio"]["jack"]); get("spkf", audio.speaker_filter_on); get("sound", audio.sound_state)
-                if scope == "audio": get("dts", lambda: "DTS:            on" in audio.dts_status())      # slow (starts a helper): only when the page opens or after a change
+                if scope == "audio": get("dtsdev", audio.dts_devices); get("dts", lambda: "DTS:            on" in audio.dts_status())      # slow (starts a helper): only when the page opens or after a change
             elif scope == "home_fast":
                 get("state", lambda: ipc.call("state")); live = (d.get("state") or {}).get("live") or {}
                 if live.get("power_mode") in hw.MODES and "ac" in live: d["mode"] = live["power_mode"]; d["ac"] = bool(live["ac"])       # the service already knows these: no hardware read
@@ -2123,6 +2128,10 @@ class Window(QMainWindow if Qt else object):
             if "gpu" in d: self.gpu.set_index(list(hw.GPU_MODES).index(d["gpu"]) if d["gpu"] in hw.GPU_MODES else -1)
             if "sound" in d:
                 st = d["sound"]; self.snd_lbl.setText("The sound card's output is present." if st.get("ok") else ("No sound card was found." if st.get("ok") is None else "No sound output: " + st.get("problem", "unknown") + ". Press Fix sound."))
+            if d.get("dtsdev"):
+                self.dts_lbl.setText("Now: " + " · ".join(f"{x['label']}: {x['profile']}" for x in d["dtsdev"]))
+                cur = next((x for x in d["dtsdev"] if x["current"]), d["dtsdev"][0])
+                if cur["profile"] in DTS_MODES: self.dts_mode.setCurrentIndex(DTS_MODES.index(cur["profile"]))
             if "out" in d: self.out.set_index({"speakers": 0, "headphones": 1}.get(d["out"]["active"], -1))
             if "jackset" in d:
                 keys = [k for k, _ in JACK]; self.jack.set_index(keys.index(d["jackset"]) if d["jackset"] in keys else 0); self.jack_hint.setText(JACK_HINT.get(d["jackset"], ""))

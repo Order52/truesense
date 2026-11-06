@@ -31,3 +31,7 @@ If it does not help: `journalctl -k -b | grep -i sof` for the real error, a rebo
 ## Getting help
 
 Open an issue with the output of `truesense doctor --json` and, for service problems, `journalctl -u truesense -b --no-pager | tail -100`. Do **not** attach raw ACPI dumps: they contain firmware tables, including the OEM Windows product key.
+
+## DTS does nothing on my USB or Bluetooth headset
+
+`acerultrax-cli status` says "DTS: on", but `truesense audio dts devices` shows the headset on **Plain**: AcerUltraX only gives the speakers, the 3.5 mm jack and known Bluetooth headphones a profile by default. TrueSense fixes this by itself (at login and when you plug the headset in); to do it now run `truesense audio dts all`. Pick the sound with `truesense audio dts mode music|movie|voice|game1|game2|game3` (it applies to every output).

@@ -17,6 +17,13 @@
 - `truesense doctor` now reports `NO SOUND OUTPUT` with the fix instead of a green Audio line, and the Audio page shows whether the output exists.
 - The login audio service repairs a missing output by itself, 20 s and 90 s after login.
 
+**DTS sound on every output, USB headsets included**
+- Found on the PH16-71: with a USB headset playing, `acerultrax-cli status` said "DTS: on" but the headset (and a connected DualSense) sat on AcerUltraX's **Plain** profile, which is no processing at all. AcerUltraX only gives speakers, the 3.5 mm jack and known Bluetooth headphones a profile by default; any other output is left on Plain.
+- TrueSense now gives every output DTS: new outputs get the profile of your laptop speakers once, and headsets get a headphone EQ as well (AcerUltraX's own pick when it recognises the model by name, Acer's general headphone EQ otherwise). It happens at login and again within a few seconds of plugging a headset in. A profile you choose yourself later (even Plain) is never overridden, a Bluetooth speaker keeps its Plain default, and speakers on Plain/Off mean "no DTS" so nothing is touched.
+- Choosing a DTS mode (`truesense audio dts mode game1`, or the Audio page's *DTS sound mode*) now applies to every output, so switching outputs never lands on an unprocessed one; `[audio] dts_all = false` restores the old one-output behaviour.
+- New: `truesense audio dts devices` (every output and its profile), `truesense audio dts all [mode]` (do it again for all outputs now), Audio page *DTS sound mode*, *Use DTS on every output* and a line listing each output's profile. `truesense doctor` warns when a headset is on Plain.
+- Test fix: the Smart auto tests started a real `nvidia-smi` thread, so a game running on the machine could make one of them fail now and then. They no longer touch real sensors.
+
 ## 0.3.14 (2026-10-31): a faster doctor
 
 - `truesense doctor` no longer runs the `dkms` command, which took 1 to 1.3 s here (two of its checks used it): it reads DKMS's own directories instead and falls back to the command only on systems that keep them elsewhere. Same answers, `doctor` about 1.1 s to 0.09 s on the installed copy.

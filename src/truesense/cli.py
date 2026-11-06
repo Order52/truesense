@@ -162,7 +162,7 @@ def build(only=None):
     q = au.add_parser("voice", help="Purified Voice (AI mic noise reduction)"); q.add_argument("action", nargs="?", default="status", choices=["status", "set", "enable", "disable", "next", "apply", "watch", "notify"]); q.add_argument("a", nargs="?"); q.add_argument("b", nargs="?")
     au.add_parser("repair", help="no sound? restart WirePlumber so it probes the sound card again, and check that an output exists")
     q = au.add_parser("speaker-filter", help="noise filter on the output (off by default: it also gates music)"); q.add_argument("action", nargs="?", default="status", choices=["on", "off", "status"])
-    q = au.add_parser("dts", help="Acer DTS sound through AcerUltraX"); q.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "mode", "profiles", "setup"]); q.add_argument("name", nargs="?")
+    q = au.add_parser("dts", help="Acer DTS sound through AcerUltraX"); q.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "mode", "profiles", "devices", "all", "setup"]); q.add_argument("name", nargs="?")
     # keys
     p = sub.add_parser("keys", help="PREDATOR key and Fn+Esc: what each gesture does"); ys = p.add_subparsers(dest="verb")
     ys.add_parser("show"); ys.add_parser("actions"); ys.add_parser("run", help="run the key service in the foreground (what the systemd user service does)")
@@ -532,9 +532,15 @@ def h_audio(a):
         if act == "status": print(audio.dts_status())
         elif act in ("on", "off"): print(audio.dts_power(act == "on"))
         elif act == "mode":
-            if not a.name: raise HwError("usage: truesense audio dts mode music|movie|voice|game1|game2|game3|off|plain|\"custom audio\"")
+            if not a.name: raise HwError("usage: truesense audio dts mode music|movie|voice|game1|game2|game3|off|plain|\"custom audio\"   (every output; [audio] dts_all = false: only the one playing)")
             print(audio.dts_mode(a.name))
         elif act == "profiles": print(audio.dts("profiles"))
+        elif act == "devices":
+            for d in audio.dts_devices(): print(f"{'*' if d['current'] else ' '} {d['label']:<44} {d['kind']:<18} {d['profile']}")
+        elif act == "all":
+            done = audio.dts_cover(force=True)
+            if a.name: audio.dts_mode(a.name, everywhere=True); done.append(f"every output: {a.name}")
+            print("\n".join(done) or "DTS is on for every output")
         elif act == "setup": print(audio.dts("setup", timeout=1800))
     return None
 

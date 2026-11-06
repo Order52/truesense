@@ -32,7 +32,7 @@ DEFAULTS = {
              "long_ms": 800, "multi_ms": 450, "power_cycle": ["eco", "quiet", "balanced", "performance", "turbo"]},
     "startup": {"profile": "", "keyboard": "last", "rear": "last"},   # applied at login: last | default | none | profile:NAME (keyboard) | off (rear)
     "keyboard": {"operating_follow": False, "operating_colors": {}},
-    "audio": {"jack": "auto", "notify": True, "headset_mode": "conference", "array_mode": "conference"},
+    "audio": {"jack": "auto", "notify": True, "dts_all": True, "headset_mode": "conference", "array_mode": "conference"},
     "update": {"auto_check": False, "check_hours": 24, "repo": "Order52/truesense"},        # automatic checks are off until you switch them on
     "osd": {"style": "native"},                      # native | noctalia | none  (env TRUESENSE_OSD overrides)
     "compat": {"predator_widgets": False},           # also write /tmp/predator-state and honour ~/.cache/predator-fan-mode (old status-bar widgets)

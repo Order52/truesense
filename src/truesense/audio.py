@@ -330,7 +330,11 @@ def watch_mic():
     Edge-triggered, so it never fights a manual choice made in between (e.g. Shift+F5)."""
     import threading
     threading.Thread(target=autorepair, daemon=True, name="sound-autorepair").start()
-    last = None
+    last = None; tick = 0
+    if _dts_bin():
+        try:
+            for line in dts_cover(): print("DTS:", line, flush=True)
+        except Exception as e: print("DTS cover failed:", e, flush=True)
     while True:
         try: sig = _signature()
         except Exception as e: print("mic watcher:", e, flush=True); time.sleep(3); continue
@@ -339,7 +343,23 @@ def watch_mic():
             try: print(apply_mic_policy(_cfg()["audio"]["notify"] and (last is None or sig[0] != last[0])), flush=True)
             except Exception as e: print("mic policy failed:", e, flush=True)
             last = sig
+        tick = (tick + 1) % 2
+        if not tick: _watch_dts()
         time.sleep(1.0)
+
+
+_dts_sinks = None
+
+def _watch_dts():
+    """When an output appears (USB headset plugged in, controller connected) give it DTS once."""
+    global _dts_sinks
+    try:
+        now = frozenset(_sinks())
+        if _dts_sinks is not None and now - _dts_sinks and _dts_bin():
+            time.sleep(1.5)                                                  # let AcerUltraX register the new output first
+            for line in dts_cover(): print("DTS:", line, flush=True)
+        _dts_sinks = now
+    except Exception as e: print("DTS cover failed:", e, flush=True); _dts_sinks = frozenset()
 
 
 # ---- speaker-side noise filter (off by default: it also gates music) -----------------------------------------------------------------------
@@ -387,5 +407,56 @@ def dts(*args, timeout=30):
     return r.stdout.strip()
 
 def dts_status(): return dts("status")
-def dts_mode(name): return dts("mode", name)
 def dts_power(on): return dts("power", "on" if on else "off")
+
+DTS_PROFILES = ("Off", "Music", "Movie", "Voice", "Game1", "Game2", "Game3", "Custom Audio", "Plain")
+_DTS_ROW = re.compile(r"^(.*\S)\s+(speakers|headphones|bluetooth-speaker|bluetooth|other)\s+(" + "|".join(DTS_PROFILES) + r")\s*$")
+_HEADSET = re.compile(r"head(set|phone)|ear(phone|bud|piece)|buds|airpods|galea|gaming|dualsense|pc38", re.I)
+
+def dts_devices():
+    """Every output AcerUltraX knows, from `acerultrax-cli devices`: [{label, kind, profile, ref, current}]. `ref` is what --device takes."""
+    out = []
+    for line in dts("devices").splitlines():
+        if line.startswith("    ") and out: out[-1]["ref"] = line.strip()
+        elif line.strip() and (m := _DTS_ROW.match(line.lstrip("* "))): out.append({"label": m.group(1).strip(), "kind": m.group(2), "profile": m.group(3), "ref": "", "current": line.startswith("*")})
+    return [d for d in out if d["ref"]]
+
+def _dts_has_eq(ref):
+    """Does AcerUltraX hold a headphone EQ for this output? (its config file; a missing file or key simply means no)"""
+    try:
+        import tomllib
+        with open(os.path.expanduser("~/.config/acerultrax/config.toml"), "rb") as f: return ref in tomllib.load(f).get("headphones", {})
+    except (OSError, ValueError, ImportError): return False
+
+def dts_mode(name, everywhere=None):
+    """Pick a DTS profile. With [audio] dts_all (default on) it goes to EVERY output (speakers, jack, USB and Bluetooth headsets, controllers), not just the one playing now,
+    so switching the output never lands on an unprocessed one."""
+    out = dts("mode", name)
+    if _cfg()["audio"].get("dts_all", True) if everywhere is None else everywhere:
+        for d in dts_devices():
+            if not d["current"] and d["profile"].lower() != name.lower(): dts("mode", name, "--device", d["ref"])
+    return out
+
+def dts_cover(force=False):
+    """Give every output DTS. AcerUltraX leaves anything it does not know (a USB headset, a controller, a dock) on the Plain profile, i.e. no processing at all, so a
+    headset worked on the jack and did nothing over USB. Each output is handled ONCE (remembered in the user state), so a later "Plain" chosen on purpose stays.
+    New headsets get the profile of the laptop speakers plus a headphone EQ: AcerUltraX's own pick by name when it knows the model, else Acer's general one.
+    Returns what changed, e.g. ["Headset PC38X: Music + headphone EQ"]."""
+    from . import userstate
+    devs = dts_devices(); seen = set(userstate.get("dts_seen", []))
+    spk = next((d["profile"] for d in devs if d["kind"] == "speakers"), "Music")
+    want = next((d["profile"] for d in devs if d["kind"] == "speakers" and d["profile"] not in ("Plain", "Off")), "Music" if force else None)
+    done = []
+    for d in devs:
+        first = d["ref"] not in seen
+        if not (first or force) or d["kind"] in ("speakers", "headphones") or (d["kind"] == "bluetooth-speaker" and not force): continue      # AcerUltraX keeps Plain for Bluetooth speakers on purpose
+        seen.add(d["ref"])
+        if not want or d["profile"] not in ("Plain", "Off") and not force: continue      # speakers on Plain/Off = the user wants no DTS; a chosen profile stays
+        bits = []
+        if d["profile"] != want: dts("mode", want, "--device", d["ref"]); bits.append(want)
+        if d["kind"] != "bluetooth-speaker" and _HEADSET.search(d["label"]):
+            if not _dts_has_eq(d["ref"]): dts("headphone", "auto", "--device", d["ref"])   # no-op when it does not recognise the name
+            if not _dts_has_eq(d["ref"]): dts("headphone", "default", "--device", d["ref"])
+            bits.append("headphone EQ")
+        if bits: done.append(f"{d['label']}: " + " + ".join(bits))
+    userstate.set("dts_seen", sorted(seen)); return done or ([] if not force else [f"every output is already on {spk}"])

@@ -145,6 +145,7 @@ class TestDaemonLogic(Base):
         b.fake_t = 0.0; b.clock = lambda: b.fake_t                              # Smart auto timers are real seconds: the test clock moves one second per step
         b.read_cpu_load = lambda: None                                          # the test sets cpu_load itself; the real /proc/stat must not pull it down
         b.find_hwmon = lambda: None; b.coretemp = None; b.gpu_temp = 0          # the test drives the temperatures; real sensors must not leak in
+        b.ensure_gpu_stream = lambda: setattr(b, "gpu_started", True)            # no real thread: Smart mode would start a real nvidia-smi thread otherwise: a game running on the machine leaked into the numbers (a flaky test)
         return b
 
     def drive(self, b, n, cpu, gpu, load):
@@ -1035,3 +1036,72 @@ class TestSmartAutoSteadiness(Base):
         for key, bad in (("busy_hold_s", 601), ("turbo_margin_c", 21), ("turbo_retry_s", 5), ("min_change_s", 1)):
             with self.assertRaises(device.HwError): sp.validate({**d, key: bad})
         n = sp.load("native"); self.assertEqual((n["busy_hold_s"], n["min_change_s"]), (0, 2), "native stays as simple as PredatorSense")
+
+REAL_DEVICES = """  Laptop speakers                                    speakers           Music
+    @speakers
+  Headphones (3.5 mm jack)                           headphones         Music
+    @headphones
+  DualSense wireless controller (PS5) Direct DualSense Wireless Controller other              Plain
+    alsa_output.usb-Sony_DualSense-00.Direct__Direct__sink
+* Headset PC38X                                      other              Plain
+    alsa_output.usb-GeneralPlus_USB_Audio_Device-00.analog-stereo
+  Some Speaker                                       bluetooth-speaker  Plain
+    bluez_output.AA.1
+"""
+
+
+class TestDtsEverywhere(unittest.TestCase):
+    """A USB headset sat on AcerUltraX's Plain profile (no processing) because it is an unknown "other" output."""
+    def setUp(self):
+        from truesense import audio, userstate
+        self.audio, self.us = audio, userstate; self.real = (audio.dts, audio._dts_has_eq, audio._dts_bin, userstate.PATH)
+        userstate.PATH = os.path.join(tempfile.mkdtemp(), "user.json")
+        self.profile = {}; self.calls = []; self.eq = set(); self.speakers = "Music"
+        audio.dts = self.fake; audio._dts_has_eq = lambda ref: ref in self.eq; audio._dts_bin = lambda: "/x/acerultrax-cli"
+
+    def tearDown(self): self.audio.dts, self.audio._dts_has_eq, self.audio._dts_bin, self.us.PATH = self.real
+
+    def fake(self, *a, timeout=30):
+        self.calls.append(a)
+        if a[0] == "devices":
+            out = REAL_DEVICES.replace("speakers           Music", f"speakers           {self.speakers}", 1)
+            for ref, prof in self.profile.items(): out = out.replace(f"Plain\n    {ref}", f"{prof}\n    {ref}")
+            return out.strip()                                                   # the real helper's output is stripped: the first row loses its indent
+        if a[0] == "mode" and "--device" in a: self.profile[a[3]] = a[1].capitalize()
+        if a[0] == "headphone" and "--device" in a and a[1] == "default": self.eq.add(a[3])
+        return "ok"
+
+    def test_devices_are_read_including_labels_that_run_into_the_kind_column(self):
+        d = self.audio.dts_devices(); self.assertEqual([x["kind"] for x in d], ["speakers", "headphones", "other", "other", "bluetooth-speaker"]); self.assertEqual(d[0]["label"], "Laptop speakers")
+        self.assertEqual(d[2]["label"], "DualSense wireless controller (PS5) Direct DualSense Wireless Controller"); self.assertEqual(d[3]["current"], True); self.assertEqual(d[3]["ref"], "alsa_output.usb-GeneralPlus_USB_Audio_Device-00.analog-stereo")
+
+    def test_a_plain_usb_headset_gets_the_speakers_profile_and_a_headphone_eq_once(self):
+        done = self.audio.dts_cover(); self.assertTrue(any("Headset PC38X: Music + headphone EQ" in x for x in done), done)
+        self.assertEqual(self.profile.get("alsa_output.usb-GeneralPlus_USB_Audio_Device-00.analog-stereo"), "Music"); self.assertIn("alsa_output.usb-GeneralPlus_USB_Audio_Device-00.analog-stereo", self.eq)
+        self.assertNotIn("bluez_output.AA.1", self.profile, "a Bluetooth speaker keeps Plain")
+        self.calls.clear(); self.assertEqual(self.audio.dts_cover(), []); self.assertEqual([c for c in self.calls if c[0] == "mode"], [], "second look changes nothing")
+
+    def test_a_profile_chosen_on_purpose_later_is_left_alone(self):
+        self.audio.dts_cover(); ref = "alsa_output.usb-GeneralPlus_USB_Audio_Device-00.analog-stereo"; self.profile[ref] = "Plain"; self.calls.clear()
+        self.audio.dts_cover(); self.assertEqual(self.calls and [c for c in self.calls if c[0] in ("mode", "headphone")], [])
+
+    def test_speakers_on_plain_means_no_dts_so_nothing_is_changed(self):
+        self.speakers = "Plain"; self.assertEqual(self.audio.dts_cover(), []); self.assertEqual([c for c in self.calls if c[0] == "mode"], [])
+
+    def test_force_redoes_every_output(self):
+        self.audio.dts_cover(); ref = "alsa_output.usb-GeneralPlus_USB_Audio_Device-00.analog-stereo"; self.profile[ref] = "Plain"
+        self.assertTrue(self.audio.dts_cover(force=True)); self.assertEqual(self.profile[ref], "Music")
+
+    def test_a_mode_choice_goes_to_every_output(self):
+        self.audio.dts_mode("game1", everywhere=True)
+        modes = [c for c in self.calls if c[0] == "mode"]; self.assertEqual(modes[0], ("mode", "game1")); self.assertEqual(len([c for c in modes if "--device" in c]), 4, "every other output, not the current one twice")
+
+    def test_a_headset_plugged_in_later_gets_dts_by_itself(self):
+        sinks = ["alsa_output.pci.speaker"]; real = self.audio._sinks, self.audio.time.sleep; self.audio._sinks = lambda: list(sinks); self.audio.time.sleep = lambda s: None
+        self.audio._dts_sinks = None
+        try:
+            self.audio._watch_dts(); self.assertEqual([c for c in self.calls if c[0] == "mode"], [], "the first look is only a baseline")
+            sinks.append("alsa_output.usb-GeneralPlus_USB_Audio_Device-00.analog-stereo"); self.audio._watch_dts()
+            self.assertTrue([c for c in self.calls if c[0] == "mode"], "the new output was covered")
+        finally: self.audio._sinks, self.audio.time.sleep = real; self.audio._dts_sinks = None
+

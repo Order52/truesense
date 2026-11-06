@@ -228,6 +228,11 @@ def c_audio():
     except Exception: st = {"ok": None}
     if st.get("ok") is False: return WARN, "NO SOUND OUTPUT: " + st["problem"] + "; " + "; ".join(bits), "truesense audio repair   (restarts WirePlumber so it probes the card again)"
     if st.get("ok"): bits.insert(1, "output sink present")
+    if os.geteuid() and audio._dts_bin():                         # the service is per user: ask it as the user, not as root
+        try:
+            bare = [d["label"] for d in audio.dts_devices() if d["profile"] == "Plain" and audio._HEADSET.search(d["label"]) and d["kind"] != "bluetooth-speaker"]
+            if bare: return WARN, "DTS is off (Plain) for: " + ", ".join(bare) + "; " + "; ".join(bits), "truesense audio dts all   (gives every output DTS; new ones get it by themselves)"
+        except Exception: pass
     return (OK if pw else WARN), "; ".join(bits), "" if pw else "systemctl --user start pipewire"
 
 
