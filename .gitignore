@@ -27,3 +27,8 @@ docs/hardware-data/acpi/
 
 # release notes drafted for `gh release create`
 .release-*.md
+
+# coverage output
+.coverage
+coverage.txt
+htmlcov/
