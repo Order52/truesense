@@ -63,7 +63,7 @@ class _OnlyArea:
 
 
 AREAS = ("status", "sensors", "power", "fan", "battery", "display", "boot", "gpu", "rear", "update", "look", "startup", "keyboard", "audio", "keys", "profile", "cpu", "touchpad",
-         "service", "config", "doctor", "selftest", "completion", "gui", "daemon", "version")       # a test keeps this in step with build()
+         "service", "config", "doctor", "selftest", "completion", "gui", "tui", "daemon", "version")       # a test keeps this in step with build()
 
 
 def build(only=None):
@@ -191,7 +191,7 @@ def build(only=None):
     p = sub.add_parser("doctor", help="check the whole stack and say how to fix problems")
     p = sub.add_parser("selftest", help="set -> read back -> restore every firmware feature"); p.add_argument("--skip-fans", action="store_true")
     p = sub.add_parser("completion", help="shell completion script"); p.add_argument("shell", choices=["bash", "zsh", "fish"])
-    g = sub.add_parser("gui", help="the small optional window"); g.add_argument("--page", choices=["home", "keys", "audio", "settings"], help="open on this page"); sub.add_parser("daemon", help="run the daemon (systemd does this)"); sub.add_parser("version")
+    g = sub.add_parser("gui", help="the small optional window"); g.add_argument("--page", choices=["home", "keys", "audio", "settings"], help="open on this page"); t = sub.add_parser("tui", help="the full control surface in the terminal (keyboard and mouse)"); t.add_argument("--page", choices=["dashboard", "fans", "power", "lighting", "audio", "profiles", "system"], help="open on this page"); sub.add_parser("daemon", help="run the daemon (systemd does this)"); sub.add_parser("version")
     return ap
 
 
@@ -684,6 +684,8 @@ def main(argv=None):
             from . import selftest; return 0 if selftest.run(a.skip_fans) else 1
         if a.area == "gui":
             from . import gui; return gui.main(a.page) or 0
+        if a.area == "tui":
+            from . import tui; return tui.main(["dashboard", "fans", "power", "lighting", "audio", "profiles", "system"].index(a.page) if a.page else None)
         if a.area == "daemon":
             from . import daemon; daemon.main(); return 0
         if a.area == "version": emit({"truesense": __version__}, f"truesense {__version__}"); return 0

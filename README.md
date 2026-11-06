@@ -38,6 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh
 ```
 truesense doctor          # checks everything and says how to fix what is wrong
 truesense gui             # the window
+truesense tui             # the same, in the terminal (keyboard and mouse; nothing to install)
 ```
 
 The installer detects Arch, Debian/Ubuntu, Fedora and openSUSE families, installs the prerequisites (dkms, compiler, kernel headers, Python, socat, the window's Qt) with the system package manager, test-builds the kernel module before touching anything, swaps the program files atomically and rolls back if the service does not start. Options, offline install, uninstall and per-distribution notes: [docs/INSTALL.md](docs/INSTALL.md). Only Arch/CachyOS has been tested on real hardware; the other families are covered by unit tests of the detection logic only (see [docs/STATUS.md](docs/STATUS.md)).
