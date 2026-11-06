@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.13", cache: pip }
+        with: { python-version: "3.13" }
       - name: "Python (ruff.toml: real bugs and unused code)"
         run: pip install ruff && ruff check .
       - name: Shell scripts (shellcheck, warnings and up)
@@ -56,7 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "${{ matrix.python }}", allow-prereleases: true, cache: pip }
+        with: { python-version: "${{ matrix.python }}", allow-prereleases: true }
       - name: Qt for the window tests (they skip without it)
         run: |
           sudo apt-get update -qq
