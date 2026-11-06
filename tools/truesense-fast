@@ -9,7 +9,7 @@ ok() { case "$1" in *'"ok": true'*) return 0;; esac; return 1; }
 case "$1" in
   fan)
     case "$2" in
-      smart|auto|max) r=$(send "{\"cmd\": \"fan\", \"args\": {\"mode\": \"$2\"}}"); ok "$r" || exec truesense fan $( [ "$2" = smart ] && echo smart on || echo "$2" ) ;;
+      smart|auto|max) r=$(send "{\"cmd\": \"fan\", \"args\": {\"mode\": \"$2\"}}"); ok "$r" || if [ "$2" = smart ]; then exec truesense fan smart on; else exec truesense fan "$2"; fi ;;
       [0-9]*) r=$(send "{\"cmd\": \"fan\", \"args\": {\"mode\": \"manual\", \"cpu\": $2}}"); ok "$r" || exec truesense fan set "$2" ;;
       *) echo "usage: truesense-fast fan smart|auto|max|<20-100>" >&2; exit 2 ;;
     esac ;;

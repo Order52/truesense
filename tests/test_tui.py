@@ -2,6 +2,7 @@
 """The terminal UI, tested without a terminal: the same drawing code writes into a text grid, and keys and mouse clicks are fed in directly.
 Nothing here touches the real service or sound system (the daemon socket is made unavailable)."""
 import os
+import pathlib
 import subprocess
 import tempfile
 import time
@@ -206,7 +207,7 @@ class TestCli(unittest.TestCase):
 
 class TestMenuEntry(unittest.TestCase):
     def test_the_application_menu_entry_opens_the_tui_in_a_terminal_and_is_installed_everywhere(self):
-        root = os.path.join(os.path.dirname(__file__), ".."); rd = lambda p: open(os.path.join(root, p)).read()
+        root = os.path.join(os.path.dirname(__file__), ".."); rd = lambda p: pathlib.Path(root, p).read_text()
         d = dict(l.split("=", 1) for l in rd("packaging/truesense-tui.desktop").splitlines() if "=" in l)
         self.assertEqual(d["Exec"], "@PREFIX@/bin/truesense tui"); self.assertEqual(d["Terminal"], "true"); self.assertEqual(d["Type"], "Application"); self.assertIn("Name", d); self.assertIn("Icon", d)
         for f in ("tools/install.sh", "tools/uninstall.sh", "packaging/arch/PKGBUILD", "packaging/aur/PKGBUILD.template"): self.assertIn("truesense-tui.desktop", rd(f), f)

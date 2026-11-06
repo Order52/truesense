@@ -1,0 +1,165 @@
+name: Release
+
+# Push a tag (python3 tools/release.py prepare X.Y.Z --title "..." --push does everything) and this publishes the release:
+# verified version, full tests, a reproducible source tarball, an Arch package, SHA256SUMS, build provenance attestations, and the notes from RELEASE_NOTES.md.
+# Run it by hand (Actions, Release, Run workflow) to re-publish an existing tag or to rehearse: "dry run" builds everything and publishes nothing.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      tag: { description: "Existing tag to (re)publish, e.g. v0.3.16", required: true }
+      dry_run: { description: "Build and check everything, publish nothing", type: boolean, default: true }
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  verify:
+    name: Verify the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}", fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13", cache: pip }
+      - name: The tag, every versioned file and the release notes agree
+        id: v
+        run: |
+          python3 tools/release.py check --tag "$TAG"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          python3 tools/release.py notes "${TAG#v}" > /dev/null
+      - name: The tagged commit is on main (nobody releases a side branch by accident)
+        run: git merge-base --is-ancestor "$TAG" origin/main || { echo "::error::$TAG is not on main"; exit 1; }
+      - name: Full test suite and lint
+        env: { QT_QPA_PLATFORM: offscreen }
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 "linux-headers-$(uname -r)"
+          pip install PyQt6 ruff
+          ruff check .
+          python3 -m unittest discover -s tests -t .
+          bash tools/ci/build-modules.sh "$(uname -r)"
+
+  build:
+    name: Build the release files
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write          # build provenance is signed with the workflow's own identity (Sigstore), no keys to manage
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}" }
+      - name: Source tarball (the same layout GitHub's archive has, byte-for-byte reproducible)
+        run: |
+          v='${{ needs.verify.outputs.version }}'; mkdir dist
+          git archive --format=tar --prefix="truesense-$v/" "$TAG" | gzip -n -9 > "dist/truesense-$v.tar.gz"
+          python3 tools/release.py notes "$v" > dist/RELEASE-NOTES.md
+      - name: Reproducible? (a second build must be identical)
+        run: |
+          v='${{ needs.verify.outputs.version }}'
+          git archive --format=tar --prefix="truesense-$v/" "$TAG" | gzip -n -9 | sha256sum | cut -d' ' -f1 > again.sha
+          [ "$(sha256sum "dist/truesense-$v.tar.gz" | cut -d' ' -f1)" = "$(cat again.sha)" ] || { echo "::error::the tarball is not reproducible"; exit 1; }
+      - name: The tarball installs what a user needs
+        run: |
+          v='${{ needs.verify.outputs.version }}'; tar -tzf "dist/truesense-$v.tar.gz" > list.txt
+          for f in tools/install.sh tools/get.sh src/truesense/tui.py src/truesense/__init__.py kernel/truesense-wmi/truesense_wmi.c packaging/truesense.service; do grep -q "truesense-$v/$f" list.txt || { echo "::error::tarball lacks $f"; exit 1; }; done
+      - name: Upload for the next jobs
+        uses: actions/upload-artifact@v4
+        with: { name: dist-source, path: dist, if-no-files-found: error }
+
+  package-arch:
+    name: Build the Arch package
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm base-devel git
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}" }
+      - name: makepkg (unprivileged)
+        run: |
+          useradd -m builder; chown -R builder: "$GITHUB_WORKSPACE"
+          su builder -c "cd '$GITHUB_WORKSPACE/packaging/arch' && makepkg -f --nodeps --noconfirm"
+          mkdir dist && cp packaging/arch/*.pkg.tar.zst dist/
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-arch, path: dist, if-no-files-found: error }
+
+  publish:
+    name: Publish
+    needs: [verify, build, package-arch]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write          # create the release and upload the files
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}" }
+      - uses: actions/download-artifact@v4
+        with: { pattern: "dist-*", path: dist, merge-multiple: true }
+      - name: SHA256SUMS
+        run: |
+          cd dist && sha256sum truesense-*.tar.gz truesense-*.pkg.tar.zst > SHA256SUMS && cat SHA256SUMS
+      - name: Build provenance (who built these files, from which commit, by which workflow)
+        if: github.event.inputs.dry_run != 'true'
+        uses: actions/attest-build-provenance@v2
+        with: { subject-path: "dist/truesense-*" }
+      - name: Create or update the GitHub release
+        if: github.event.inputs.dry_run != 'true'
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          v='${{ needs.verify.outputs.version }}'
+          title="TrueSense $v: $(grep -m1 "^## $v (" RELEASE_NOTES.md | sed -E 's/^## [^ ]+ \([^)]*\):? ?//')"
+          files=(dist/truesense-*.tar.gz dist/truesense-*.pkg.tar.zst dist/SHA256SUMS)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$title" --notes-file dist/RELEASE-NOTES.md --latest
+            gh release upload "$TAG" "${files[@]}" --clobber
+          else
+            gh release create "$TAG" "${files[@]}" --title "$title" --notes-file dist/RELEASE-NOTES.md --latest --verify-tag
+          fi
+      - name: Dry run summary
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          { echo "### Dry run of $TAG: nothing was published"; echo '```'; cat dist/SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: The published release downloads and verifies the way users get it
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          v='${{ needs.verify.outputs.version }}'; sleep 5
+          TRUESENSE_GET_ONLY=1 TRUESENSE_VERSION="$v" bash tools/get.sh
+
+  aur:
+    name: Publish to the AUR (when configured)
+    needs: [publish]
+    if: github.event.inputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Skipped unless the AUR_SSH_PRIVATE_KEY secret is set
+        id: gate
+        env: { KEY: "${{ secrets.AUR_SSH_PRIVATE_KEY }}" }
+        run: |
+          if [ -n "$KEY" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "AUR_SSH_PRIVATE_KEY is not set, skipping (publish by hand with tools/aur-publish.sh)"; fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == '1'
+        with: { ref: "${{ env.TAG }}" }
+      - name: Push the new PKGBUILD
+        if: steps.gate.outputs.go == '1'
+        env: { AUR_SSH_PRIVATE_KEY: "${{ secrets.AUR_SSH_PRIVATE_KEY }}" }
+        run: |
+          install -m 600 -D /dev/stdin ~/.ssh/aur <<< "$AUR_SSH_PRIVATE_KEY"
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" bash tools/aur-publish.sh "${TAG#v}"

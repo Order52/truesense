@@ -22,6 +22,7 @@ say() { printf '  %s\n' "$*"; }; step() { printf '\n== %s\n' "$*"; }; die() { pr
 # ---- which distribution is this? -----------------------------------------------------------------------------------------------------
 detect_os() {
   local f=${TRUESENSE_OS_RELEASE:-/etc/os-release} id="" like=""
+  # shellcheck disable=SC1090  # os-release is a shell-syntax file by specification; its path is fixed or set by the tests
   if [ -r "$f" ]; then id=$(. "$f"; printf '%s' "${ID:-}"); like=$(. "$f"; printf '%s' "${ID_LIKE:-}"); fi
   OS_ID=${id:-unknown}
   case " $id $like " in
@@ -31,6 +32,30 @@ detect_os() {
     *" suse "*|*" opensuse "*|*" opensuse-tumbleweed "*|*" sles "*) FAMILY=suse;;
     *) FAMILY=unknown;;
   esac
+}
+
+# supported = verified on hardware; a similar Acer laptop is UNVERIFIED (read-only probe first); anything else does not apply
+model_tier() {
+  case "$1" in
+    "Predator PH16-71") echo "(supported)";;
+    Predator*|Nitro*) echo "(similar Acer laptop: NOT supported yet. The installer needs --force and nothing is verified on it. Safer first step: the read-only probe, see docs/INSTALL.md, 'Other models')";;
+    *) echo "(NOT supported: this is not an Acer Predator; --force exists but TrueSense does not apply)";;
+  esac
+}
+
+# refuses a machine that is not the verified model unless --force; says what to do instead. Writes the force option only when forced.
+model_gate() {
+  local model hint; model=$(cat "${TRUESENSE_DMI:-/sys/class/dmi/id}/product_name" 2>/dev/null || echo unknown)
+  if [ "$model" = "Predator PH16-71" ]; then
+    say "model: $model, BIOS $(cat "${TRUESENSE_DMI:-/sys/class/dmi/id}/bios_version" 2>/dev/null)"; [ "${TRUESENSE_LIB_ONLY:-}" = 1 ] || rm -f /etc/modprobe.d/truesense-force.conf; return 0
+  fi
+  case "$model" in
+    Predator*|Nitro*) hint="This is a similar Acer laptop that TrueSense has not been verified on. Read-only first: load the module with 'modprobe truesense_wmi force=1', run 'truesense probe', and share the report (docs/INSTALL.md, 'Other models').";;
+    *) hint="This is not an Acer Predator.";;
+  esac
+  if [ "$FORCE" != 1 ]; then printf '!! this machine is %s, not an Acer Predator PH16-71. TrueSense talks to firmware and is only verified on the PH16-71. %s Re-run with --force only if you accept that it can misbehave.\n' "'$model'" "$hint" >&2; return 1; fi
+  say "WARNING: '$model' is unsupported; continuing because of --force"
+  [ "${TRUESENSE_LIB_ONLY:-}" = 1 ] || printf 'options truesense_wmi force=1\n' > /etc/modprobe.d/truesense-force.conf
 }
 
 # the kernel-headers package that matches the RUNNING kernel (Arch kernels name it after their package base, e.g. linux-cachyos-headers)
@@ -85,7 +110,7 @@ check_prereqs() {
   have socat || MISSING+=("$(pkg socat)")                                                                                  # optional but tiny: instant status-bar buttons
   [ -e "/lib/modules/$k/build" ] || MISSING+=("$(headers_pkg)")
   if [ "$GUI" = 1 ] && have python3 && ! python3 -c 'import PyQt6.QtWidgets' 2>/dev/null; then MISSING+=("$(pkg gui)"); fi
-  local m; local flat=(); for m in "${MISSING[@]}"; do [ -n "$m" ] && flat+=($m); done; MISSING=("${flat[@]}")                # "clang llvm lld" -> three entries
+  local m parts; local flat=(); for m in "${MISSING[@]}"; do [ -n "$m" ] && read -ra parts <<<"$m" && flat+=("${parts[@]}"); done; MISSING=("${flat[@]}")                # "clang llvm lld" -> three entries
 }
 
 ensure_deps() {
@@ -111,7 +136,7 @@ precompile_module() {
     die "the kernel module does not build for $(uname -r) (full log: /var/log/truesense-module-build.log). Nothing was changed."; fi
 }
 
-wait_for_service() { local i; for i in $(seq 1 30); do systemctl is-active --quiet truesense.service && [ -S /run/truesense/truesense.sock ] && return 0; sleep 0.5; done; return 1; }
+wait_for_service() { local _; for _ in $(seq 1 30); do systemctl is-active --quiet truesense.service && [ -S /run/truesense/truesense.sock ] && return 0; sleep 0.5; done; return 1; }
 
 rollback() {
   echo "!! the service did not start with the new version: restoring the previous one"
@@ -131,7 +156,7 @@ main() {
   if [ "$CHECK" = 1 ]; then
     echo "TrueSense installer check (nothing is changed)"; step "this system"
     say "distribution: $OS_ID (family: $FAMILY), kernel $(uname -r), package manager: $(case $FAMILY in arch) echo pacman;; debian) echo apt;; fedora) echo dnf;; suse) echo zypper;; *) echo unknown;; esac)"
-    model=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo unknown); say "model: $model $([ "$model" = "Predator PH16-71" ] && echo '(supported)' || echo '(NOT a PH16-71: the installer needs --force and it is unsupported)')"
+    model=$(cat "${TRUESENSE_DMI:-/sys/class/dmi/id}/product_name" 2>/dev/null || echo unknown); say "model: $model $(model_tier "$model")"
     step "prerequisites"; check_prereqs
     for p in "${PROBLEMS[@]}"; do say "problem: $p"; done
     if [ "${#MISSING[@]}" -eq 0 ] && [ "${#PROBLEMS[@]}" -eq 0 ]; then say "everything needed is present: sudo tools/install.sh will go straight to installing"
@@ -155,11 +180,7 @@ main() {
   echo "TrueSense installer $(date '+%F %T')  prefix=$PREFIX  user=$USER_NAME  distribution=$OS_ID ($FAMILY)"
 
   step "pre-flight checks"
-  local model; model=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo unknown)
-  if [ "$model" != "Predator PH16-71" ]; then
-    [ "$FORCE" = 1 ] || die "this machine is '$model', not an Acer Predator PH16-71. TrueSense talks to firmware and is only tested on the PH16-71. Re-run with --force to override."
-    say "WARNING: '$model' is unsupported; continuing because of --force"; printf 'options truesense_wmi force=1\n' > /etc/modprobe.d/truesense-force.conf
-  else say "model: $model, BIOS $(cat /sys/class/dmi/id/bios_version 2>/dev/null)"; rm -f /etc/modprobe.d/truesense-force.conf; fi
+  model_gate || exit 1
   ensure_deps
   if have mokutil && mokutil --sb-state 2>/dev/null | grep -qi "enabled"; then
     if [ -e /var/lib/dkms/mok.pub ] && mokutil --test-key /var/lib/dkms/mok.pub 2>&1 | grep -qi "already enrolled"; then say "Secure Boot: on, DKMS signing key enrolled: ok"

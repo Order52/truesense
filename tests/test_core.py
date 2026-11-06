@@ -456,21 +456,44 @@ class TestDaemonLogic(Base):
                 for name, data in files.items():
                     ti = tarfile.TarInfo(f"{root}/{name}" if root else name); ti.size = len(data); ti.mode = 0o644; tf.addfile(ti, io.BytesIO(data))
             return buf.getvalue()
-        def opener_for(blob):
-            return lambda req, timeout=30: io.BytesIO(blob)
+        import hashlib
+        import urllib.error
+
+        def opener_for(blob, sums="auto", ver="9.9.9"):
+            """What GitHub serves: the release asset and its SHA256SUMS (sums=None: a release without one; a string: that exact text)."""
+            def op(req, timeout=30):
+                url = req.full_url
+                if url.endswith("/SHA256SUMS"):
+                    if sums is None: raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+                    return io.BytesIO((f"{hashlib.sha256(blob).hexdigest()}  truesense-{ver}.tar.gz\n" if sums == "auto" else sums).encode())
+                return io.BytesIO(blob)
+            return op
         good = {"tools/install.sh": b"#!/bin/sh\n", "src/truesense/__init__.py": b'__version__ = "9.9.9"\n', "kernel/truesense-wmi/truesense_wmi.c": b"//"}
-        root, sha = update.download("v9.9.9", "o/r", opener=opener_for(tarball(good))); self.assertTrue(os.access(root + "/tools/install.sh", os.X_OK)); self.assertEqual(len(sha), 64)
+        root, sha, verified = update.download("v9.9.9", "o/r", opener=opener_for(tarball(good))); self.assertTrue(os.access(root + "/tools/install.sh", os.X_OK)); self.assertEqual(len(sha), 64); self.assertTrue(verified)
         shutil = __import__("shutil"); shutil.rmtree(os.path.dirname(os.path.dirname(root)))
         for bad, why in ((dict(good, **{"src/truesense/__init__.py": b'__version__ = "9.9.8"\n'}), "wrong version inside"), ({k: v for k, v in good.items() if k != "tools/install.sh"}, "not a release"),
                          ({"../evil.sh": b"x", **good}, "path escape")):
             with self.assertRaises(device.HwError, msg=why): update.download("v9.9.9", "o/r", opener=opener_for(tarball(bad)))
         with self.assertRaises(device.HwError): update.download("main", "o/r", opener=opener_for(b""))                     # only version tags
+        blob = tarball(good)
+        with self.assertRaises(device.HwError) as c: update.download("v9.9.9", "o/r", opener=opener_for(blob, sums="0" * 64 + "  truesense-9.9.9.tar.gz\n"))
+        self.assertIn("checksum mismatch", str(c.exception))
+        with self.assertRaises(device.HwError) as c: update.download("v9.9.9", "o/r", opener=opener_for(blob, sums=None))
+        self.assertIn("no SHA256SUMS", str(c.exception)); self.assertIn("refusing", str(c.exception))                      # new releases must carry a list: it cannot be skipped
+        with self.assertRaises(device.HwError) as c: update.download("v9.9.9", "o/r", opener=opener_for(blob, sums=hashlib.sha256(blob).hexdigest() + "  something-else.tar.gz\n"))
+        self.assertIn("does not list", str(c.exception))
+        def flaky(req, timeout=30): raise urllib.error.URLError("offline")
+        with self.assertRaises(device.HwError) as c: update.download("v9.9.9", "o/r", opener=flaky)
+        self.assertIn("could not fetch the release checksums", str(c.exception))                                           # offline never means "skip the check"
+        old = tarball(dict(good, **{"src/truesense/__init__.py": b'__version__ = "0.3.15"\n'}), root="truesense-0.3.15")
+        root, sha, verified = update.download("v0.3.15", "o/r", opener=opener_for(old, sums=None)); self.assertFalse(verified, "a release from before the checksums existed still installs, unverified")
+        shutil.rmtree(os.path.dirname(os.path.dirname(root)))
         ran = []; real = update.check
         update.check = lambda force=False, hours=None: {"current": "0.0.1", "latest": "9.9.9", "available": True, "checked_at": 0, "error": None, "info": {"tag": "v9.9.9", "version": "9.9.9"}}
         try:
             res = update.apply("v9.9.9", gui=False, run=lambda cmd: (ran.append(cmd), type("R", (), {"returncode": 0})())[1], fetch=lambda tag: update.download(tag, "o/r", opener=opener_for(tarball(good))))
         finally: update.check = real
-        self.assertEqual(res["returncode"], 0); self.assertTrue(ran and ran[0][-1].endswith("tools/install.sh")); self.assertIn(ran[0][0], ("sudo", "pkexec", ran[0][0]))
+        self.assertEqual(res["returncode"], 0); self.assertTrue(res["verified"]); self.assertTrue(ran and ran[0][-1].endswith("tools/install.sh")); self.assertIn(ran[0][0], ("sudo", "pkexec", ran[0][0]))
 
     def test_survives_a_missing_device(self):
         b = self.make(); self.drive(b, 30, 45, 45, 2); real = device.SIM.run

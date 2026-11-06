@@ -1,0 +1,37 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "41 3 * * 3"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (Python, C)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, c-cpp]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.language == 'c-cpp' && 'manual' || 'none' }}
+      - name: Build the kernel module for CodeQL (C)
+        if: matrix.language == 'c-cpp'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq "linux-headers-$(uname -r)"
+          cd kernel/truesense-wmi && make KVER="$(uname -r)"
+      - uses: github/codeql-action/analyze@v3
+        with: { category: "/language:${{ matrix.language }}" }

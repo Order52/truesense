@@ -101,11 +101,43 @@ def _safe_extract(tar, dest):
     tar.extractall(dest)
 
 
+SUMS_REQUIRED_FROM = (0, 3, 16)         # releases built by the release pipeline carry SHA256SUMS; from this version on a missing list is refused, never skipped
+
+
+def _read_small(opener, url, limit=1 << 20, timeout=20):
+    req = urllib.request.Request(url, headers={"User-Agent": f"truesense/{__version__}"})
+    with opener(req, timeout=timeout) as resp: return resp.read(limit + 1)[:limit]
+
+
+def checksums(r, tag, opener=urllib.request.urlopen):
+    """The release's SHA256SUMS as {file name: sha256}, or None when the release has none (an old one). Any other failure is an error: a missing list must never silently turn verification off."""
+    try: data = _read_small(opener, f"https://github.com/{r}/releases/download/{tag}/SHA256SUMS")
+    except urllib.error.HTTPError as e:
+        if e.code == 404: return None
+        raise HwError(f"could not fetch the release checksums (HTTP {e.code}); try again later") from e
+    except (urllib.error.URLError, OSError) as e: raise HwError(f"could not fetch the release checksums ({e}); try again later") from e
+    out = {}
+    for line in data.decode("utf-8", "replace").splitlines():
+        m = re.fullmatch(r"([0-9a-fA-F]{64})\s+\*?(\S+)", line.strip())
+        if m: out[os.path.basename(m.group(2))] = m.group(1).lower()
+    return out
+
+
 def download(tag, r=None, opener=urllib.request.urlopen):
-    """Fetch and unpack a tagged release into a fresh private folder. Returns (folder, sha256). Verifies the version inside matches the tag."""
+    """Fetch and unpack a tagged release into a fresh private folder. Returns (folder, sha256, verified).
+    A release made by the release pipeline is downloaded as its published asset and must match its SHA256SUMS (verified=True); an old release without one is fetched as GitHub's tag archive
+    (verified=False). Either way the version inside has to match the tag."""
     r = r or repo(); t = parse(tag)
     if not t: raise HwError(f"not a version tag: {tag!r}")
-    work = tempfile.mkdtemp(prefix="truesense-update-"); os.chmod(work, 0o700); url = f"https://github.com/{r}/archive/refs/tags/{tag}.tar.gz"
+    ver = ".".join(map(str, t)); asset = f"truesense-{ver}.tar.gz"; sums = checksums(r, tag, opener); expected = None
+    if sums is None:
+        if t >= SUMS_REQUIRED_FROM: raise HwError(f"release {tag} has no SHA256SUMS: refusing to install something that cannot be verified")
+        url = f"https://github.com/{r}/archive/refs/tags/{tag}.tar.gz"
+    else:
+        expected = sums.get(asset)
+        if not expected: raise HwError(f"SHA256SUMS of {tag} does not list {asset}: refusing")
+        url = f"https://github.com/{r}/releases/download/{tag}/{asset}"
+    work = tempfile.mkdtemp(prefix="truesense-update-"); os.chmod(work, 0o700)
     try:
         req = urllib.request.Request(url, headers={"User-Agent": f"truesense/{__version__}"}); h = hashlib.sha256(); path = os.path.join(work, "release.tar.gz"); size = 0
         with opener(req, timeout=30) as resp, open(path, "wb") as f:
@@ -115,6 +147,7 @@ def download(tag, r=None, opener=urllib.request.urlopen):
                 size += len(chunk)
                 if size > MAX_BYTES: raise HwError("the download is unexpectedly large; refusing")
                 h.update(chunk); f.write(chunk)
+        if expected and h.hexdigest() != expected: raise HwError(f"checksum mismatch for {asset} (expected {expected[:12]}…, got {h.hexdigest()[:12]}…): refusing")
         src = os.path.join(work, "src"); os.mkdir(src)
         with tarfile.open(path) as tar: _safe_extract(tar, src)
         roots = os.listdir(src)
@@ -124,7 +157,7 @@ def download(tag, r=None, opener=urllib.request.urlopen):
             if not os.path.isfile(os.path.join(root, need)): raise HwError(f"the download is not a TrueSense release (missing {need})")
         with open(os.path.join(root, "src/truesense/__init__.py")) as f: inside = re.search(r'__version__\s*=\s*"([^"]+)"', f.read())
         if not inside or parse(inside.group(1)) != t: raise HwError(f"the download says version {inside.group(1) if inside else '?'}, not {tag}; refusing")
-        os.chmod(os.path.join(root, "tools/install.sh"), 0o755); return root, h.hexdigest()
+        os.chmod(os.path.join(root, "tools/install.sh"), 0o755); return root, h.hexdigest(), bool(expected)
     except BaseException:
         shutil.rmtree(work, ignore_errors=True); raise
 
@@ -175,7 +208,7 @@ def installed_version(path="/usr/local/lib/truesense/truesense/__init__.py"):
 
 
 def apply(tag=None, gui=False, run=subprocess.run, fetch=download, agent=None, term=None):
-    """Download the release and run its installer. Returns {"version", "sha256", "returncode", "via"}.
+    """Download the release and run its installer. Returns {"version", "sha256", "verified" (matched the release's SHA256SUMS), "returncode", "via"}.
     From the window (gui=True) with no polkit agent there is no way to ask for a password, so a terminal window runs `sudo truesense update apply` instead."""
     info = check(force=True)
     if info["error"] and not info["info"]: raise HwError(info["error"])
@@ -185,8 +218,8 @@ def apply(tag=None, gui=False, run=subprocess.run, fetch=download, agent=None, t
         if not cmd: raise HwError("this desktop has no password prompt for the window (no polkit agent) and no terminal was found. Run this in a terminal instead: truesense update apply")
         r = run(cmd); ok = installed_version() == version
         return {"version": version, "sha256": "", "returncode": 0 if ok else (r.returncode or 1), "via": "terminal", "installed": installed_version()}
-    root, sha = fetch(tag)
+    root, sha, verified = fetch(tag)
     try:
         r = run(elevate_command(os.path.join(root, "tools/install.sh"), gui, agent))
-        return {"version": version, "sha256": sha, "returncode": r.returncode, "via": "installer"}
+        return {"version": version, "sha256": sha, "verified": verified, "returncode": r.returncode, "via": "installer"}
     finally: shutil.rmtree(os.path.dirname(os.path.dirname(root)), ignore_errors=True)

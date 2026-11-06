@@ -25,5 +25,8 @@ python3 tools/screenshots.py    # regenerate docs/images (needs python-pyqt6)
 - Kernel module: `make module-test` builds it for every installed kernel with warnings on; keep it warning-free.
 - Run `make check` before you push (it runs the tests, `make lint` and the shell syntax checks). `make lint` uses [ruff](https://docs.astral.sh/ruff/) with the rules in `ruff.toml`; install it with `pip install ruff` (it is skipped when missing, CI always runs it).
 
+## Releasing and CI
+See docs/RELEASING.md: `python3 tools/release.py prepare X.Y.Z --title "..."` then push the tag. CI runs on every push (lint, shellcheck, tests on Python 3.11 to 3.14, the module on several distributions' kernels, the installer on five distribution families, the Arch package).
+
 ## Reporting
 Use the issue templates. Include `truesense doctor --json`.

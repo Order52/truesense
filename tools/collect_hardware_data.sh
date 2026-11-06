@@ -9,7 +9,7 @@ OUT=$(realpath -m "${1:-$(dirname "$0")/../collected-hardware-data}"); mkdir -p 
 have() { command -v "$1" >/dev/null || echo "MISSING: $1 (skipping its part)"; }
 have acpidump; have iasl; have rdmsr
 
-mkdir -p acpi && cd acpi
+mkdir -p acpi && cd acpi || exit 1
 if command -v acpidump >/dev/null; then
   acpidump -b >/dev/null 2>&1 && ls *.dat >/dev/null 2>&1 && echo "acpidump: $(ls *.dat | wc -l) tables"
   if command -v iasl >/dev/null; then iasl -e ssdt*.dat -d dsdt.dat >/dev/null 2>&1; for f in ssdt*.dat; do iasl -e dsdt.dat ssdt*.dat -d "$f" >/dev/null 2>&1; done; fi
@@ -23,7 +23,7 @@ cd ..
 { for d in /sys/bus/wmi/devices/*; do echo "== $d"; cat "$d/modalias" 2>/dev/null; readlink "$d/driver" 2>/dev/null; done
   echo; ls -R /sys/devices/platform/acer-wmi 2>/dev/null | head -80
   echo; cat /sys/firmware/acpi/platform_profile{,_choices} 2>&1
-  echo; ls /sys/class/hwmon/*/name | xargs -n1 -I{} sh -c 'echo {}: $(cat {})'; } > wmi_sysfs_state.txt 2>&1
+  echo; for n in /sys/class/hwmon/*/name; do echo "$n: $(cat "$n")"; done; } > wmi_sysfs_state.txt 2>&1
 
 # Codec GPIO / mic-mute LED data (read only)
 HW=""; for d in /dev/snd/hwC*D*; do n=${d##*/}; [ "$(cat /sys/class/sound/$n/vendor_id 2>/dev/null)" = "0x10ec0245" ] && HW=$d; done

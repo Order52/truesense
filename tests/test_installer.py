@@ -59,3 +59,38 @@ class TestInstallerPrecompiles(unittest.TestCase):
         self.assertIn('-d "$PREFIX/lib/truesense/truesense"', s, "error messages must point at the final location, not the staging directory")
         for pkg in ("packaging/arch/PKGBUILD", "packaging/aur/PKGBUILD.template"):
             with open(_os.path.join(root, pkg)) as f: self.assertIn("compileall", f.read(), pkg)
+
+
+class TestModelTiers(unittest.TestCase):
+    """The installer says clearly whether a laptop is verified, similar-but-unverified, or not an Acer Predator at all, and never installs on the latter two without --force."""
+    def dmi(self, product, vendor="Acer"):
+        d = tempfile.mkdtemp()
+        for n, v in (("product_name", product), ("sys_vendor", vendor), ("bios_version", "V1.0")): open(os.path.join(d, n), "w").write(v + "\n")
+        return d
+
+    def check(self, product, vendor="Acer"):
+        env = dict(os.environ, TRUESENSE_DMI=self.dmi(product, vendor), TRUESENSE_OS_RELEASE="/etc/os-release")
+        return subprocess.run(["bash", f"{ROOT}/tools/install.sh", "--check"], capture_output=True, text=True, env=env).stdout
+
+    def test_the_three_tiers_in_the_check_report(self):
+        self.assertIn("(supported)", self.check("Predator PH16-71"))
+        for similar in ("Predator PH16-72", "Predator PH18-71", "Predator PHN16-71", "Nitro AN16-41"):
+            out = self.check(similar); self.assertIn("NOT supported yet", out, similar); self.assertIn("--force", out); self.assertIn("probe", out)
+        out = self.check("Inspiron 15", "Dell Inc."); self.assertIn("NOT supported", out); self.assertIn("not an Acer Predator", out)
+
+    def gate(self, product, force=0):
+        env = dict(os.environ, TRUESENSE_LIB_ONLY="1", TRUESENSE_DMI=self.dmi(product))
+        return subprocess.run(["bash", "-c", f'source "{ROOT}/tools/install.sh"; FORCE={force}; model_gate'], capture_output=True, text=True, env=env)
+
+    def test_installing_on_another_model_is_refused_with_the_safe_next_step(self):
+        r = self.gate("Predator PH18-71"); self.assertEqual(r.returncode, 1); self.assertIn("not an Acer Predator PH16-71", r.stderr); self.assertIn("truesense probe", r.stderr); self.assertIn("similar Acer laptop", r.stderr)
+        r = self.gate("OptiPlex"); self.assertEqual(r.returncode, 1); self.assertIn("This is not an Acer Predator", r.stderr)
+        r = self.gate("Predator PH16-71"); self.assertEqual(r.returncode, 0); self.assertIn("(supported)" if False else "model: Predator PH16-71", r.stdout)
+        r = self.gate("Predator PH18-71", force=1); self.assertEqual(r.returncode, 0); self.assertIn("WARNING", r.stdout)
+
+    def test_tiers_as_a_function(self):
+        for product, word in (("Predator PH16-71", "supported)"), ("Predator PHN16-71", "NOT supported yet"), ("Nitro V 15", "NOT supported yet"), ("OptiPlex", "not an Acer Predator")):
+            env = dict(os.environ, TRUESENSE_LIB_ONLY="1")
+            out = subprocess.run(["bash", "-c", f'source "{ROOT}/tools/install.sh"; model_tier "{product}"'], capture_output=True, text=True, env=env).stdout
+            self.assertIn(word, out, product)
+

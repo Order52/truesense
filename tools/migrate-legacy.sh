@@ -25,7 +25,7 @@ EXIST=""; for p in $FILES /usr/src/linuwu_sense-* /usr/src/acer-rear-wmi-*; do [
 if [ -n "$EXIST" ]; then tar -czf "$B" $EXIST 2>/dev/null && say "backup: $B ($(echo $EXIST | wc -w) items)"; else say "nothing to back up (no legacy files found)"; B=""; fi
 
 # 2. fans back to firmware control, then stop and disable the old services (system, then the invoking user's)
-for dev in /dev/acer-rear; do [ -w "$dev" ] && echo set_fan_auto > "$dev" 2>/dev/null; done
+[ -w /dev/acer-rear ] && echo set_fan_auto > /dev/acer-rear 2>/dev/null
 for f in /sys/devices/platform/acer-wmi/predator_sense/fan_speed /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/fan_speed; do [ -w "$f" ] && echo "0,0" > "$f" 2>/dev/null; done
 for u in $SYS_UNITS; do systemctl disable --now "$u" >/dev/null 2>&1; done
 systemctl --global disable rpredatorsense-keys.service rpredatorsense-audio.service >/dev/null 2>&1

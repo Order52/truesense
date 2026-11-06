@@ -70,6 +70,8 @@ Areas that are switches accept `on | off | toggle | status`.
 | `touchpad on\|off\|toggle` | touchpad inhibit |
 | `update check [--force]`, `update apply [--yes] [--version X]`, `update auto on\|off` | look for a newer release on GitHub and install it (downloads the tagged release, checks it, runs its installer with administrator rights). Automatic checks are **off** until you switch them on (`update auto on` or Settings); then once a day a notification appears when something new is out. The repository comes only from the system config |
 | `service status\|restart\|logs`, `config show\|validate\|path`, `completion bash\|zsh\|fish`, `gui`, `tui` | housekeeping |
+| `service check`, `service repair` | every unit, the module and the socket (read-only); get them running again (idempotent, touches no setting) |
+| `probe [--json]` | read-only report of this laptop (model, BIOS, which firmware read-outs answer) for support of other models |
 
 ## The window
 ## The terminal UI (`truesense tui`)

@@ -1,5 +1,16 @@
 # Release notes
 
+## Unreleased
+
+**CI/CD you can trust, and a safer way to get and keep TrueSense**
+- **One-command releases:** `python3 tools/release.py prepare X.Y.Z --title "..."` bumps every version (one table knows where they live), retitles the notes, runs the gate, commits and tags; pushing the tag publishes. A check (`release.py check`) runs in CI so the tag, the kernel module, DKMS, both PKGBUILDs, `get.sh`, the README and the notes can never disagree.
+- **A real release pipeline:** the tag builds a byte-for-byte reproducible source tarball and the Arch package in a clean container, writes `SHA256SUMS`, signs build provenance attestations (`gh attestation verify`), creates the GitHub release with the notes, then downloads it the way a user does. AUR publishing runs when its key is configured.
+- **Verified downloads:** `get.sh` and `truesense update apply` now check the download against the release's `SHA256SUMS` (a mismatch, a list that does not name the file, or no list at all on a new release stops the install; being offline never means "skip the check"). Releases from 0.3.16 are built by CI; older ones still install, unverified, and say so. Optional `TRUESENSE_VERIFY_ATTESTATION=1` also checks the provenance.
+- **Much stronger CI on every push:** ruff, shellcheck (all scripts are now clean), actionlint, systemd unit verification with a hardening ratchet, desktop entries and documentation links; tests on Python 3.11 to 3.14 with a coverage floor; the kernel module built against the headers of Arch (linux and linux-lts), Ubuntu 22.04 and 24.04, Debian and Fedora; the installer's detection on Arch, Ubuntu, Debian, Fedora and openSUSE; the Arch package. A weekly **kernel watch** opens one issue the moment a new kernel breaks the module, and CodeQL and Dependabot are on.
+- **Service handling:** `truesense service check` (every unit, the module, the control socket; read-only) and `truesense service repair` (re-reads units, rebuilds and loads the module with DKMS, enables and starts what is stopped, restarts a daemon that does not answer). It is idempotent, never touches a setting or a fan, and only the system part asks for sudo.
+- **Similar laptops, without guessing:** models now have tiers. The PH16-71 is supported; another Acer Predator or Nitro is **unverified** (nothing is written to it, the installer says why and refuses without `--force`); anything else does not apply. `truesense probe` reads what a laptop's firmware answers (a test proves it can only send a fixed list of read commands, and the report has no serial numbers) so a model can be verified from a user's report; a new issue form collects it. `doctor` grades the tiers and notes a BIOS other than the verified one.
+- Issue forms, a pull request checklist and `docs/RELEASING.md`; `make ci` runs the static CI job locally.
+
 ## 0.3.15 (2026-11-06): a terminal UI, steadier Smart auto, sound repair, DTS on USB headsets
 
 **New: `truesense tui`, the full control surface in the terminal**

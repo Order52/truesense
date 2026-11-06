@@ -6,6 +6,7 @@ Areas: status sensors power fan battery display boot gpu rear keyboard look upda
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from . import __version__
@@ -63,7 +64,7 @@ class _OnlyArea:
 
 
 AREAS = ("status", "sensors", "power", "fan", "battery", "display", "boot", "gpu", "rear", "update", "look", "startup", "keyboard", "audio", "keys", "profile", "cpu", "touchpad",
-         "service", "config", "doctor", "selftest", "completion", "gui", "tui", "daemon", "version")       # a test keeps this in step with build()
+         "service", "config", "doctor", "probe", "selftest", "completion", "gui", "tui", "daemon", "version")       # a test keeps this in step with build()
 
 
 def build(only=None):
@@ -186,12 +187,13 @@ def build(only=None):
     q.add_argument("--core", type=int); q.add_argument("--cache", type=int); q.add_argument("--confirm", action="store_true", help="I understand this can freeze or reboot the laptop"); q.add_argument("--force", action="store_true", help="allow values beyond the danger line")
     q.add_argument("--plane", type=int, default=0, choices=[0, 2], help="set: 0 core, 2 cache"); q.add_argument("mv", type=int, nargs="?", help=argparse.SUPPRESS)
     add_onoff(sub, "touchpad", "touchpad on/off (Fn+F10)")
-    p = sub.add_parser("service", help="the daemon"); ss = p.add_subparsers(dest="verb"); ss.add_parser("status"); ss.add_parser("restart"); ss.add_parser("logs")
+    p = sub.add_parser("service", help="the daemon"); ss = p.add_subparsers(dest="verb"); ss.add_parser("status"); ss.add_parser("restart"); ss.add_parser("logs"); ss.add_parser("check", help="every unit, the kernel module and the control socket (read-only)")
+    q = ss.add_parser("repair", help="get the daemon, its health timer, the module and your user services running again (safe to repeat; touches no setting)"); q.add_argument("--system", action="store_true", help=argparse.SUPPRESS)
     p = sub.add_parser("config", help="configuration"); cf = p.add_subparsers(dest="verb"); cf.add_parser("show"); cf.add_parser("validate"); cf.add_parser("path")
     p = sub.add_parser("doctor", help="check the whole stack and say how to fix problems")
     p = sub.add_parser("selftest", help="set -> read back -> restore every firmware feature"); p.add_argument("--skip-fans", action="store_true")
     p = sub.add_parser("completion", help="shell completion script"); p.add_argument("shell", choices=["bash", "zsh", "fish"])
-    g = sub.add_parser("gui", help="the small optional window"); g.add_argument("--page", choices=["home", "keys", "audio", "settings"], help="open on this page"); t = sub.add_parser("tui", help="the full control surface in the terminal (keyboard and mouse)"); t.add_argument("--page", choices=["dashboard", "fans", "power", "lighting", "audio", "profiles", "system"], help="open on this page"); sub.add_parser("daemon", help="run the daemon (systemd does this)"); sub.add_parser("version")
+    g = sub.add_parser("gui", help="the small optional window"); g.add_argument("--page", choices=["home", "keys", "audio", "settings"], help="open on this page"); sub.add_parser("probe", help="read-only report of this laptop for model support (never writes a setting)"); t = sub.add_parser("tui", help="the full control surface in the terminal (keyboard and mouse)"); t.add_argument("--page", choices=["dashboard", "fans", "power", "lighting", "audio", "profiles", "system"], help="open on this page"); sub.add_parser("daemon", help="run the daemon (systemd does this)"); sub.add_parser("version")
     return ap
 
 
@@ -385,7 +387,7 @@ def h_update(a):
         if not a.yes:
             print(f"Install TrueSense {tag.lstrip('v')} (you have {r['current']})?\nThis downloads the release from github.com/{update.repo()} and runs its installer as root (the service restarts; fans return to the firmware meanwhile).")
             if input("Continue? [y/N] ").strip().lower() not in ("y", "yes"): raise HwError("cancelled")
-        res = update.apply(tag, gui=False); emit(res, f"updated to {res['version']} (download sha256 {res['sha256'][:16]}…); restart the window and the key service if they are open" if res["returncode"] == 0 else f"the installer exited with code {res['returncode']} (see /var/log/truesense-install.log)")
+        res = update.apply(tag, gui=False); emit(res, f"updated to {res['version']} (download sha256 {res['sha256'][:16]}…, {'checksum matches the release' if res.get('verified') else 'this release predates published checksums'}); restart the window and the key service if they are open" if res["returncode"] == 0 else f"the installer exited with code {res['returncode']} (see /var/log/truesense-install.log)")
         if res["returncode"]: raise HwError(f"installer exit code {res['returncode']}")
     elif v == "auto":
         cur = lambda: bool(config.load()["update"]["auto_check"])
@@ -653,6 +655,26 @@ def h_service(a):
     if v == "status": subprocess.run(["systemctl", "--no-pager", "status", "truesense.service"])
     elif v == "restart": subprocess.run(["sudo", "systemctl", "restart", "truesense.service"])
     elif v == "logs": subprocess.run(["journalctl", "-u", "truesense.service", "-b", "--no-pager", "-n", "60"])
+    elif v == "check":
+        from . import services
+        rows = services.check(); emit(rows, services.render(rows) + ("\n\nall good" if all(r["ok"] for r in rows) else "\n\nsomething is not running: truesense service repair"))
+        return 0 if all(r["ok"] for r in rows) else 1
+    elif v == "repair":
+        from . import services
+        if a.system:                                                              # the part that needs root (the other part calls this through sudo)
+            if os.geteuid() != 0: raise HwError("the system part needs root: sudo truesense service repair")
+            steps = services.repair_system(); print(json.dumps(steps)); return 0 if all(ok for _, ok in steps) else 1
+        steps = []
+        if os.geteuid() == 0: steps.append(("your user services were not touched (you ran this as root): run it again without sudo for them", True))
+        else: steps += services.repair_user()
+        if os.geteuid() == 0: steps += services.repair_system()
+        else:
+            exe = shutil.which("truesense") or sys.argv[0]; r = subprocess.run(["sudo", exe, "service", "repair", "--system"], stdout=subprocess.PIPE, text=True)
+            try: steps += [tuple(s) for s in json.loads(r.stdout.strip().splitlines()[-1])]
+            except (ValueError, IndexError): steps.append(("the system part did not run (sudo was refused or failed)", False))
+        emit([{"step": s, "ok": ok} for s, ok in steps], "\n".join(f"  [{'ok ' if ok else '!! '}] {s}" for s, ok in steps))
+        return 0 if all(ok for _, ok in steps) else 1
+    return None
 
 
 def h_config(a):
@@ -680,6 +702,8 @@ def main(argv=None):
     try:
         if a.area == "doctor":
             from . import doctor; return doctor.run(JSON)
+        if a.area == "probe":
+            from . import models; p = models.probe(); print(models.to_json(p) if JSON else models.render(p)); return 0
         if a.area == "selftest":
             from . import selftest; return 0 if selftest.run(a.skip_fans) else 1
         if a.area == "gui":

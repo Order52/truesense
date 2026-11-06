@@ -43,10 +43,11 @@ def kver(): return os.uname().release
 
 
 def c_model():
-    m = util.read("/sys/class/dmi/id/product_name").strip() if os.path.exists("/sys/class/dmi/id/product_name") else "unknown"
-    bios = util.read("/sys/class/dmi/id/bios_version").strip() if os.path.exists("/sys/class/dmi/id/bios_version") else "?"
-    if m == "Predator PH16-71": return OK, f"{m}, BIOS {bios}", ""
-    return FAIL, f"'{m}' is not an Acer Predator PH16-71 (BIOS {bios}); TrueSense is only tested on the PH16-71", "do not use it on other models; the kernel module refuses to bind unless forced"
+    from . import models
+    m = models.identify()
+    if m["tier"] == "supported": return (OK if m["bios_verified"] else INFO), m["message"], ""
+    if m["tier"] == "unverified": return WARN, m["message"], "truesense probe   (read-only) and share the report; the kernel module does not bind on an unverified model unless forced"
+    return FAIL, m["message"], "TrueSense is for Acer Predator laptops; the kernel module refuses to bind elsewhere"
 
 
 def c_python():
