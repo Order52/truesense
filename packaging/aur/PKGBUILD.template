@@ -5,31 +5,31 @@ pkgname=truesense
 pkgver=0.3.17
 pkgrel=1
 pkgdesc='Hardware control for the Acer Predator Helios 16 PH16-71: fans, power, battery, lighting, undervolt, kernel module, daemon, CLI and window'
-arch=('any')
+arch=('x86_64')
 url='https://github.com/Order52/truesense'
 license=('MIT')
-depends=('python' 'dkms' 'systemd' 'socat')
+depends=('dkms' 'systemd')
+makedepends=('go')
 optdepends=('linux-headers: build the kernel module (any installed kernel needs its own headers)'
             'noise-suppression-for-voice: Purified Voice (RNNoise) microphone noise reduction'
-            'python-pyqt6: optional window (truesense gui)'
             'nvidia-utils: GPU temperature and power'
             'alsa-tools: codec diagnostics')
 backup=('etc/truesense/config.toml')
 install=truesense.install
+options=('!debug')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('@SHA@')
 
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    export CGO_ENABLED=0 GOFLAGS="-trimpath -buildvcs=false -mod=readonly"
+    go build -ldflags "-s -w" -o "$srcdir/truesense" ./cmd/truesense      # one static program: daemon, command line, terminal UI, window and services
+}
+
 package() {
     _src="$srcdir/$pkgname-$pkgver"
-    install -d "$pkgdir/usr/lib/truesense"
-    cp -r "$_src/src/truesense" "$pkgdir/usr/lib/truesense/"
-    find "$pkgdir/usr/lib/truesense" -name __pycache__ -prune -exec rm -rf {} +
-    python3 -m compileall -q -d /usr/lib/truesense/truesense "$pkgdir/usr/lib/truesense/truesense"      # the install dir is root-owned: ship the bytecode so every launch skips compiling
-    install -Dm755 /dev/stdin "$pkgdir/usr/bin/truesense" <<'WRAP'
-#!/bin/sh
-exec env PYTHONPATH=/usr/lib/truesense python3 -m truesense "$@"
-WRAP
-    install -Dm755 "$_src/tools/truesense-fast" "$pkgdir/usr/bin/truesense-fast"
+    install -Dm755 "$srcdir/truesense" "$pkgdir/usr/bin/truesense"
+    ln -s truesense "$pkgdir/usr/bin/truesense-fast"                      # the name selects the instant status-bar client
     install -Dm755 "$_src/packaging/health.sh" "$pkgdir/usr/lib/truesense/health.sh"
     for f in truesense.service truesense-health.service truesense-health.timer; do
         sed -e 's|@PREFIX@|/usr|g' -e 's|@MODPROBE@|/usr/bin/modprobe|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/$f"
@@ -39,7 +39,7 @@ WRAP
     done
     sed 's|@PREFIX@|/usr|g' "$_src/packaging/truesense.desktop" | install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/truesense.desktop"
     sed 's|@PREFIX@|/usr|g' "$_src/packaging/truesense-tui.desktop" | install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/truesense-tui.desktop"
-    install -Dm644 "$_src/src/truesense/data/truesense.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/truesense.svg"; install -Dm644 "$_src/packaging/icons/truesense-256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/truesense.png"
+    install -Dm644 "$_src/packaging/icons/truesense.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/truesense.svg"; install -Dm644 "$_src/packaging/icons/truesense-256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/truesense.png"
     install -Dm644 "$_src/packaging/70-truesense.rules" "$pkgdir/usr/lib/udev/rules.d/70-truesense.rules"
     install -Dm644 "$_src/packaging/truesense.modprobe.conf" "$pkgdir/usr/lib/modprobe.d/truesense.conf"
     install -Dm644 "$_src/packaging/truesense.modules-load.conf" "$pkgdir/usr/lib/modules-load.d/truesense.conf"
@@ -53,7 +53,7 @@ WRAP
 CFG
     for sh in bash zsh fish; do   # shell completions, generated from the CLI itself
         case $sh in bash) d=usr/share/bash-completion/completions/truesense;; zsh) d=usr/share/zsh/site-functions/_truesense;; fish) d=usr/share/fish/vendor_completions.d/truesense.fish;; esac
-        install -d "$pkgdir/$(dirname $d)"; PYTHONPATH="$_src/src" python3 -m truesense completion $sh > "$pkgdir/$d"
+        install -d "$pkgdir/$(dirname $d)"; "$pkgdir/usr/bin/truesense" completion $sh > "$pkgdir/$d"
     done
     install -Dm644 "$_src/LICENSE" "$pkgdir/usr/share/licenses/truesense/LICENSE"
     install -Dm644 "$_src/README.md" "$pkgdir/usr/share/doc/truesense/README.md"
