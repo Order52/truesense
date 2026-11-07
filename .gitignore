@@ -4,6 +4,7 @@ __pycache__/
 *.ko
 *.o
 *.mod
+!go.mod
 *.mod.c
 *.cmd
 .tmp_versions/
