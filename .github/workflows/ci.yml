@@ -77,6 +77,8 @@ jobs:
           tail -n 1 coverage.txt
       - name: Fuzz smoke (every Fuzz target, a few seconds each)
         run: make go-fuzz FUZZTIME=5s
+      - name: The window's front-end logic (Node, no dependencies, no build step)
+        run: node --test internal/gui/jstest/
 
   # ---- the static binary: reproducible, really static, says the right version; and the release bundle around it ------------------------------
   build:
