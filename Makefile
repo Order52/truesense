@@ -28,7 +28,7 @@ COMMIT   := $(shell git rev-parse --short=12 HEAD 2>/dev/null)
 DATE     := $(shell git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
 PKG      := github.com/Order52/truesense/internal/buildinfo
 LDFLAGS  := -s -w -X $(PKG).Commit=$(COMMIT) -X $(PKG).Date=$(DATE)
-GOFILES  := $(shell find cmd internal -name '*.go' -not -name '*_test.go') go.mod go.sum
+GOFILES  := $(shell find cmd internal -name '*.go' -not -name '*_test.go') $(shell find internal -path '*/web/*' -type f) go.mod go.sum
 build: dist/truesense   ## the static, reproducible binary (dist/truesense; truesense-fast is a link to it)
 dist/truesense: $(GOFILES)
 	@mkdir -p dist
