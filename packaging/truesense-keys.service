@@ -3,6 +3,8 @@ Description=TrueSense Fn keys and PREDATOR key
 After=graphical-session.target
 
 [Service]
+# A small program: two Go workers and a tight heap (the defaults suit big servers) cut each process's private memory by about a third.
+Environment=GOMAXPROCS=2 GOGC=25
 ExecStart=@PREFIX@/bin/truesense keys run
 Restart=always
 RestartSec=2

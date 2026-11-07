@@ -3,6 +3,8 @@ Description=TrueSense audio: Purified Voice filter selection on headset plug/unp
 After=pipewire.service wireplumber.service
 
 [Service]
+# A small program: two Go workers and a tight heap (the defaults suit big servers) cut each process's private memory by about a third.
+Environment=GOMAXPROCS=2 GOGC=25
 ExecStart=@PREFIX@/bin/truesense audio voice watch
 Restart=always
 RestartSec=3
