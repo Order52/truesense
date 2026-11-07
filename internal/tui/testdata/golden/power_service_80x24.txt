@@ -1,0 +1,24 @@
+ TrueSense test                                                ↯80 %  ● service
+  1   2   3 Power   4   5   6   7
+ Mode  ───────────────────────────────────────────────────────────────────────
+▸ Power mode                Eco   Quiet   Balanced   Performance   Turbo
+  Automatic power mode      Native   Smart   Off
+  Smart profile             native   balanced   steady
+  Hold                     none: automatic power mode is in charge
+  Release the hold         [ Release ]
+
+ Battery and charging  ───────────────────────────────────────────────────────
+  Battery limit (80 %)     [ ON  ]
+  Charge to 100 % once     [ Start / stop ]
+  Battery calibration      [ OFF ]
+  USB charging when off     Off   10 %   20 %   30 %
+
+ Graphics and display  ───────────────────────────────────────────────────────
+  GPU mode                  Hybrid   NVIDIA only   Auto
+  Panel overdrive          [ ON  ]
+  Boot sound               [ OFF ]
+  Keyboard light timeout   [ ON  ]
+
+
+ Eco / Quiet / Balanced / Performance / Turbo. Your pick is held for 30 minute…
+ ↑↓ select   ←→ choose   Enter apply now   Tab page   ? help   q quit

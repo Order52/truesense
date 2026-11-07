@@ -1,0 +1,12 @@
+ TrueSense test            ↯80 %  ● service
+  1   2   3   4   5 Audio   6   7
+ Sound  ──────────────────────────────────
+  Sound card             output present
+▸ No sound at all?       [ Fix sound ]
+  Play sound on          ‹ Speakers ›
+  Noise filter on the s  [ OFF ]
+
+ Acer DTS sound  ─────────────────────────
+  DTS                    [ OFF ]          ▼
+ Restarts WirePlumber so it probes the sou…
+ ↑↓ select   Enter run   Tab page   ? help

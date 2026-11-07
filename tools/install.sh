@@ -141,7 +141,9 @@ find_binary() {
     fi
   fi
   [ -n "${BIN:-}" ] || die "no program to install: there is no bin/truesense or dist/truesense next to this script. Build it (make build; needs Go) or download a release from https://github.com/Order52/truesense/releases"
-  want=$(sed -n 's/^const Version = "\(.*\)"/\1/p' "$ROOT/internal/buildinfo/buildinfo.go" 2>/dev/null | head -n1); got=$("$BIN" --version 2>/dev/null | awk '{print $2}')
+  # `|| true`: under pipefail a missing version file or a program that fails must reach the messages below, not abort the script silently
+  want=$(sed -n 's/^const Version = "\(.*\)"/\1/p' "$ROOT/internal/buildinfo/buildinfo.go" 2>/dev/null | head -n1) || true
+  got=$("$BIN" --version 2>/dev/null | awk '{print $2}') || true
   [ -n "$got" ] || die "$BIN does not run on this machine (is it an x86-64 Linux build?)"
   [ -z "$want" ] || [ "$got" = "$want" ] || die "$BIN is version $got but this source tree is $want: rebuild it (make build) so you do not install a stale program"
 }

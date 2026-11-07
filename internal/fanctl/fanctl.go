@@ -79,6 +79,9 @@ func (s *Smart) Curve() curves.Curve { return s.follower.Curve() }
 // Reset forgets the calm counter (the smart fan was off).
 func (s *Smart) Reset() { s.calm = 0 }
 
+// Calm is how many ticks in a row the laptop has been calm.
+func (s *Smart) Calm() int { return s.calm }
+
 // slope is the temperature change per sample over the last five samples (0 until there are five).
 func slope(hist *[]float64, v float64) float64 {
 	*hist = append(*hist, v)

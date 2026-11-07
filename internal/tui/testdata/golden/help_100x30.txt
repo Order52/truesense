@@ -1,0 +1,30 @@
+ TrueSense test                                                                    ↯80 %  ● service
+  1 Dashboard   2 Fans   3 Power   4 Lighting   5 Audio   6 Profiles   7 System
+▸ Power mode              Eco   Quiet   Balanced   Performance   Turbo
+  Automatic power mode    Native   Smart   Off
+  Fans     ╭─ Keys ─────────────────────────────────────────────────────────────────────╮
+           │                                                                            │
+ ╭─ Tempera│ ↑ ↓  j k  move between settings                                            │────────╮
+ │ CPU  ███│ ← →  h l  change the value (sent by itself after a short pause)            │        │
+ │ GPU  ███│ Enter     send the change now / run a button                               │        │
+ │ SYS  ███│ Space     switch a toggle, or send the change                              │        │
+ │ Now   qu│ Esc       take back a change that was not sent yet                         │────────╯
+ ╰─────────│ Tab  1-7  next page, or a page by number                                   │
+ ╭─ Load ──│ q         quit                                                             │────────╮
+ │ CPU  ██░│ m         next power mode                                                  │        │
+ │ GPU  █░░│ r         read everything again                                            │        │
+ │ GPU powe│ Ctrl-L    redraw the screen                                                │  80 %  │
+ ╰─────────│                                                                            │────────╯
+ ╭─ What yo│ Mouse: click tabs, rows and options; drag a slider; the wheel moves the    │─────────╮
+ │ Nothing │ selection.                                                                 │         │
+ ╰─────────│                                                                            │─────────╯
+           │ Stopping a fan, or a setting that needs a restart, always asks first. The  │
+           │ answer is No unless you choose Yes.                                        │
+           │                                                                            │
+           │ The window has the rest: per-key colours, images, undervolting.            │
+           │                                                                            │
+           ╰────────────────────────────────────────────────────────────────────────────╯
+
+
+ Eco / Quiet / Balanced / Performance / Turbo. Your pick is held for 30 minutes against Smart auto.
+ ↑↓ select   ←→ choose   Enter apply now   Tab page   ? help   q quit

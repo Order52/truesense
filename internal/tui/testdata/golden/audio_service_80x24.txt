@@ -1,0 +1,24 @@
+ TrueSense test                                                ↯80 %  ● service
+  1   2   3   4   5 Audio   6   7
+ Sound  ──────────────────────────────────────────────────────────────────────
+  Sound card                     output present
+▸ No sound at all?               [ Fix sound ]
+  Play sound on                   Speakers   Headphones
+  Noise filter on the speakers   [ OFF ]
+
+ Acer DTS sound  ─────────────────────────────────────────────────────────────
+  DTS                            [ OFF ]
+  DTS sound mode                 ‹ Music ›
+  A headset still sounds flat?   [ Use DTS everywhere ]
+  Outputs                        Speakers: Music · Headset PC38X: Game1
+
+ Microphone  ─────────────────────────────────────────────────────────────────
+  Mute every microphone          [ OFF ]
+  Microphone volume              ━━━━━━━━━━━━━━━━━━━━━●───────────  100 %
+  Headset mic noise reduction     Off   Conference   Personal
+  Built-in mic noise reduction    Off   Conference   Personal
+
+
+
+ Restarts WirePlumber so it probes the sound card again. Nothing is written to…
+ ↑↓ select   Enter run   Tab page   ? help   q quit

@@ -1,0 +1,30 @@
+ TrueSense test                                                                    ↯80 %  ● service
+  1 Dashboard   2 Fans   3 Power   4 Lighting   5 Audio   6 Profiles   7 System
+ Fan control  ────────────────────────────────────────────────────────────────────────────────────
+  Mode             Smart curve   Auto   Max   Manual   Off
+▸ CPU fan         ●───────────────────────────────────  OFF                                      ↵
+  GPU fan         ━━━━━━●─────────────────────────────  30 %
+  CPU fan speed   0 rpm
+  GPU fan speed   0 rpm
+
+ Fan curve  ──────────────────────────────────────────────────────────────────────────────────────
+  Curve            native   truesense   quiet
+                 ╭─ Confirm ──────────────────────────────────────────────────────╮
+                 │  Stop the CPU fan? The service brings it back when the laptop  │
+                 │  gets warm.                                                    │
+                 │                                                                │
+                 │                                                                │
+                 │  [ Yes ]  [ No ]   y / n  ·  Enter picks the marked one        │
+                 ╰────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+ Left/Right in steps of 5; the lowest position is OFF and asks first. Moving a slider switches to …
+ ↑↓ select   ←→ adjust   Enter apply now   Esc undo   Tab page   ? help   q quit

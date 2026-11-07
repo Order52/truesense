@@ -1,0 +1,24 @@
+ TrueSense test                                                 ↯80 %  ● direct
+  1   2   3   4   5   6 Profiles   7
+ Profiles: a whole setup in one go (power, fans, lighting, audio)  ───────────
+▸ balanced        [ Apply ]
+  battery-saver   [ Apply ]
+  gaming          [ Apply ]
+  quiet           [ Apply ]
+
+ Looks: the lighting at boot, as saved in the window  ────────────────────────
+  native          [ Apply ]
+  ocean           [ Apply ]
+
+
+
+
+
+
+
+
+
+
+
+ Power: balanced mode (held for a while)  ·  Fans: smart curve
+ ↑↓ select   Enter run   Tab page   ? help   q quit

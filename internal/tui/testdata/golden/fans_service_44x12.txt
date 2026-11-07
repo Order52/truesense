@@ -1,0 +1,12 @@
+ TrueSense test            ↯80 %  ● service
+  1   2 Fans   3   4   5   6   7
+ Fan control  ────────────────────────────
+▸ Mode            ‹ Auto ›
+  CPU fan         ━━●─────────  30 %
+  GPU fan         ━━●─────────  30 %
+  CPU fan speed   0 rpm
+  GPU fan speed   0 rpm
+
+ Fan curve  ──────────────────────────────▼
+ Smart: TrueSense's curve. Auto: firmware.…
+ ↑↓ select   ←→ choose   Enter apply now

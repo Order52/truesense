@@ -1,0 +1,12 @@
+ TrueSense test             ↯80 %  ● direct
+  1   2   3   4 Lighting   5   6   7
+ Keyboard  ───────────────────────────────
+▸ Effect           ‹ Static ›
+  Colour           ‹ Teal ›
+  Custom colour    [ Type hex… ]
+  Brightness       ━━━━━●─────  50 %
+  Speed            ━━━━●──────  5
+  Direction        ‹ Left to right ›
+  Saved lighting    aurora   ember        ▼
+ The effects built into the keyboard. Per-…
+ ↑↓ select   ←→ choose   Enter apply now

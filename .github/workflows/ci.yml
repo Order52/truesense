@@ -13,63 +13,99 @@ concurrency:
 permissions:
   contents: read
 
+# Every action is pinned to a full commit SHA (the comment names the release); Dependabot keeps them current.
 jobs:
   # ---- fast static checks: the cheapest way to catch a mistake ------------------------------------------------------------------------------
   static:
     name: Static checks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.13" }
-      - name: "Python (ruff.toml: real bugs and unused code)"
-        run: pip install ruff && ruff check .
-      - name: Shell scripts (shellcheck, warnings and up)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - name: go.mod and go.sum are committed, tidy and verified
+        run: |
+          git ls-files --error-unmatch go.mod go.sum > /dev/null || { echo "::error::go.mod and go.sum must be tracked by git (is *.mod in .gitignore?)"; exit 1; }
+          go mod tidy -diff
+          go mod verify
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l cmd internal tools)
+          if [ -n "$unformatted" ]; then echo "$unformatted"; echo "::error::gofmt: the files above need formatting (gofmt -w)"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@2026.2.2 && staticcheck ./...
+      - name: golangci-lint (.golangci.yml)
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with: { version: v2.15.0 }
+      - name: govulncheck (known vulnerabilities in the code we actually call)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0 && govulncheck ./...
+      - name: Shell scripts (bash -n, shellcheck warnings and up)
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck desktop-file-utils
-          shellcheck -S warning -x tools/*.sh tools/ci/*.sh tools/truesense-fast packaging/health.sh
+          tools/ci/check-shell.sh
       - name: Workflows (actionlint)
         run: |
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
           ./actionlint -color
       - name: Every file agrees on one version
-        run: python3 tools/release.py check
+        run: go run ./cmd/release check
       - name: systemd units verify (placeholders filled, hardening ratchet)
         run: tools/ci/verify-units.sh
       - name: Desktop entries
         run: desktop-file-validate packaging/truesense.desktop packaging/truesense-tui.desktop
       - name: Documentation links
-        run: python3 tools/ci/check-links.py
-      - name: Shell syntax of everything we ship
-        run: for f in tools/*.sh tools/ci/*.sh tools/truesense-fast packaging/health.sh; do bash -n "$f"; done
+        run: go run ./cmd/checklinks
 
-  # ---- the Python code, on every supported interpreter --------------------------------------------------------------------------------------
+  # ---- the Go code: race detector, shuffled order, coverage, and a short fuzz run of every fuzz target -------------------------------------
   test:
-    name: Tests (Python ${{ matrix.python }})
+    name: Tests (race, shuffle, fuzz smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - name: Unit tests against the firmware simulator (no hardware needed)
+        run: go test -race -shuffle=on -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Coverage
+        run: |
+          go tool cover -func=coverage.out > coverage.txt
+          { echo '### Coverage'; echo '```'; tail -n 40 coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          tail -n 1 coverage.txt
+      - name: Fuzz smoke (every Fuzz target, a few seconds each)
+        run: make go-fuzz FUZZTIME=5s
+
+  # ---- the static binary: reproducible, really static, says the right version; and the release bundle around it ------------------------------
+  build:
+    name: Build (static binary, reproducible, bundle)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "${{ matrix.python }}", allow-prereleases: true }
-      - name: Qt for the window tests (they skip without it)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - name: Build twice and compare the checksums
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1
-          pip install PyQt6 coverage
-      - name: Unit tests against the firmware simulator (no hardware needed)
-        env: { QT_QPA_PLATFORM: offscreen }
-        run: coverage run --source=src/truesense -m unittest discover -s tests -t . -v
-      - name: Coverage floor
-        if: matrix.python == '3.13'
+          export TZ=UTC
+          make build && cp dist/truesense first.bin
+          rm -rf dist && make build
+          cmp first.bin dist/truesense || { echo "::error::two builds of the same commit differ: the build is not reproducible"; exit 1; }
+          sha256sum first.bin dist/truesense
+      - name: Static, and the version is the one in internal/buildinfo
         run: |
-          coverage report --skip-empty --fail-under=55 | tee coverage.txt
-          { echo '### Coverage'; echo '```'; tail -n 40 coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if ldd dist/truesense > /dev/null 2>&1; then echo "::error::dist/truesense is dynamically linked"; exit 1; fi
+          v=$(go run ./cmd/release version)
+          [ "$(dist/truesense --version)" = "truesense $v" ] || { echo "::error::truesense --version says '$(dist/truesense --version)', buildinfo says $v"; exit 1; }
+          go version -m dist/truesense
+      - name: The release bundle builds, is reproducible and complete
+        run: |
+          v=$(go run ./cmd/release version)
+          tools/ci/build-bundle.sh "$v" build/a > /dev/null
+          tools/ci/build-bundle.sh "$v" build/b > /dev/null
+          tools/ci/check-bundle.sh "$v" build/a build/b
 
   # ---- the kernel module against the headers of real distributions ------------------------------------------------------------------------
   module:
@@ -90,13 +126,13 @@ jobs:
       - name: Tools for checkout
         run: |
           if command -v apt-get >/dev/null; then apt-get update -qq && apt-get install -y -qq git; elif command -v dnf >/dev/null; then dnf install -y git; else pacman -Sy --noconfirm git; fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install the distribution's compiler and kernel headers
         run: ${{ matrix.setup }}
       - name: Build against every installed kernel (warnings on)
         run: bash tools/ci/build-modules.sh
 
-  # ---- the installer's distribution detection and package names, on each family ------------------------------------------------------------
+  # ---- the installer's distribution detection and package names, on each family (the containers have no Python: the program is one binary) ----
   installer:
     name: Installer check (${{ matrix.name }})
     runs-on: ubuntu-latest
@@ -113,42 +149,52 @@ jobs:
           - { name: openSUSE, image: "opensuse/tumbleweed:latest", family: suse, prep: "zypper --non-interactive install git tar gzip" }
     steps:
       - run: ${{ matrix.prep }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: tools/install.sh --check recognises the distribution and names the right packages
+        env:
+          FAMILY: ${{ matrix.family }}
         run: |
           out=$(bash tools/install.sh --check 2>&1 || true); echo "$out"
-          echo "$out" | grep -q "family: ${{ matrix.family }}" || { echo "::error::expected family ${{ matrix.family }}"; exit 1; }
+          echo "$out" | grep -q "family: $FAMILY" || { echo "::error::expected family $FAMILY"; exit 1; }
           echo "$out" | grep -q "NOT supported" || { echo "::error::a container is not a PH16-71 and must say so"; exit 1; }
+          if echo "$out" | grep -qiE "python|pyqt|socat"; then echo "::error::the installer must not ask for Python, PyQt or socat"; exit 1; fi
 
-  # ---- the Arch package, built the way a user would build it -------------------------------------------------------------------------------
+  # ---- the Arch package, built the way a user would build it (makedepends: go) -------------------------------------------------------------
   package:
     name: Arch package
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container: archlinux:latest
     steps:
-      - run: pacman -Syu --noconfirm base-devel git
-      - uses: actions/checkout@v4
+      - run: pacman -Syu --noconfirm base-devel git go
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: makepkg as an unprivileged user
         run: |
           useradd -m builder; chown -R builder: "$GITHUB_WORKSPACE"
           su builder -c "cd '$GITHUB_WORKSPACE/packaging/arch' && makepkg -f --nodeps --noconfirm"
-      - name: The package has what it must
+      - name: The package has what it must, and its program runs
         run: |
           pkg=$(ls packaging/arch/*.pkg.tar.zst); pacman -Qlp "$pkg" > files.txt
           for f in usr/bin/truesense usr/bin/truesense-fast usr/lib/systemd/system/truesense.service usr/lib/systemd/user/truesense-keys.service \
-                   usr/share/applications/truesense.desktop usr/share/applications/truesense-tui.desktop usr/lib/truesense/truesense/tui.py usr/src/truesense-wmi-; do
+                   usr/share/applications/truesense.desktop usr/share/applications/truesense-tui.desktop usr/share/truesense/profiles/ usr/src/truesense-wmi-; do
             grep -q "$f" files.txt || { echo "::error::package lacks $f"; exit 1; }
           done
           pacman -Qip "$pkg"
+          mkdir pkgroot && bsdtar -xf "$pkg" -C pkgroot
+          v=$(grep -oP '^pkgver=\K[0-9.]+' packaging/arch/PKGBUILD)
+          [ "$(pkgroot/usr/bin/truesense --version)" = "truesense $v" ] || { echo "::error::the packaged program does not say truesense $v"; exit 1; }
 
   # ---- one required check for branch protection ------------------------------------------------------------------------------------------
   ci-ok:
     name: CI passed
     if: always()
-    needs: [static, test, module, installer, package]
+    needs: [static, test, build, module, installer, package]
     runs-on: ubuntu-latest
     steps:
       - name: Everything above succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          echo '${{ toJSON(needs) }}' | python3 -c 'import json,sys; r=json.load(sys.stdin); bad=[k for k,v in r.items() if v["result"]!="success"]; print("failed:", bad) if bad else print("all green"); sys.exit(1 if bad else 0)'
+          bad=$(echo "$NEEDS" | jq -r 'to_entries[] | select(.value.result != "success") | .key')
+          if [ -n "$bad" ]; then echo "failed: $bad"; exit 1; fi
+          echo "all green"

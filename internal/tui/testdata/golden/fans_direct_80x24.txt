@@ -1,0 +1,24 @@
+ TrueSense test                                                 ↯80 %  ● direct
+  1   2 Fans   3   4   5   6   7
+ Fan control  ────────────────────────────────────────────────────────────────
+▸ Mode             Smart curve   Auto   Max   Manual   Off
+  CPU fan         ━━━━━━●─────────────────────────────  30 %
+  GPU fan         ━━━━━━●─────────────────────────────  30 %
+  CPU fan speed   0 rpm
+  GPU fan speed   0 rpm
+
+ Fan curve  ──────────────────────────────────────────────────────────────────
+  Curve           (not available)
+
+
+
+
+
+
+
+
+
+
+
+ Smart: TrueSense's curve. Auto: firmware. Max: 100 %. Manual: the sliders bel…
+ ↑↓ select   ←→ choose   Enter apply now   Tab page   ? help   q quit

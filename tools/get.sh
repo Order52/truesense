@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# One-line installer. Downloads the newest TrueSense release from GitHub, checks it against the release's SHA256SUMS, and runs tools/install.sh.
+# One-line installer. Downloads the newest TrueSense release bundle from GitHub (the source tree plus the prebuilt static program bin/truesense), checks it against the release's
+# SHA256SUMS, and runs the bundle's tools/install.sh.
 #   curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
 #   ... | sudo bash -s -- --no-gui          (extra options go to install.sh)
 # Environment: TRUESENSE_VERSION=0.3.17 (pin a version), TRUESENSE_SHA256=<hash> (also require this exact hash),
@@ -46,7 +47,9 @@ esac
 [ -z "${TRUESENSE_SHA256:-}" ] || echo "$TRUESENSE_SHA256  $TMP/ts.tar.gz" | sha256sum -c -
 tar -xzf "$TMP/ts.tar.gz" -C "$TMP"
 for d in "$TMP"/truesense-*/; do [ -f "$d/tools/install.sh" ] || die "the download is not a TrueSense release"; done
-INSIDE=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$TMP"/truesense-*/src/truesense/__init__.py | head -n1)
+# the version the download declares: the Go constant from 0.4.0 on; the Python-era releases before it keep it in __init__.py (a missing file must not stop the script: pipefail)
+INSIDE=$(sed -n 's/^const Version = "\(.*\)"/\1/p' "$TMP"/truesense-*/internal/buildinfo/buildinfo.go 2>/dev/null | head -n1) || true
+[ -n "$INSIDE" ] || INSIDE=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$TMP"/truesense-*/src/truesense/__init__.py 2>/dev/null | head -n1) || true
 [ "$INSIDE" = "$VERSION" ] || die "the download says version ${INSIDE:-?}, not $VERSION: refusing"
 if [ -n "${TRUESENSE_GET_ONLY:-}" ]; then echo "verified and unpacked (TRUESENSE_GET_ONLY set: not installing)"; exit 0; fi
 cd "$TMP"/truesense-*/ && exec bash tools/install.sh "$@"

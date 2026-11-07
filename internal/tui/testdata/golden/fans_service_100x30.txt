@@ -1,0 +1,30 @@
+ TrueSense test                                                                    ↯80 %  ● service
+  1 Dashboard   2 Fans   3 Power   4 Lighting   5 Audio   6 Profiles   7 System
+ Fan control  ────────────────────────────────────────────────────────────────────────────────────
+▸ Mode             Smart curve   Auto   Max   Manual   Off
+  CPU fan         ━━━━━━●─────────────────────────────  30 %
+  GPU fan         ━━━━━━●─────────────────────────────  30 %
+  CPU fan speed   0 rpm
+  GPU fan speed   0 rpm
+
+ Fan curve  ──────────────────────────────────────────────────────────────────────────────────────
+  Curve            native   truesense   quiet
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Smart: TrueSense's curve. Auto: firmware. Max: 100 %. Manual: the sliders below. Off: both fans s…
+ ↑↓ select   ←→ choose   Enter apply now   Tab page   ? help   q quit

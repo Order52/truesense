@@ -1,0 +1,12 @@
+ TrueSense test             ↯80 %  ● direct
+  1   2   3 Power   4   5   6   7
+ Mode  ───────────────────────────────────
+▸ Power mode             ‹ Performance ›
+  Automatic power mode   (not available)
+  Smart profile          (not available)
+  Hold                   none: automatic po
+  Release the hold       [ Release ]
+
+ Battery and charging  ───────────────────▼
+ Eco / Quiet / Balanced / Performance / Tu…
+ ↑↓ select   ←→ choose   Enter apply now

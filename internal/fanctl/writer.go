@@ -68,7 +68,6 @@ func (w *Writer) Written() string {
 	return strconv.Itoa(w.written[0]) + "," + strconv.Itoa(w.written[1])
 }
 
-
 // Verify re-asserts the last duties if the firmware or the driver reset the fans behind our
 // back (call it every 15 s while the smart fan runs).
 func (w *Writer) Verify() {

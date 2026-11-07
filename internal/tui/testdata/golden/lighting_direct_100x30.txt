@@ -1,0 +1,30 @@
+ TrueSense test                                                                     ↯80 %  ● direct
+  1 Dashboard   2 Fans   3 Power   4 Lighting   5 Audio   6 Profiles   7 System
+ Keyboard  ───────────────────────────────────────────────────────────────────────────────────────
+▸ Effect           ‹ Static ›
+  Colour            White   Red   Orange   Yellow   Green   Teal   Blue   Purple   Pink
+  Custom colour    [ Type hex… ]
+  Brightness       ━━━━━━━━━━━━━━━━━━●─────────────────  50 %
+  Speed            ━━━━━━━━━━━━━●──────────────────────  5
+  Direction         Left to right   Right to left   Up   Down
+  Saved lighting    aurora   ember
+
+ Light bar (back of the laptop)  ─────────────────────────────────────────────────────────────────
+  Effect            Static   Breathing   Neon   Wave   Twinkling
+  Colour            White   Red   Orange   Yellow   Green   Teal   Blue   Purple   Pink
+  Custom colour    [ Type hex… ]
+  Brightness       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━●  100 %
+  Speed            ━━━━━━━━━━━━━━━━━━●─────────────────  3
+
+
+
+
+
+
+
+
+
+
+
+ The effects built into the keyboard. Per-key colours and your own images: truesense gui --page ke…
+ ↑↓ select   ←→ choose   Enter apply now   Tab page   ? help   q quit

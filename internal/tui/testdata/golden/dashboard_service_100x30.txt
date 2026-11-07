@@ -1,0 +1,30 @@
+ TrueSense test                                                                    ↯80 %  ● service
+  1 Dashboard   2 Fans   3 Power   4 Lighting   5 Audio   6 Profiles   7 System
+▸ Power mode              Eco   Quiet   Balanced   Performance   Turbo
+  Automatic power mode    Native   Smart   Off
+  Fans                    Smart   Auto   Max
+
+ ╭─ Temperatures ───────────────────────────────╮ ╭─ Fans ───────────────────────────────────────╮
+ │ CPU  ██████████░░░░░░░░░  50 °C        ▂▂▂   │ │ CPU  ░░░░░░░░░░░░░░░░░    0 rpm              │
+ │ GPU  █████████░░░░░░░░░░  48 °C        ▂▂▂   │ │ GPU  ░░░░░░░░░░░░░░░░░    0 rpm              │
+ │ SYS  ████████████████░░░░░░░░░░░░░░░  52 °C  │ │ duty CPU 30 %  GPU 30 %  ·  auto             │
+ │ Now   quiet desktop                          │ ╰──────────────────────────────────────────────╯
+ ╰──────────────────────────────────────────────╯
+ ╭─ Load ───────────────────────────────────────╮ ╭─ Power ──────────────────────────────────────╮
+ │ CPU  ██░░░░░░░░░░░░░░░░░   12 %        ▁▁▁   │ │ Mode   Performance   on charger              │
+ │ GPU  █░░░░░░░░░░░░░░░░░░    3 %              │ │ Auto   smart · profile steady                │
+ │ GPU power 9 W                                │ │ Batt █████████████████████████░░░░░░   80 %  │
+ ╰──────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
+ ╭─ What you did ─────────────────────────────────────────────────────────────────────────────────╮
+ │ Nothing yet: your changes are listed here.                                                     │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+ Eco / Quiet / Balanced / Performance / Turbo. Your pick is held for 30 minutes against Smart auto.
+ ↑↓ select   ←→ choose   Enter apply now   Tab page   ? help   q quit

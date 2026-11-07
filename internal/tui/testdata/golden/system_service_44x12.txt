@@ -1,0 +1,12 @@
+ TrueSense test            ↯80 %  ● service
+  1   2   3   4   5   6   7 System
+ TrueSense  ──────────────────────────────
+  Version           test
+  Kernel module     sim
+  Service           running
+  Window            truesense gui
+▸ Open the window   [ Open ]
+
+ Health check  ───────────────────────────▼
+ The TrueSense window (the same as running…
+ ↑↓ select   Enter run   Tab page   ? help

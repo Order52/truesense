@@ -1,0 +1,24 @@
+ TrueSense test                                                 ↯80 %  ● direct
+  1   2   3   4   5   6   7 System
+ TrueSense  ──────────────────────────────────────────────────────────────────
+  Version           test
+  Kernel module     sim
+  Service           not running (direct hardware access)
+  Window            truesense gui
+▸ Open the window   [ Open ]
+
+ Health check  ───────────────────────────────────────────────────────────────
+  Run the check     [ Run doctor ]
+                    not run yet: press Enter on the button above
+
+
+
+
+
+
+
+
+
+
+ The TrueSense window (the same as running truesense gui).
+ ↑↓ select   Enter run   Tab page   ? help   q quit

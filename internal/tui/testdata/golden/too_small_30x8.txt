@@ -1,0 +1,8 @@
+TrueSense needs
+a 44x12 terminal
+(this is 30x8)
+
+
+
+
+
