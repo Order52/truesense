@@ -1,6 +1,6 @@
 # Installing TrueSense
 
-Requires: an Acer Predator Helios 16 **PH16-71**, systemd, Linux with kernel headers available, Python 3.11+.
+Requires: an Acer Predator Helios 16 **PH16-71**, systemd, Linux with the kernel headers of your running kernel (and dkms and a C compiler, to build the small kernel module). TrueSense itself is one static program: no Python, no Qt, no runtime to install.
 
 ## One line
 ```

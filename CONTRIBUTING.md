@@ -12,21 +12,23 @@ Thanks for helping. TrueSense drives real hardware, so the rules are about safet
 ## Set up
 ```
 git clone https://github.com/Order52/truesense && cd truesense
-make test                       # the whole suite, against the built-in simulator (no hardware needed)
-python3 tools/screenshots.py    # regenerate docs/images (needs python-pyqt6)
-./truesense gui                 # run the window from the checkout (the service must be installed for hardware features)
+make go-test                    # the whole suite, against the built-in simulator (no hardware needed)
+make go-ci                      # what CI runs: gofmt, vet, staticcheck, golangci-lint, race-detector tests, govulncheck
+make build                      # dist/truesense, the static binary
+TRUESENSE_SIM=1 dist/truesense gui   # run the window from the checkout on the simulator
 ```
-`TRUESENSE_SIM=1` runs everything on the simulator. The tests never touch your real service, config or lighting memory.
+Go 1.26 or newer (see `go.mod`). `TRUESENSE_SIM=1` runs everything on the simulator. The tests never touch your real service, config or lighting memory.
 
 ## Changing code
-- Python 3.11+, standard library only (PyQt6 is optional and only for `gui.py`). Keep the CLI and the window thin: put logic in the modules and test it.
-- New setting: kernel/device, `backend.py`, daemon handler if it needs privilege or persistence, CLI verb, window control, a unit test, a smoke-test command, a line in USAGE and STATUS.
-- New profile kind: follow `curves.py` / `smartprofiles.py` (built-ins read-only incl. `native`, copy to edit, validate everything).
+- Go, and as few dependencies as possible (every one is supply-chain surface in a root program; see the table in [docs/GO-MIGRATION.md](docs/GO-MIGRATION.md)). The layers and their dependency rules are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): decisions are pure, effects are injected, the CLI, terminal UI and window are thin and share `internal/api`.
+- New setting: `internal/firmware` / `internal/hw` (typed, read back), a daemon handler in `internal/daemon` if it needs privilege or persistence, an `internal/api` method, a CLI verb, a terminal UI row and a window control, a table-driven test (the simulator mirrors the kernel's validation), a line in USAGE and STATUS.
+- New profile kind: follow `internal/curves` / `internal/smartprofile` (built-ins read-only incl. `native`, copy to edit, validate everything).
+- Anything that parses input from outside (socket requests, firmware replies, archives, files) gets a fuzz target.
 - Kernel module: `make module-test` builds it for every installed kernel with warnings on; keep it warning-free.
-- Run `make check` before you push (it runs the tests, `make lint` and the shell syntax checks). `make lint` uses [ruff](https://docs.astral.sh/ruff/) with the rules in `ruff.toml`; install it with `pip install ruff` (it is skipped when missing, CI always runs it).
+- Run `make go-ci` before you push (`gofmt`, `go vet`, `staticcheck`, `golangci-lint` with the repo's `.golangci.yml`, the race-detector tests and `govulncheck`; tools that are not installed are skipped locally, CI always runs them), and `make ci` for the shell, workflow and documentation checks.
 
 ## Releasing and CI
-See docs/RELEASING.md: `python3 tools/release.py prepare X.Y.Z --title "..."` then push the tag. CI runs on every push (lint, shellcheck, tests on Python 3.11 to 3.14, the module on several distributions' kernels, the installer on five distribution families, the Arch package).
+See docs/RELEASING.md: `go run ./cmd/release prepare X.Y.Z --title "..."` then push the tag. CI runs on every push (gofmt, vet, staticcheck, golangci-lint, govulncheck, the race-detector tests and a short fuzz pass, a reproducible build check, the module on several distributions' kernels, the installer on five distribution families, the Arch package).
 
 ## Reporting
 Use the issue templates. Include `truesense doctor --json`.
