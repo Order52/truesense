@@ -218,6 +218,11 @@ if [ "$AUDIO" = 1 ]; then p=$(pkg audio); if [ -n "$p" ]; then pkg_install $p ||
 find_binary
 install -d "$PREFIX/lib/truesense" "$PREFIX/bin" "$PREFIX/share/truesense/profiles" /etc/truesense
 install -m755 "$ROOT/packaging/health.sh" "$PREFIX/lib/truesense/health.sh"
+# The GPU undervolt helper: one small C program that talks to NVIDIA's library (the daemon is static and cannot load it, and must not hang on it). Not fatal if it cannot be built.
+HELPER_CC=$(command -v cc || command -v gcc || command -v clang || true)
+if [ -n "$HELPER_CC" ] && "$HELPER_CC" -O2 -Wall -o "$PREFIX/lib/truesense/truesense-nvml.new" "$ROOT/tools/nvml/truesense-nvml.c" -ldl 2>/dev/null; then
+  chmod 755 "$PREFIX/lib/truesense/truesense-nvml.new"; mv -f "$PREFIX/lib/truesense/truesense-nvml.new" "$PREFIX/lib/truesense/truesense-nvml"
+else rm -f "$PREFIX/lib/truesense/truesense-nvml.new"; say "(could not build the GPU helper: GPU undervolt will be unavailable; everything else works)"; fi
 rm -f "$PREFIX/bin/truesense.new" "$PREFIX/bin/truesense.prev"
 install -m755 "$BIN" "$PREFIX/bin/truesense.new"                                                              # beside the old one, then swap atomically
 [ -e "$PREFIX/bin/truesense" ] && cp -p "$PREFIX/bin/truesense" "$PREFIX/bin/truesense.prev"

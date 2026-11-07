@@ -5,7 +5,6 @@ go 1.26.0
 toolchain go1.27.3
 
 require (
-	github.com/ebitengine/purego v0.11.3
 	github.com/gdamore/tcell/v2 v2.13.10
 	github.com/pelletier/go-toml/v2 v2.4.3
 	golang.org/x/sys v0.49.0

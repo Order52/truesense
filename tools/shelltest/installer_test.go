@@ -428,7 +428,7 @@ func TestPackagesBuildTheGoProgramAndNeedNoPythonOrSocat(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(b)
-		for _, want := range []string{"makedepends=('go')", "go build", "CGO_ENABLED=0", "-trimpath", "./cmd/truesense", "arch=('x86_64')", "truesense-fast"} {
+		for _, want := range []string{"makedepends=('go' 'gcc')", "go build", "CGO_ENABLED=0", "-trimpath", "./cmd/truesense", "arch=('x86_64')", "truesense-fast", "tools/nvml/truesense-nvml.c", "usr/lib/truesense/truesense-nvml"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s lacks %q", f, want)
 			}

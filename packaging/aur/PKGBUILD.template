@@ -9,7 +9,7 @@ arch=('x86_64')
 url='https://github.com/Order52/truesense'
 license=('MIT')
 depends=('dkms' 'systemd')
-makedepends=('go')
+makedepends=('go' 'gcc')
 optdepends=('linux-headers: build the kernel module (any installed kernel needs its own headers)'
             'noise-suppression-for-voice: Purified Voice (RNNoise) microphone noise reduction'
             'nvidia-utils: GPU temperature and power'
@@ -24,12 +24,14 @@ build() {
     cd "$srcdir/$pkgname-$pkgver"
     export CGO_ENABLED=0 GOFLAGS="-trimpath -buildvcs=false -mod=readonly"
     go build -ldflags "-s -w" -o "$srcdir/truesense" ./cmd/truesense      # one static program: daemon, command line, terminal UI, window and services
+    gcc -O2 -Wall -o "$srcdir/truesense-nvml" tools/nvml/truesense-nvml.c -ldl      # the GPU undervolt helper (the daemon is static and cannot load NVIDIA's library itself)
 }
 
 package() {
     _src="$srcdir/$pkgname-$pkgver"
     install -Dm755 "$srcdir/truesense" "$pkgdir/usr/bin/truesense"
     ln -s truesense "$pkgdir/usr/bin/truesense-fast"                      # the name selects the instant status-bar client
+    install -Dm755 "$srcdir/truesense-nvml" "$pkgdir/usr/lib/truesense/truesense-nvml"
     install -Dm755 "$_src/packaging/health.sh" "$pkgdir/usr/lib/truesense/health.sh"
     for f in truesense.service truesense-health.service truesense-health.timer; do
         sed -e 's|@PREFIX@|/usr|g' -e 's|@MODPROBE@|/usr/bin/modprobe|g' "$_src/packaging/$f" | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/$f"
