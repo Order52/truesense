@@ -116,10 +116,11 @@ export function live(key, fn) {
 
 /**
  * Follows /api/stream. onState gets each parsed state; onConn gets "online", "offline" or
- * "stale" (the token is not accepted: the window is from an older run).
+ * "stale" (the token is not accepted: the window is from an older run); onShow gets a page id
+ * when a second `truesense gui` asks this window to show that page.
  * @returns {() => void} stop
  */
-export function startStream(onState, onConn) {
+export function startStream(onState, onConn, onShow) {
   let stopped = false;
   let ctl = null;
   (async () => {
@@ -138,11 +139,15 @@ export function startStream(onState, onConn) {
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         const parser = createSSEParser((ev) => {
-          if (ev.event !== "state") return;
           try {
+            if (ev.event === "show") {
+              if (onShow) onShow(JSON.parse(ev.data));
+              return;
+            }
+            if (ev.event !== "state") return;
             onState(JSON.parse(ev.data));
           } catch {
-            /* a malformed state is skipped */
+            /* a malformed message is skipped */
           }
         });
         for (;;) {

@@ -6,7 +6,7 @@ Start with `truesense doctor`: it checks the model, kernel, headers, DKMS, modul
 |---|---|
 | "unknown command ... the running service is older than this app" | the service was not restarted after an upgrade: `sudo tools/install.sh` (or `sudo systemctl restart truesense`) |
 | `/dev/truesense` missing | the module did not load: `sudo modprobe truesense_wmi`, then `dmesg | grep truesense`. After a kernel update the health timer rebuilds it within minutes (or `sudo dkms autoinstall`). Unsupported model: the module refuses unless forced |
-| The window does not open | `truesense gui` prints the address it serves (a local page, protected by a one-time token): open it in any browser. It opens an app window with Chromium or Firefox, else `xdg-open`; everything else works without it |
+| The window does not open | `truesense gui` prints the address it serves (a local page, protected by a one-time token): open it in any browser. It opens as an application window (no tabs or address bar): Chromium-family browsers in `--app` mode, Firefox in its own TrueSense profile, else `xdg-open`; everything else works without it |
 | The PREDATOR key does nothing | `systemctl --user status truesense-keys`; the udev rule must give your seat access to the keyboard's hidraw node (`doctor` checks) |
 | Fan or mode change is ignored | another tool is fighting TrueSense (`tuned`, `auto-cpufreq`, old scripts). Stop it |
 | No sound at all (only an `AcerUltraX` output, `doctor` says NO SOUND OUTPUT) | `truesense audio repair`: WirePlumber built the sound card without its speaker profiles at boot; details below |

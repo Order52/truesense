@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 )
 
@@ -27,14 +28,19 @@ type Launcher struct {
 	Getenv func(key string) string
 	// Out is where the URL is printed when no browser can be started.
 	Out io.Writer
+	// DataDir is the user's data directory (XDG_DATA_HOME); Firefox's application profile lives under it.
+	DataDir func() string
+	// FirefoxRunning reports whether a Firefox is already running on the profile directory.
+	FirefoxRunning func(dir string) bool
 }
 
 // DefaultLauncher uses the real PATH, process table and terminal.
 func DefaultLauncher() Launcher {
-	return Launcher{LookPath: exec.LookPath, Start: startDetached, Getenv: os.Getenv, Out: os.Stdout}
+	return Launcher{LookPath: exec.LookPath, Start: startDetached, Getenv: os.Getenv, Out: os.Stdout, DataDir: defaultDataDir, FirefoxRunning: firefoxProfileRunning}
 }
 
-// Open shows url as an app window of a Chromium-family browser, else in Firefox, else
+// Open shows url as an app window of a Chromium-family browser, else as an application-style
+// Firefox window (its own profile without tabs or address bar), else
 // through xdg-open, else it only prints the URL for the user to open (the URL carries the
 // access token, so it is not printed when a browser was started).
 func Open(url string) error { return DefaultLauncher().Open(url) }
@@ -46,16 +52,27 @@ func (l Launcher) Open(url string) error {
 	}
 	for _, name := range chromiumFamily {
 		if path, err := l.LookPath(name); err == nil {
-			return l.started(url, l.Start(path, "--app="+url, "--window-size=1180,820", "--no-first-run"))
+			return l.started(url, l.Start(path, "--app="+url, "--class="+WindowClass, "--window-size=1180,820", "--no-first-run"))
 		}
 	}
 	if path, err := l.LookPath("firefox"); err == nil {
-		return l.started(url, l.Start(path, "--new-window", url))
+		return l.openFirefox(path, url)
 	}
 	if path, err := l.LookPath("xdg-open"); err == nil {
 		return l.started(url, l.Start(path, url))
 	}
 	return l.print(url, "no browser found")
+}
+
+// openFirefox shows url in Firefox as an application window: a profile of its own with the tabs
+// and the address bar hidden (see firefoxapp.go). If that profile cannot be prepared the page still
+// opens, in an ordinary Firefox window.
+func (l Launcher) openFirefox(path, url string) error {
+	dir := filepath.Join(l.DataDir(), "truesense", firefoxProfileName)
+	if err := writeFirefoxProfile(dir); err != nil {
+		return l.started(url, l.Start(path, "--new-window", url))
+	}
+	return l.started(url, l.Start(path, firefoxArgs(dir, url, l.FirefoxRunning(dir))...))
 }
 
 func (l Launcher) started(url string, err error) error {

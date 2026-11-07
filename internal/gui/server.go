@@ -60,6 +60,9 @@ type server struct {
 
 	streams atomic.Int32
 
+	showMu   sync.Mutex
+	showSubs map[chan string]struct{} // open streams waiting for "go to this page" requests
+
 	mu       sync.Mutex
 	lastSeen time.Time            // when the number of open streams last became zero
 	codes    map[string]time.Time // one-time launch codes (hashed) -> expiry
@@ -71,7 +74,7 @@ func newServer(addr, session string, o Options, quit func()) *server {
 	s := &server{
 		addr: addr, session: sha256.Sum256([]byte(session)), sessionToken: session, cmds: o.Commands, assets: loadAssets(),
 		log: o.Log, version: o.Version, timeout: o.CommandTimeout, quit: quit, lastSeen: time.Now(),
-		codes: map[string]time.Time{},
+		codes: map[string]time.Time{}, showSubs: map[chan string]struct{}{},
 	}
 	s.hub = newHub(o.Commands, o.Log)
 	return s
@@ -215,6 +218,15 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		reply200(w, true)
 		s.quit()
 		return
+	case "gui/show":
+		// A second `truesense gui` asks the window that is open to go to a page: no second window.
+		var req struct {
+			Page string `json:"page"`
+		}
+		_ = json.Unmarshal(body, &req)
+		n := s.broadcastShow(req.Page)
+		reply200(w, map[string]any{"shown": n > 0, "windows": n})
+		return
 	case "gui/launch":
 		code, err := s.mintCode()
 		if err != nil {
@@ -292,12 +304,18 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request) {
 	}
 	sub, unsubscribe := s.hub.subscribe()
 	defer unsubscribe()
+	shows, unshow := s.subscribeShow()
+	defer unshow()
 	ping := time.NewTicker(15 * time.Second)
 	defer ping.Stop()
 	for {
 		select {
 		case msg := <-sub:
 			if !write("event: state\ndata: %s\n\n", msg) {
+				return
+			}
+		case page := <-shows:
+			if !write("event: show\ndata: %s\n\n", page) {
 				return
 			}
 		case <-ping.C:
@@ -308,6 +326,35 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// pageName is what a page may be asked to show: a page id as `truesense gui --page` names it.
+var pageName = regexp.MustCompile(`^[a-z][a-z-]{0,23}$`)
+
+func (s *server) subscribeShow() (<-chan string, func()) {
+	ch := make(chan string, 4)
+	s.showMu.Lock()
+	s.showSubs[ch] = struct{}{}
+	s.showMu.Unlock()
+	return ch, func() { s.showMu.Lock(); delete(s.showSubs, ch); s.showMu.Unlock() }
+}
+
+// broadcastShow tells every open page to go to page (home when the name is not a page id) and
+// returns how many pages heard it. The name is sent as a JSON string, so it cannot carry markup.
+func (s *server) broadcastShow(page string) int {
+	if !pageName.MatchString(page) {
+		page = "home"
+	}
+	msg, _ := json.Marshal(page)
+	s.showMu.Lock()
+	defer s.showMu.Unlock()
+	for ch := range s.showSubs {
+		select {
+		case ch <- string(msg):
+		default: // a stalled page misses it rather than holding the others up
+		}
+	}
+	return len(s.showSubs)
 }
 
 // launchCodeLife is how long a window URL stays usable. The URL is on the browser's command

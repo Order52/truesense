@@ -60,7 +60,9 @@ func runCLI(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	a := api.New(services)
 	hooks := cli.Hooks{
 		TUI: func(ctx context.Context, page string) error { return runTUI(ctx, a, services, page, stderr) },
-		GUI: func(ctx context.Context, page string) error { return realWindow(stderr).show(ctx, a, services, page) },
+		GUI: func(ctx context.Context, page string) error {
+			return realWindow(stderr).showWindow(ctx, a, services, page)
+		},
 	}
 	code := cli.New(a, hooks, stdin).Execute(ctx, args, stdout, stderr)
 	if code != command.ExitOK && ctx.Err() != nil {

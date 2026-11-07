@@ -31,7 +31,7 @@ func newRig(resumeURL string, runErr error) *windowRig {
 func TestAWindowThatRunsIsBroughtForward(t *testing.T) {
 	f := apitest.New(t)
 	r := newRig("http://127.0.0.1:5555/#code=abc", nil)
-	if err := r.w.show(t.Context(), f.API(), f.S, "keys"); err != nil {
+	if err := r.w.showWindow(t.Context(), f.API(), f.S, "keys"); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.ran) != 0 || len(r.opened) != 1 || !strings.Contains(r.opened[0], "page=keys") || !strings.Contains(r.opened[0], "code=abc") {
@@ -42,7 +42,7 @@ func TestAWindowThatRunsIsBroughtForward(t *testing.T) {
 func TestWithoutAWindowTheServerIsStartedOnThePage(t *testing.T) {
 	f := apitest.New(t)
 	r := newRig("", nil)
-	if err := r.w.show(t.Context(), f.API(), f.S, "audio"); err != nil {
+	if err := r.w.showWindow(t.Context(), f.API(), f.S, "audio"); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.ran) != 1 || r.ran[0].Page != "audio" || r.ran[0].Commands == nil || r.ran[0].Version == "" || len(r.opened) != 0 {
@@ -63,7 +63,7 @@ func TestTheLoserOfTheRaceBringsTheWinnersWindowForward(t *testing.T) {
 		calls++
 		return "http://127.0.0.1:5556/#code=x", calls > 1 // nothing before the attempt, the winner's window after it
 	}
-	if err := r.w.show(t.Context(), f.API(), f.S, ""); err != nil {
+	if err := r.w.showWindow(t.Context(), f.API(), f.S, ""); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.opened) != 1 {
@@ -71,11 +71,44 @@ func TestTheLoserOfTheRaceBringsTheWinnersWindowForward(t *testing.T) {
 	}
 	// a server that cannot be resumed after ErrRunning is an error, not silence
 	r = newRig("", gui.ErrRunning)
-	if err := r.w.show(t.Context(), f.API(), f.S, ""); !errors.Is(err, gui.ErrRunning) {
+	if err := r.w.showWindow(t.Context(), f.API(), f.S, ""); !errors.Is(err, gui.ErrRunning) {
 		t.Fatalf("%v", err)
 	}
 	r = newRig("", errors.New("no port"))
-	if err := r.w.show(t.Context(), f.API(), f.S, ""); err == nil || err.Error() != "no port" {
+	if err := r.w.showWindow(t.Context(), f.API(), f.S, ""); err == nil || err.Error() != "no port" {
 		t.Fatalf("%v", err)
+	}
+}
+
+func TestAnOpenWindowIsToldToShowThePageAndRaisedNotDuplicated(t *testing.T) {
+	f := apitest.New(t)
+	r := newRig("http://127.0.0.1:5555/#code=abc", nil)
+	var shown []string
+	r.w.show = func(page string) bool { shown = append(shown, page); return true }
+	r.w.raise = func() bool { return true }
+	if err := r.w.showWindow(t.Context(), f.API(), f.S, "curves"); err != nil {
+		t.Fatal(err)
+	}
+	if len(shown) != 1 || shown[0] != "curves" || len(r.opened) != 0 || len(r.ran) != 0 {
+		t.Fatalf("a window that is open must be reused: shown %v, opened %v", shown, r.opened)
+	}
+}
+
+func TestIfTheWindowCannotBeRaisedANewOneIsOpenedSoTheKeyPressStillDoesSomething(t *testing.T) {
+	f := apitest.New(t)
+	r := newRig("http://127.0.0.1:5555/#code=abc", nil)
+	r.w.show = func(string) bool { return true }
+	r.w.raise = func() bool { return false } // a desktop with no way to focus another program's window
+	if err := r.w.showWindow(t.Context(), f.API(), f.S, "home"); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.opened) != 1 {
+		t.Fatalf("a launch must show something: %v", r.opened)
+	}
+	r2 := newRig("http://127.0.0.1:5555/#code=abc", nil)
+	r2.w.show = func(string) bool { return false } // a server with no page connected
+	r2.w.raise = func() bool { t.Fatal("nothing to raise when no page heard the request"); return true }
+	if err := r2.w.showWindow(t.Context(), f.API(), f.S, "home"); err != nil || len(r2.opened) != 1 {
+		t.Fatalf("%v %v", err, r2.opened)
 	}
 }

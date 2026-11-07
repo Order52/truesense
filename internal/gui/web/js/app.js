@@ -137,7 +137,9 @@ store.subscribe((st) => {
   }
 });
 
-const stop = startStream(ingest, (conn) => store.set({ conn }));
+const stop = startStream(ingest, (conn) => store.set({ conn }), (page) => {
+  if (typeof page === "string" && /^[a-z][a-z-]{0,23}$/.test(page)) location.hash = `#/${page}`;
+});
 
 // ---- start-up extras ----
 tryCall("version", "get", {}, null).then((v) => {

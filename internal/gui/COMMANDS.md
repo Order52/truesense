@@ -34,7 +34,7 @@ that the simulated laptop (`internal/gui/guitest`) does not know.
   must be refused by the implementation unless the args carry `confirm: true` (and `force: true` beyond
   the danger line), exactly like `--confirm` / `--force`: the page asks the user first, but the page is
   not trusted to be the only guard.
-- Four commands are answered by the gui package itself and never reach `Commands`: `gui ping`
+- Five commands are answered by the gui package itself and never reach `Commands`: `gui show` (a second `truesense gui` asks the open window to go to a page: `{"page": "curves"}`, answered `{"shown": bool, "windows": n}`; the page gets a `show` event on the stream), `gui ping`
   (`{"version": "..."}`), `gui quit` (stops the window server), `gui launch` (mints a one-time window code,
   used by `gui.Resume`) and `gui session` (the page trades the one-time code in its URL for the session
   token; the only call that needs no token). The session token is never in a URL: the window URL holds a
