@@ -245,7 +245,9 @@ func TestSysfsReadings(t *testing.T) {
 	if v, ok := h.GPUTemp(); !ok || v != 63 {
 		t.Fatalf("GPUTemp = %v, %v", v, ok)
 	}
-	h.Exec = func(ctx context.Context, name string, args ...string) ([]byte, error) { return nil, errors.New("no nvidia-smi") }
+	h.Exec = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return nil, errors.New("no nvidia-smi")
+	}
 	if _, ok := h.GPUTemp(); ok {
 		t.Fatal("a missing nvidia-smi is not a temperature")
 	}

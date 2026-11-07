@@ -99,4 +99,3 @@ func (s *Store) GetInto(key string, out any) error {
 	}
 	return json.Unmarshal(b, out)
 }
-
