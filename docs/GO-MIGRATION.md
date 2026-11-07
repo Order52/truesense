@@ -1,6 +1,6 @@
 # Migrating TrueSense to Go: the plan
 
-Status: in progress on the `go-migration` branch. This document is the contract every part of the port follows.
+Status: **done in 0.4.0**. The port was verified on the PH16-71 (the self-test passes 17 of 17, the terminal UI was driven live against the Go daemon, the window's command bus and the key service ran for real). The Python behaviour tests were ported case by case, and the Python and Go command lines were compared on about 85 JSON outputs in simulation before the Python code was removed (it stays in the git history at `v0.3.17`). This document is the contract the port followed.
 
 ## Why, and what does not change
 

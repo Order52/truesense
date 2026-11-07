@@ -1,10 +1,10 @@
 # Performance: what costs what
 
-Measured on the Acer Predator Helios 16 (PH16-71, BIOS V1.18, CachyOS, Python 3.14, PyQt6). The point of this page: where the time really goes, so effort goes where it pays.
+Measured on the Acer Predator Helios 16 (PH16-71, BIOS V1.18, CachyOS) with TrueSense 0.4.0 (Go) and compared with 0.3.17 (Python, the last release before the port). The point of this page: where the time really goes, so effort goes where it pays.
 
 ## The short version
 
-TrueSense is **not CPU-bound**. Almost everything it waits for is the laptop's firmware or a USB device, so a faster language would not make those waits shorter.
+TrueSense is **not CPU-bound**. Almost everything it waits for is the laptop's firmware or a USB device, so a faster language does not make those waits shorter. What the Go port changed is everything around them: start-up, the number of runtimes and the size of the install.
 
 | What | Cost | Who controls it |
 |---|---|---|
@@ -14,43 +14,48 @@ TrueSense is **not CPU-bound**. Almost everything it waits for is the laptop's f
 | Opening the keyboard's HID interface | **50 ms** (each open) | the kernel + keyboard controller |
 | A USB feature report to the keyboard (once open) | 0.3 ms | already fast |
 | Sending one per-key frame (8 packets, paced) | about 188 ms | deliberate 16 ms pacing: unpaced writes lose the last row |
-| The service (`truesense daemon`) while idle | **0.35 % of one core, 20 MB** | already small |
-| Python start-up itself (`python3 -c pass`) | 17 ms | the interpreter |
+| Start-up of the program itself (`truesense --version`) | **4 ms** (Python: 20 ms at best, 44 ms before tuning) | a static binary |
 
-So the module is already as fast as native code (about 2 microseconds of its own), and the remaining time is the firmware and the keyboard controller answering. Rewriting the Python in C++ or Rust would save microseconds out of milliseconds.
+## Measured results: Python 0.3.17 and Go 0.4.0 on the same laptop
 
-## What was worth fixing (and was fixed)
+Commands (median of 20 to 40 runs, real hardware, service running):
 
-Things that were *ours*, found by measuring:
-
-- **Opening the keyboard device on every operation (50 ms each).** A process now opens it once and keeps the handle (0.5 ms per read afterwards, 95 times faster), serialised with a lock, reopened once if it goes stale. The first open can run in the background (`keyboard.prewarm()`) while other work happens.
-- **No bytecode cache in the installed copy.** The install folder is root-owned, so a normal user's Python could not write `.pyc` files and recompiled `gui.py` and 14 other modules on every launch. The installer (and the Arch packages) now compile as root; `truesense doctor` checks it.
-- **Building every page before showing the window.** The window now builds Home, shows itself, and builds the other nine pages right after the first paint: 266 ms to a visible window became 92 ms.
-- **Polling the firmware more than needed.** While idle the window reads only what changes by itself (the fans, and power mode and power source from the service); slow settings are re-read every 20 s, on focus, on opening a page or after a change. 55 firmware/USB calls per 10 s became 15.
-- **Checks that waited for each other, and a slow external tool.** `truesense doctor` runs its checks side by side (691 ms to 272 ms warm), and its two DKMS checks read DKMS's own directories instead of running `dkms status` (1 to 1.3 s here): about 90 ms in total.
-- **Importing things nobody needs yet** (the HTTP stack for update checks) and **building the whole argument parser for one command**.
-
-## Measured results (before, then now)
-
-| | Before | Now |
+| | Python 0.3.17 | Go 0.4.0 |
 |---|---|---|
-| Launch: process start to visible window | 266 ms | 92 ms |
-| `truesense --version` | 44 ms | 20 ms |
-| `truesense fan status` | 65 ms | 56 ms |
-| `truesense keyboard status` | 170 ms | 108 ms |
-| `truesense status` | 241 ms | 137 ms |
-| `truesense doctor` | 691 ms (1.2 s on the installed copy) | 272 ms (about 90 ms once it stopped running `dkms`) |
-| Window: full hardware refresh | 212 ms | 115 ms |
-| Window: idle firmware/USB calls per 10 s | 55 (594 ms) | 15 (134 ms) |
-| Keyboard brightness read | 52 ms | 0.55 ms |
-| Per-key animation frame | about 235 ms | about 188 ms |
+| `truesense --version` | 20 ms | **4.3 ms** |
+| `truesense fan status` | 56 ms | **29.8 ms** |
+| `truesense keyboard status` | 108 ms | **8.2 ms** |
+| `truesense status` | 137 ms | **107 ms** |
+| `truesense doctor` | 272 ms | **106 ms** |
+
+The long-running processes (`truesense daemon`, the key service, the audio watcher), as installed, with the units' `GOMAXPROCS=2 GOGC=25`:
+
+| | Python 0.3.17 | Go 0.4.0 |
+|---|---|---|
+| Daemon, resident memory | 20 MB | **14.4 MB** (5.6 MB private, the rest is the shared program file) |
+| Key service | 19 MB | **16.3 MB** |
+| Audio watcher | 20 MB | **14.0 MB** |
+| The three together | 58.7 MB | **44.6 MB**, and the three share one program file in memory |
+| Daemon, idle CPU | about 0.4 to 0.6 % of one core | about 0.5 % of one core (it wakes once a second and the firmware calls are most of that) |
+| Installed size | a Python tree plus Python itself | one 11 MB static file, a 16 KB helper, no Python, no Qt |
+
+The honest reading: always-on CPU use is about the same (the daemon's work is mostly waiting for the firmware, and that is not CPU), memory is a quarter to a third lower, and a command that starts is several times faster. The Go runtime's defaults suit big servers, so the units set two workers and a tight heap; the same settings measured on an unmanaged run cut the private memory from 8.8 MB to 5.7 MB.
+
+## What was worth fixing, and was fixed
+
+- **Opening the keyboard device on every operation (50 ms each).** A process opens it once and keeps the handle (0.5 ms per read afterwards), serialised with a lock, reopened once if it goes stale.
+- **Polling the firmware more than needed.** The window reads only what changes by itself; slow settings are re-read on focus, on opening a page or after a change.
+- **Checks that waited for each other.** `truesense doctor` runs its checks side by side (a worker pool), and its DKMS checks read DKMS's own directories instead of running `dkms status`.
+- **A run of key presses or a drag was many writes.** Writes go through one ordered queue and a newer value for the same setting replaces an older one that has not started.
+- **The GPU undervolt's NVIDIA call could hang the service.** It runs in a small helper with a timeout (which also keeps the main binary static).
 
 ## What is left, and why
 
-- **The 5 ms per firmware call** is inside the BIOS. The only lever is making fewer calls, which is what the tiered refresh does.
-- **The 50 ms first open of the keyboard** cannot be avoided in a one-shot command; it is hidden behind other work where there is any (`status`, window start).
+- **The 5 ms per firmware call** is inside the BIOS. The only lever is making fewer calls, which the tiered refresh does.
+- **The 50 ms first open of the keyboard** cannot be avoided in a one-shot command.
 - **The 188 ms per animation frame** is the pacing the keyboard needs. Shorter spacing is worth testing, but only by someone watching the keys: there is no read-back for LED colours.
+- **`truesense status` (107 ms)** asks the sound system and several firmware features; each question is a separate firmware or process call.
 
 ## How to measure again
 
-`make test` and the tests in `tests/` pin the behaviours above (one open per process, stale-handle reopen, no interleaving between threads, parallel `doctor`, lazy window build, the installer's bytecode step). For timings, run the command a few times and compare medians; the first call after a long idle includes cold caches.
+`go test ./...` pins the behaviours above: one open per process, the ordered write queue, the helper's timeout. For timings, run the command a few times and compare medians; for memory, read `VmRSS` and `RssAnon` from `/proc/<pid>/status` of the running processes.

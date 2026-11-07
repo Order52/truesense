@@ -4,6 +4,17 @@ Tested on one machine: **Acer Predator Helios 16 PH16-71, BIOS V1.18, i7-13700HX
 
 Labels: **VERIFIED** = set, read back (or measured, or seen by the owner) and restored on this laptop. **SIMULATED** = the logic is covered by tests against the built-in simulator but has **not** been exercised on the real laptop yet. **PARTIAL** = works with a stated limit. **UNTESTED** = written, never run on hardware. **NOT WORKING / NOT BUILT** = listed so nobody wastes time. The raw chronological evidence is in [verification-log.md](verification-log.md).
 
+## The Go program (0.4.0)
+| Feature | Status | Notes |
+|---|---|---|
+| Daemon, control socket, state restored from 0.3.x (smart fan, curve, profile, hold) | VERIFIED | installed over 0.3.17; every setting kept; the stop path hands the fans back to the firmware |
+| Self-test (every firmware setting set, read back, restored) | VERIFIED | 17 of 17 with the Go program |
+| Terminal UI against the Go daemon (fans, power modes with hold, rear light) | VERIFIED | driven through a real terminal; every change restored |
+| PREDATOR key and the key service (hidraw, gestures, `exec:` action) | VERIFIED | tap ran `truesense gui` on the real key |
+| Window (web): server, token and Host/Origin refusals, commands, fan-stop refusal | VERIFIED | against the real daemon; the page itself was opened by the PREDATOR key |
+| GPU undervolt helper (reads the curve offset through NVML) | VERIFIED (read) | reads +200 MHz and its range; **writes are SIMULATED** (against a fake library), none was run on the real GPU |
+| Fan stop (both fans) with the temperature watchdog | SIMULATED | refused without confirm and when warm; the stop itself was not run on the Go daemon |
+
 ## Power, cooling, battery
 | Feature | Status | Notes |
 |---|---|---|
