@@ -91,7 +91,7 @@ func (w Writer) Apply(khz int) {
 func (w Writer) Uncap() {
 	for _, p := range w.policies() {
 		if b, err := os.ReadFile(filepath.Join(filepath.Dir(p), "cpuinfo_max_freq")); err == nil {
-			_ = os.WriteFile(p, []byte(strings.TrimSpace(string(b))), 0o644)
+			_ = os.WriteFile(p, []byte(strings.TrimSpace(string(b))), 0o644) //nolint:gosec // p comes from a glob of the cpufreq tree, not from input
 		}
 	}
 }
