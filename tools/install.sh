@@ -5,7 +5,7 @@
 #   tools/install.sh --check           read-only report of what is missing (no root needed)
 # Options:
 #   --no-deps        do not install missing prerequisites (just report them)
-#   --no-gui         skip the optional window's dependency (python-pyqt6)
+#   --no-gui         accepted for compatibility (the window is part of the program now and needs no extra package)
 #   --with-audio     also install the RNNoise plugin for microphone noise reduction where the distribution packages it
 #   --no-services    install files but do not enable or start services
 #   --module-only    only migrate old drivers and install the kernel module
@@ -16,7 +16,7 @@
 # Safety: the module is test-built before anything on your system changes; the program files are swapped atomically and rolled back if the service does not start.
 set -Eeuo pipefail
 
-PREFIX=/usr/local; MODULE_ONLY=0; AUDIO=0; SERVICES=1; FORCE=0; DEPS=1; GUI=1; CHECK=0; TARGET_USER=""
+PREFIX=/usr/local; MODULE_ONLY=0; AUDIO=0; SERVICES=1; FORCE=0; DEPS=1; CHECK=0; TARGET_USER=""
 say() { printf '  %s\n' "$*"; }; step() { printf '\n== %s\n' "$*"; }; die() { printf '!! %s\n' "$*" >&2; exit 1; }
 
 # ---- which distribution is this? -----------------------------------------------------------------------------------------------------
@@ -70,16 +70,13 @@ headers_pkg() {
   esac
 }
 
-# package names per family: dkms, a C toolchain, python 3, socat, clang+lld (only for kernels built with clang), the window, the RNNoise plugin
+# package names per family: dkms, a C toolchain (for the kernel module), clang+lld (only for kernels built with clang), the RNNoise plugin
 pkg() {
   case "$FAMILY:$1" in
     arch:dkms) echo dkms;; debian:dkms|fedora:dkms|suse:dkms) echo dkms;;
     arch:make) echo make;; debian:make|fedora:make|suse:make) echo make;;
     arch:cc) echo gcc;; debian:cc|fedora:cc|suse:cc) echo gcc;;
-    arch:python) echo python;; debian:python|fedora:python|suse:python) echo python3;;
-    *:socat) echo socat;;
     arch:clang) echo "clang llvm lld";; debian:clang|fedora:clang|suse:clang) echo "clang lld";;
-    arch:gui) echo python-pyqt6;; debian:gui|fedora:gui) echo python3-pyqt6;; suse:gui) echo python3-qt6;;
     arch:audio) echo noise-suppression-for-voice;;
     *) echo "";;
   esac
@@ -105,11 +102,7 @@ check_prereqs() {
   have make || MISSING+=("$(pkg make)")
   { have gcc || have cc || have clang; } || MISSING+=("$(pkg cc)")
   if grep -qi clang /proc/version 2>/dev/null && ! { have clang && have ld.lld; }; then MISSING+=("$(pkg clang)"); fi      # a clang-built kernel needs clang to build modules
-  if have python3; then python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' || PROBLEMS+=("Python 3.11 or newer is required (found $(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])'); Ubuntu 22.04 and older ship 3.10)")
-  else MISSING+=("$(pkg python)"); fi
-  have socat || MISSING+=("$(pkg socat)")                                                                                  # optional but tiny: instant status-bar buttons
   [ -e "/lib/modules/$k/build" ] || MISSING+=("$(headers_pkg)")
-  if [ "$GUI" = 1 ] && have python3 && ! python3 -c 'import PyQt6.QtWidgets' 2>/dev/null; then MISSING+=("$(pkg gui)"); fi
   local m parts; local flat=(); for m in "${MISSING[@]}"; do [ -n "$m" ] && read -ra parts <<<"$m" && flat+=("${parts[@]}"); done; MISSING=("${flat[@]}")                # "clang llvm lld" -> three entries
 }
 
@@ -119,12 +112,11 @@ ensure_deps() {
   if [ "${#MISSING[@]}" -eq 0 ]; then say "prerequisites: all present"; return 0; fi
   say "missing: ${MISSING[*]}"
   [ "$DEPS" = 1 ] || die "install them (or re-run without --no-deps):  ${MISSING[*]}"
-  [ "$FAMILY" != unknown ] || die "this distribution is not recognised, so I cannot install packages for you. Install:  ${MISSING[*]}   (dkms, make, gcc, python 3.11+, the headers of your running kernel)"
+  [ "$FAMILY" != unknown ] || die "this distribution is not recognised, so I cannot install packages for you. Install:  ${MISSING[*]}   (dkms, make, gcc, the headers of your running kernel)"
   say "installing with the system package manager ($FAMILY): ${MISSING[*]}"
   pkg_install "${MISSING[@]}" || die "installing the prerequisites failed; install them yourself:  ${MISSING[*]}"
   check_prereqs
-  local still=(); local m; for m in "${MISSING[@]}"; do [ "$m" = "$(pkg socat)" ] || [[ "$m" == python*pyqt6* || "$m" == python3-qt6 ]] || still+=("$m"); done
-  [ "${#still[@]}" -eq 0 ] || die "still missing after installing: ${still[*]}"
+  [ "${#MISSING[@]}" -eq 0 ] || die "still missing after installing: ${MISSING[*]}"
 }
 
 # build the module in a scratch folder first: if it does not compile for this kernel, nothing on the system has been touched
@@ -136,11 +128,29 @@ precompile_module() {
     die "the kernel module does not build for $(uname -r) (full log: /var/log/truesense-module-build.log). Nothing was changed."; fi
 }
 
+# the program to install: a prebuilt static binary (a release bundle ships bin/truesense; `make build` makes dist/truesense), or one built from this source tree when Go is installed
+find_binary() {
+  local c want got
+  for c in "${TRUESENSE_BIN:-}" "$ROOT/bin/truesense" "$ROOT/dist/truesense"; do [ -n "$c" ] && [ -x "$c" ] && { BIN=$c; break; }; done
+  if [ -z "${BIN:-}" ] && [ -f "$ROOT/go.mod" ]; then
+    local builder=""; [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ] && builder="runuser -u $SUDO_USER --"      # never leave root-owned files in the user's source tree
+    if $builder sh -c 'command -v go' >/dev/null 2>&1; then
+      say "building the program from source (go)"; mkdir -p "$ROOT/dist"; [ -z "$builder" ] || chown "$SUDO_USER" "$ROOT/dist"
+      $builder sh -c "cd '$ROOT' && CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags '-s -w' -o dist/truesense ./cmd/truesense" || die "go build failed"
+      BIN=$ROOT/dist/truesense
+    fi
+  fi
+  [ -n "${BIN:-}" ] || die "no program to install: there is no bin/truesense or dist/truesense next to this script. Build it (make build; needs Go) or download a release from https://github.com/Order52/truesense/releases"
+  want=$(sed -n 's/^const Version = "\(.*\)"/\1/p' "$ROOT/internal/buildinfo/buildinfo.go" 2>/dev/null | head -n1); got=$("$BIN" --version 2>/dev/null | awk '{print $2}')
+  [ -n "$got" ] || die "$BIN does not run on this machine (is it an x86-64 Linux build?)"
+  [ -z "$want" ] || [ "$got" = "$want" ] || die "$BIN is version $got but this source tree is $want: rebuild it (make build) so you do not install a stale program"
+}
+
 wait_for_service() { local _; for _ in $(seq 1 30); do systemctl is-active --quiet truesense.service && [ -S /run/truesense/truesense.sock ] && return 0; sleep 0.5; done; return 1; }
 
 rollback() {
   echo "!! the service did not start with the new version: restoring the previous one"
-  if [ -d "$PREFIX/lib/truesense.prev" ]; then rm -rf "$PREFIX/lib/truesense"; mv "$PREFIX/lib/truesense.prev" "$PREFIX/lib/truesense"; systemctl restart truesense.service || true
+  if [ -e "$PREFIX/bin/truesense.prev" ]; then mv -f "$PREFIX/bin/truesense.prev" "$PREFIX/bin/truesense"; systemctl restart truesense.service || true
   else systemctl stop truesense.service || true; echo "   (no previous version: the service is stopped and the fans are back on the firmware's control)"; fi
   journalctl -u truesense.service -n 15 --no-pager 2>/dev/null | sed 's/^/    /' || true
 }
@@ -148,7 +158,7 @@ rollback() {
 main() {
   local a
   for a in "$@"; do case "$a" in
-    --check|--dry-run) CHECK=1;; --no-deps) DEPS=0;; --no-gui) GUI=0;; --module-only) MODULE_ONLY=1;; --with-audio) AUDIO=1;; --no-services) SERVICES=0;; --force) FORCE=1;;
+    --check|--dry-run) CHECK=1;; --no-deps) DEPS=0;; --no-gui) ;; --module-only) MODULE_ONLY=1;; --with-audio) AUDIO=1;; --no-services) SERVICES=0;; --force) FORCE=1;;
     --prefix=*) PREFIX=${a#*=};; --user=*) TARGET_USER=${a#*=};; --uninstall) exec "$(dirname "$0")/uninstall.sh";;
     -h|--help) sed -n '2,19p' "$0"; exit 0;; *) echo "unknown option: $a (see --help)" >&2; exit 2;; esac; done
   ROOT=$(realpath "$(dirname "$0")/.."); detect_os
@@ -203,14 +213,14 @@ udevadm trigger --subsystem-match=misc --subsystem-match=hidraw 2>/dev/null || t
 
 step "TrueSense files"
 if [ "$AUDIO" = 1 ]; then p=$(pkg audio); if [ -n "$p" ]; then pkg_install $p || say "(could not install $p)"; else say "(your distribution does not package the RNNoise LADSPA plugin: install noise-suppression-for-voice from its project page)"; fi; fi
+find_binary
 install -d "$PREFIX/lib/truesense" "$PREFIX/bin" "$PREFIX/share/truesense/profiles" /etc/truesense
-rm -rf "$PREFIX/lib/truesense.new" "$PREFIX/lib/truesense.prev"                                              # build the new tree beside the old one, then swap
-mkdir -p "$PREFIX/lib/truesense.new"; cp -r "$ROOT/src/truesense" "$PREFIX/lib/truesense.new/"; find "$PREFIX/lib/truesense.new" -name __pycache__ -prune -exec rm -rf {} +
-# Byte-compile now, as root: the installed tree is root-owned, so a normal user's Python cannot write the cache and would recompile (the window alone: about 50 ms) on every launch.
-python3 -m compileall -q -d "$PREFIX/lib/truesense/truesense" "$PREFIX/lib/truesense.new/truesense" >/dev/null 2>&1 || echo "  note: could not pre-compile the Python files (start-up will be slightly slower)"
-install -m755 "$ROOT/packaging/health.sh" "$PREFIX/lib/truesense.new/health.sh"
-[ -d "$PREFIX/lib/truesense" ] && mv "$PREFIX/lib/truesense" "$PREFIX/lib/truesense.prev"; mv "$PREFIX/lib/truesense.new" "$PREFIX/lib/truesense"
-printf '#!/bin/sh\nexec env PYTHONPATH=%s/lib/truesense python3 -m truesense "$@"\n' "$PREFIX" > "$PREFIX/bin/truesense"; chmod 755 "$PREFIX/bin/truesense"
+install -m755 "$ROOT/packaging/health.sh" "$PREFIX/lib/truesense/health.sh"
+rm -f "$PREFIX/bin/truesense.new" "$PREFIX/bin/truesense.prev"
+install -m755 "$BIN" "$PREFIX/bin/truesense.new"                                                              # beside the old one, then swap atomically
+[ -e "$PREFIX/bin/truesense" ] && cp -p "$PREFIX/bin/truesense" "$PREFIX/bin/truesense.prev"
+mv -f "$PREFIX/bin/truesense.new" "$PREFIX/bin/truesense"
+ln -sf truesense "$PREFIX/bin/truesense-fast"                                                                 # one binary: the name selects the instant status-bar client
 [ -d "$ROOT/packaging/profiles" ] && install -m644 "$ROOT"/packaging/profiles/*.toml "$PREFIX/share/truesense/profiles/"
 if [ ! -e /etc/truesense/config.toml ]; then
   printf '# TrueSense system configuration (see docs/USAGE.md). Built-in defaults apply to everything not set here.\nuser = "%s"\n\n# First install: the PREDATOR key behaves like PredatorSense on Windows (it opens the app). Change it in the app: PREDATOR key.\n[keys]\nprofile = "native"\ntap = "exec:truesense gui"\ndouble = "none"\nlong = "none"\n' "$U" > /etc/truesense/config.toml
@@ -219,13 +229,12 @@ for sh in bash zsh fish; do
   case $sh in bash) d=/usr/share/bash-completion/completions/truesense;; zsh) d=/usr/share/zsh/site-functions/_truesense;; fish) d=/usr/share/fish/vendor_completions.d/truesense.fish;; esac
   install -d "$(dirname "$d")"; "$PREFIX/bin/truesense" completion $sh > "$d" 2>/dev/null || rm -f "$d"
 done
-say "installed $PREFIX/bin/truesense and $PREFIX/lib/truesense"
+say "installed $PREFIX/bin/truesense (version $("$PREFIX/bin/truesense" --version | awk '{print $2}'))"
 
 step "services"
 for u in truesense.service truesense-health.service truesense-health.timer; do sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@MODPROBE@|$(command -v modprobe)|g" "$ROOT/packaging/$u" > /etc/systemd/system/$u; done
-install -m755 "$ROOT/tools/truesense-fast" "$PREFIX/bin/truesense-fast"
 install -Dm644 "$ROOT/LICENSE" "$PREFIX/share/licenses/truesense/LICENSE"
-install -Dm644 "$ROOT/src/truesense/data/truesense.svg" "$PREFIX/share/icons/hicolor/scalable/apps/truesense.svg"; install -Dm644 "$ROOT/packaging/icons/truesense-256.png" "$PREFIX/share/icons/hicolor/256x256/apps/truesense.png"
+install -Dm644 "$ROOT/packaging/icons/truesense.svg" "$PREFIX/share/icons/hicolor/scalable/apps/truesense.svg"; install -Dm644 "$ROOT/packaging/icons/truesense-256.png" "$PREFIX/share/icons/hicolor/256x256/apps/truesense.png"
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t -f "$PREFIX/share/icons/hicolor" 2>/dev/null || true
 install -d /usr/share/applications; sed "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/truesense.desktop" > /usr/share/applications/truesense.desktop; sed "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/truesense-tui.desktop" > /usr/share/applications/truesense-tui.desktop
 for u in truesense-keys.service truesense-audio.service truesense-startup.service truesense-update.service truesense-update.timer; do sed -e "s|@PREFIX@|$PREFIX|g" "$ROOT/packaging/$u" > /etc/systemd/user/$u; done
@@ -235,7 +244,8 @@ if [ "$SERVICES" = 1 ]; then
   systemctl enable truesense.service truesense-health.timer >/dev/null 2>&1
   systemctl restart truesense.service || true    # `enable --now` would NOT restart a running service, so upgrades would keep the old code
   if ! wait_for_service; then rollback; die "the new version did not start (the previous one was restored if there was one)"; fi
-  rm -rf "$PREFIX/lib/truesense.prev"
+  rm -f "$PREFIX/bin/truesense.prev"
+  rm -rf "$PREFIX/lib/truesense/truesense" "$PREFIX/lib/truesense.prev"                                     # the Python program of 0.3.x, replaced by the binary
   systemctl start truesense-health.timer
   systemctl --global enable truesense-keys.service truesense-audio.service truesense-startup.service truesense-update.timer >/dev/null 2>&1
   ur systemctl --user restart truesense-keys.service truesense-audio.service truesense-startup.service || say "(user services start at your next login)"
