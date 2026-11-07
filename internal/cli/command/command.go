@@ -5,6 +5,7 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -33,6 +35,9 @@ type Cmd struct {
 	Run     func(c *Ctx) error
 	Sub     []*Cmd
 	Hidden  bool // not listed in help or completions (for example the daemon, started by systemd)
+	// Complete are the words the command's positional arguments take (modes, on/off/toggle, ...),
+	// offered by the shell completions next to its flags.
+	Complete []string
 }
 
 // Ctx is what a running command sees.
@@ -49,6 +54,12 @@ type Ctx struct {
 type UsageError struct{ Msg string }
 
 func (e *UsageError) Error() string { return e.Msg }
+
+// ExitCode is an error that only carries the process exit code: the command has already said
+// everything it had to say (a failed repair, a health check with failures). Nothing more is printed.
+type ExitCode int
+
+func (e ExitCode) Error() string { return "exit code " + strconv.Itoa(int(e)) }
 
 // Usagef builds a UsageError.
 func Usagef(format string, args ...any) error { return &UsageError{Msg: fmt.Sprintf(format, args...)} }
@@ -86,12 +97,18 @@ func (c *Ctx) Emit(value any, human string) {
 	}
 }
 
+// writeJSON prints v as indented JSON. Text is not HTML-escaped: "&" stays "&", which keeps
+// descriptions readable.
 func (c *Ctx) writeJSON(v any) {
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		b, _ = json.Marshal(map[string]string{"error": err.Error()})
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		buf.Reset()
+		_ = enc.Encode(map[string]string{"error": err.Error()})
 	}
-	_, _ = c.Out.Write(append(b, '\n'))
+	_, _ = c.Out.Write(buf.Bytes())
 }
 
 // Arg returns positional argument i, or "" when absent.
@@ -100,6 +117,45 @@ func (c *Ctx) Arg(i int) string {
 		return c.Args[i]
 	}
 	return ""
+}
+
+// Want checks the number of positional arguments the way argparse does: too few names the
+// missing ones (names are the argument names, in order), too many lists the extra ones.
+func (c *Ctx) Want(minArgs, maxArgs int, names ...string) error {
+	if len(c.Args) < minArgs {
+		missing := names
+		if len(names) > len(c.Args) {
+			missing = names[len(c.Args):minArgs]
+		}
+		return Usagef("the following arguments are required: %s", strings.Join(missing, ", "))
+	}
+	if len(c.Args) > maxArgs {
+		return Usagef("unrecognized arguments: %s", strings.Join(c.Args[maxArgs:], " "))
+	}
+	return nil
+}
+
+// Choice returns positional argument i checked against the allowed values; an absent argument
+// is def (which may be "" for an optional argument that has no default).
+func (c *Ctx) Choice(i int, name, def string, choices ...string) (string, error) {
+	if i >= len(c.Args) {
+		return def, nil
+	}
+	return OneOf(name, c.Args[i], choices...)
+}
+
+// OneOf checks a value against the allowed ones, with argparse's wording.
+func OneOf(name, value string, choices ...string) (string, error) {
+	for _, ch := range choices {
+		if value == ch {
+			return value, nil
+		}
+	}
+	quoted := make([]string, len(choices))
+	for i, ch := range choices {
+		quoted[i] = "'" + ch + "'"
+	}
+	return "", Usagef("argument %s: invalid choice: '%s' (choose from %s)", name, value, strings.Join(quoted, ", "))
 }
 
 // Root is the program.
@@ -149,6 +205,10 @@ func (r *Root) finish(err error, path []string, cmd *Cmd, out, errw io.Writer) i
 	if err == nil {
 		return ExitOK
 	}
+	var code ExitCode
+	if errors.As(err, &code) {
+		return int(code)
+	}
 	var ue *UsageError
 	if errors.As(err, &ue) {
 		_, _ = fmt.Fprintf(errw, "%s: %s\n", r.Name, ue.Msg)
@@ -165,7 +225,7 @@ func (r *Root) finish(err error, path []string, cmd *Cmd, out, errw io.Writer) i
 		}
 		return ExitOK
 	}
-	_, _ = fmt.Fprintf(errw, "%s: %v\n", r.Name, err)
+	_, _ = fmt.Fprintf(errw, "error: %v\n", err) // the 0.3.x wording: scripts and users grep for it
 	return ExitError
 }
 
@@ -213,10 +273,10 @@ func (r *Root) run(ctx context.Context, cmd *Cmd, path, args []string, asJSON bo
 		}
 		return &UsageError{Msg: err.Error()}
 	}
+	if len(pos) > 0 && len(cmd.Sub) > 0 { // resolve consumed every word that named a subcommand
+		return &UsageError{Msg: unknown(pos[0], cmd.Sub)}
+	}
 	if cmd.Run == nil {
-		if len(pos) > 0 && len(cmd.Sub) > 0 {
-			return &UsageError{Msg: unknown(pos[0], cmd.Sub)}
-		}
 		help(out, r.Name, path, cmd)
 		return nil
 	}
@@ -224,8 +284,11 @@ func (r *Root) run(ctx context.Context, cmd *Cmd, path, args []string, asJSON bo
 }
 
 // parseInterspersed parses flags that may come before, between or after positional arguments
-// (the way argparse does), so "rear set wave --color 00ff88" works. "--" ends the flags.
+// (the way argparse does), so "rear set wave --color 00ff88" works. "--" ends the flags. A
+// negative number is a value, not a flag ("cpu undervolt set -10"), as in argparse while no
+// option looks like a number.
 func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	args = maskNegatives(fs, args)
 	var pos []string
 	for {
 		if err := fs.Parse(args); err != nil {
@@ -233,14 +296,69 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 		}
 		args = fs.Args()
 		if len(args) == 0 {
-			return pos, nil
+			return unmask(pos), nil
 		}
 		if args[0] == "--" {
-			return append(pos, args[1:]...), nil
+			return unmask(append(pos, args[1:]...)), nil
 		}
 		pos = append(pos, args[0])
 		args = args[1:]
 	}
+}
+
+// negMark prefixes a negative number that stands for a positional argument while the flag
+// package parses the line (it would take "-10" for a flag).
+const negMark = "\x00"
+
+func isNegativeNumber(s string) bool {
+	if len(s) < 2 || s[0] != '-' {
+		return false
+	}
+	digits, dot := 0, false
+	for _, c := range s[1:] {
+		switch {
+		case c >= '0' && c <= '9':
+			digits++
+		case c == '.' && !dot:
+			dot = true
+		default:
+			return false
+		}
+	}
+	return digits > 0
+}
+
+// maskNegatives marks the negative numbers that are positional: every one except the value
+// of a flag that takes one ("--core -50").
+func maskNegatives(fs *flag.FlagSet, args []string) []string {
+	out := make([]string, len(args))
+	copy(out, args)
+	for i := 0; i < len(out); i++ {
+		a := out[i]
+		switch {
+		case a == "--":
+			return out
+		case isNegativeNumber(a):
+			out[i] = negMark + a
+		case strings.HasPrefix(a, "-") && len(a) > 1 && !strings.Contains(a, "="):
+			if f := fs.Lookup(strings.TrimLeft(a, "-")); f != nil && !isBoolFlag(f) {
+				i++ // the next word is this flag's value, whatever it looks like
+			}
+		}
+	}
+	return out
+}
+
+func isBoolFlag(f *flag.Flag) bool {
+	b, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return ok && b.IsBoolFlag()
+}
+
+func unmask(pos []string) []string {
+	for i, p := range pos {
+		pos[i] = strings.TrimPrefix(p, negMark)
+	}
+	return pos
 }
 
 // ---- help ----

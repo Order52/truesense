@@ -290,7 +290,9 @@ func TestPowerCycleAndBattery(t *testing.T) { // tests/test_core.py::test_power_
 	w.mode = "eco"
 	r := New(w.env())
 	ctx := context.Background()
-	for spec, want := range map[string]string{"power-next": "quiet", "power-prev": "eco", "power:turbo": "turbo", "battery-limit-toggle": "on"} {
+	// In this order: each action starts from what the previous one left (a map would run them in random order).
+	for _, step := range [][2]string{{"power-next", "quiet"}, {"power-prev", "eco"}, {"power:turbo", "turbo"}, {"battery-limit-toggle", "on"}} {
+		spec, want := step[0], step[1]
 		msg, err := r.Run(ctx, spec)
 		if err != nil || !strings.Contains(msg, want) {
 			t.Errorf("%s: %q, %v; want it to contain %q", spec, msg, err, want)

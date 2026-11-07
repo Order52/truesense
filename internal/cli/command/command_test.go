@@ -70,7 +70,7 @@ func TestJSONAndHumanOutput(t *testing.T) {
 }
 
 func TestExitCodes(t *testing.T) {
-	if code, _, errs, _ := run(t, "fan"); code != ExitError || !strings.Contains(errs, "ts: the fans refused") {
+	if code, _, errs, _ := run(t, "fan"); code != ExitError || !strings.Contains(errs, "error: the fans refused") {
 		t.Fatalf("runtime error: %d %q", code, errs)
 	}
 	if code, _, errs, _ := run(t, "bad"); code != ExitUsage || !strings.Contains(errs, "needs two arguments") || !strings.Contains(errs, "usage: ts bad") {
@@ -132,4 +132,58 @@ func FuzzExecute(f *testing.F) {
 		var o, e bytes.Buffer
 		root.Execute(context.Background(), strings.Fields(line), &o, &e) // must never panic
 	})
+}
+
+func TestNegativeNumbersArePositionalsExceptAsFlagValues(t *testing.T) {
+	var got []string
+	root := &Root{Name: "ts", Cmds: []*Cmd{{Name: "uv", Flags: func(fs *flag.FlagSet) { fs.Int("core", 0, ""); fs.Bool("confirm", false, "") },
+		Run: func(c *Ctx) error {
+			got = append(append([]string{}, c.Args...), "core="+c.Flags.Lookup("core").Value.String(), "confirm="+c.Flags.Lookup("confirm").Value.String())
+			return nil
+		}}}}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"uv", "set", "-10", "--confirm"}, "set -10 core=0 confirm=true"},
+		{[]string{"uv", "--confirm", "-10", "set"}, "-10 set core=0 confirm=true"},
+		{[]string{"uv", "--core", "-50", "x"}, "x core=-50 confirm=false"},
+		{[]string{"uv", "--core=-50", "-2.5"}, "-2.5 core=-50 confirm=false"},
+	} {
+		if code := root.Execute(context.Background(), tc.args, &bytes.Buffer{}, &bytes.Buffer{}); code != ExitOK || strings.Join(got, " ") != tc.want {
+			t.Fatalf("%v -> %d %q, want %q", tc.args, code, strings.Join(got, " "), tc.want)
+		}
+	}
+}
+
+func TestWantAndChoiceUseArgparseWording(t *testing.T) {
+	c := &Ctx{Args: []string{"a"}}
+	if err := c.Want(2, 2, "first", "second"); err == nil || err.Error() != "the following arguments are required: second" {
+		t.Fatalf("%v", err)
+	}
+	if err := c.Want(0, 0); err == nil || err.Error() != "unrecognized arguments: a" {
+		t.Fatalf("%v", err)
+	}
+	if _, err := c.Choice(0, "mode", "", "x", "y"); err == nil || err.Error() != "argument mode: invalid choice: 'a' (choose from 'x', 'y')" {
+		t.Fatalf("%v", err)
+	}
+	if v, err := (&Ctx{}).Choice(0, "mode", "dflt", "x"); err != nil || v != "dflt" {
+		t.Fatalf("%q %v", v, err)
+	}
+}
+
+func TestUnknownWordAfterACommandWithSubcommandsIsAUsageError(t *testing.T) {
+	root := &Root{Name: "ts", Cmds: []*Cmd{{Name: "power", Run: func(*Ctx) error { return nil }, Sub: []*Cmd{{Name: "status", Run: func(*Ctx) error { return nil }}}}}}
+	var e bytes.Buffer
+	if code := root.Execute(context.Background(), []string{"power", "statsu"}, &bytes.Buffer{}, &e); code != ExitUsage || !strings.Contains(e.String(), `did you mean "status"`) {
+		t.Fatalf("%d %q", code, e.String())
+	}
+}
+
+func TestExitCodeErrorSaysNothing(t *testing.T) {
+	root := &Root{Name: "ts", Cmds: []*Cmd{{Name: "check", Run: func(c *Ctx) error { c.Println("not all good"); return ExitCode(1) }}}}
+	var o, e bytes.Buffer
+	if code := root.Execute(context.Background(), []string{"check"}, &o, &e); code != 1 || e.Len() != 0 || !strings.Contains(o.String(), "not all good") {
+		t.Fatalf("%d %q %q", code, o.String(), e.String())
+	}
 }

@@ -35,12 +35,12 @@ func (r *Root) bash() string {
 	fmt.Fprintf(&b, "  if [ \"$COMP_CWORD\" -eq 1 ]; then COMPREPLY=( $(compgen -W \"%s --json --help --version\" -- \"$cur\") ); return; fi\n", strings.Join(names(r.Cmds), " "))
 	b.WriteString("  case \"${COMP_WORDS[1]}\" in\n")
 	for _, area := range visible(r.Cmds) {
-		words := append(names(area.Sub), flagNames(area)...)
+		words := append(append(names(area.Sub), flagNames(area)...), area.Complete...)
 		sort.Strings(words)
 		fmt.Fprintf(&b, "    %s) if [ \"$COMP_CWORD\" -eq 2 ]; then COMPREPLY=( $(compgen -W \"%s\" -- \"$cur\") ); else\n", area.Name, strings.Join(words, " "))
 		b.WriteString("      case \"${COMP_WORDS[2]}\" in\n")
 		for _, verb := range visible(area.Sub) {
-			if w := flagNames(verb); len(w) > 0 {
+			if w := append(flagNames(verb), verb.Complete...); len(w) > 0 {
 				fmt.Fprintf(&b, "        %s) COMPREPLY=( $(compgen -W \"%s\" -- \"$cur\") ); return;;\n", verb.Name, strings.Join(w, " "))
 			}
 		}
@@ -57,6 +57,9 @@ func (r *Root) fish() string {
 		fmt.Fprintf(&b, "complete -c %s -n '__fish_use_subcommand' -a %s -d %q\n", r.Name, area.Name, area.Short)
 		for _, verb := range visible(area.Sub) {
 			fmt.Fprintf(&b, "complete -c %s -n '__fish_seen_subcommand_from %s' -a '%s'\n", r.Name, area.Name, verb.Name)
+			if len(verb.Complete) > 0 {
+				fmt.Fprintf(&b, "complete -c %s -n '__fish_seen_subcommand_from %s' -a '%s'\n", r.Name, verb.Name, strings.Join(verb.Complete, " "))
+			}
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
