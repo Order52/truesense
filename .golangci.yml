@@ -1,0 +1,44 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - errorlint
+    - gosec
+    - revive
+    - misspell
+    - bodyclose
+    - noctx
+    - unconvert
+    - gocritic
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: error-return
+        - name: error-naming
+        - name: if-return
+        - name: indent-error-flow
+        - name: unreachable-code
+    gosec:
+      excludes:
+        - G104   # errcheck owns unchecked errors
+        - G204   # we run fixed external programs (pactl, nvidia-smi, systemctl) with validated arguments
+        - G301   # state directories are 0755 by design (the socket directory must be traversable)
+        - G302
+        - G304   # paths come from config or the command line of the user running the tool
+        - G306
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck, gocritic]
+formatters:
+  enable:
+    - gofmt
