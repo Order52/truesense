@@ -1,5 +1,14 @@
 # Release notes
 
+## Unreleased
+
+**The terminal UI, rebuilt around one safe way to change a value**
+- **Brightness 0 works.** Every slider that reached 0 was treated as "stop this fan" (the light bar and keyboard brightness, the microphone volume): it asked about a fan and never wrote. Only the fan sliders mean a stop now, and a light at 0 is off. Choosing an effect or colour while a light is off turns it back on at a usable brightness.
+- **Enter no longer stops fans.** Enter on a slider used to write whatever it showed (an unread slider started at OFF) and the "press Enter to stop this fan" hint stayed on the bottom line on other rows and pages. Now Enter only sends a change you made; hints belong to their row and disappear when you move; a slider with no reading starts in the middle; a fan running at 10 % is no longer shown as OFF.
+- **Questions default to No.** `[ Yes ] [ No ]` buttons (keys `y` / `n`, arrows, mouse), Enter picks the marked one, which is No; a question left open on quit is a No. Esc no longer quits (it takes back an unsent change); `q` quits.
+- **Fan and power-mode changes:** choosing *Manual* on the fan mode row works (it failed with "manual fan duty is 20..100"); moving one fan slider can no longer stop the other fan; writes run one at a time in order, a newer value for the same setting replaces an older one that has not started (a drag or quick presses are one write); a failed write puts the real value back; the shown value no longer flashes back to the old reading.
+- **More responsive:** a change shows at once, is sent after a short pause or immediately with Enter, the mouse acts on press (no click delay) and sliders can be dragged; the bottom line shows the keys of the selected row; the keyboard brightness is the keyboard's real one. Quitting sends a change made a moment ago.
+
 ## 0.3.16 (2026-11-07): CI/CD, verified downloads, service repair, model probe, TUI menu entry
 
 **CI/CD you can trust, and a safer way to get and keep TrueSense**
