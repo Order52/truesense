@@ -77,18 +77,20 @@ jobs:
           tools/ci/build-bundle.sh "$V" build/a
           tools/ci/build-bundle.sh "$V" build/b
           tools/ci/check-bundle.sh "$V" build/a build/b
-          mkdir dist && cp "build/a/truesense-$V.tar.gz" dist/
-          go run ./cmd/release notes "$V" > dist/RELEASE-NOTES.md
+          # the release files go in their own directory: the build leaves its own dist/truesense behind
+          mkdir -p release
+          cp "build/a/truesense-$V.tar.gz" release/
+          go run ./cmd/release notes "$V" > release/RELEASE-NOTES.md
       - name: SBOM (CycloneDX) of the program that ships
         env: { V: "${{ needs.verify.outputs.version }}" }
         run: |
           go version -m build/a/truesense
           go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.9.0
-          cyclonedx-gomod bin -json -noserial -version "$V" -output "dist/truesense-$V.sbom.cdx.json" build/a/truesense
-          jq -e '.bomFormat == "CycloneDX" and (.components | length) > 0' "dist/truesense-$V.sbom.cdx.json" > /dev/null || { echo "::error::the SBOM is empty or not CycloneDX"; exit 1; }
+          cyclonedx-gomod bin -json -noserial -version "$V" -output "release/truesense-$V.sbom.cdx.json" build/a/truesense
+          jq -e '.bomFormat == "CycloneDX" and (.components | length) > 0' "release/truesense-$V.sbom.cdx.json" > /dev/null || { echo "::error::the SBOM is empty or not CycloneDX"; exit 1; }
       - name: Upload for the next jobs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with: { name: dist-bundle, path: dist, if-no-files-found: error }
+        with: { name: dist-bundle, path: release, if-no-files-found: error }
 
   package-arch:
     name: Build the Arch package
