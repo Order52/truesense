@@ -7,7 +7,7 @@ Requires: an Acer Predator Helios 16 **PH16-71**, systemd, Linux with kernel hea
 curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
 curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash -s -- --no-gui   # extra options
 ```
-`get.sh` finds the newest release, downloads it, **checks it against the release's `SHA256SUMS`** (a mismatch, or a missing list on a new release, stops the install), and runs `tools/install.sh`. Pin a version with `TRUESENSE_VERSION=0.3.15`, also require an exact hash with `TRUESENSE_SHA256=<hash>`, and with the GitHub CLI installed add `TRUESENSE_VERIFY_ATTESTATION=1` to check the signed build provenance too. Read the script first if you like: it is ~20 lines.
+`get.sh` finds the newest release, downloads it, **checks it against the release's `SHA256SUMS`** (a mismatch, or a missing list on a new release, stops the install), and runs `tools/install.sh`. Pin a version with `TRUESENSE_VERSION=0.3.16`, also require an exact hash with `TRUESENSE_SHA256=<hash>`, and with the GitHub CLI installed add `TRUESENSE_VERIFY_ATTESTATION=1` to check the signed build provenance too. Read the script first if you like: it is ~20 lines.
 
 ## From a clone
 ```
@@ -55,7 +55,7 @@ Updating is the same one click, and it is safe to repeat:
 | `truesense.service` | the daemon: fans, power modes, Smart auto (watchdog, restarts itself, gives the fans back to the firmware however it ends) | system |
 | `truesense-health.timer` | every 30 s: restart a stalled daemon, rebuild a missing module once per 10 min | system |
 | `truesense-keys.service`, `truesense-audio.service`, `truesense-startup.service` | Fn/PREDATOR keys, microphone and sound handling, look at login | user |
-| `truesense-update.timer` | daily update check (only if you turned it on) | user |
+| `truesense-update.timer` | daily check for a new release: it only notifies you, once per version; nothing is installed without you | user |
 
 `truesense service check` lists every unit, the kernel module and the control socket (read-only, exit code 1 if something is down). `truesense service repair` fixes what it finds: re-reads the unit files, rebuilds and loads the module, enables and starts what is stopped, restarts a daemon that does not answer. It is idempotent (a second run changes nothing), never touches a setting or a fan, and asks for `sudo` only for the system part. `truesense service logs` shows the journal.
 

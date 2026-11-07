@@ -95,6 +95,8 @@ The whole control surface without a desktop: over SSH, on a bare console, in a t
 * `truesense-keys.service` and `truesense-audio.service` (user): PREDATOR/Fn keys; switches the right microphone filter on plug events.
 * `truesense-startup.service` (user, oneshot): restores the saved lighting (and optionally a profile) at login; see `truesense startup`.
 * `truesense-health.timer`: restarts a stalled daemon and rebuilds the module after a kernel update.
+* `truesense-update.timer` (user): checks for a new release (it only tells you; nothing is installed without you).
+* `truesense service check` shows all of these in one table (read-only); `sudo truesense service repair` and `truesense service repair` get the system and user parts running again (idempotent, never touches a fan or a setting). `truesense probe` reads what the firmware answers on any Acer laptop without writing; it is how a new model gets verified.
 
 ## Configuration
 `/etc/truesense/config.toml` (system: `user`, `[daemon]`, `[fan]`, `[cpu]`, `[profile]`, `[keyboard]`) and `~/.config/truesense/config.toml` (yours: `[keys]`, `[audio]`, `[osd]`). `truesense config show` prints the merged result and `config validate` checks it. Profiles live in `~/.config/truesense/profiles/*.toml` (four ship in `<prefix>/share/truesense/profiles`), lighting in `~/.config/truesense/lighting/*.json`. Live state for status bars: `/run/truesense/state` and `/tmp/truesense-state` (`key=value` lines: power_mode, fan, rpm1, rpm2, tcpu, tgpu, auto, ac, ...).
@@ -103,7 +105,7 @@ The whole control surface without a desktop: over SSH, on a bare console, in a t
 Acer's Purified Voice uses a proprietary Realtek model that cannot run on Linux. TrueSense builds an open equivalent: a PipeWire filter chain with RNNoise voice-activity gating, one filter per input (headset mic, built-in array). `conference` is gentle, `personal` is strict (can clip very soft words). The default microphone follows the active input and the filters survive plug/unplug events.
 
 ## Desktop integration
-`contrib/noctalia/` holds Noctalia bar widgets (power mode, fan, RGB with panels) that read the state file and call the CLI. Copy them into a plugin that declares `profile`, `fan`, `rgb` widgets and panels. Any status bar can read `/tmp/truesense-state` or run `truesense --json status`.
+The installer adds two launchers to the application menu: **TrueSense** (the window) and **TrueSense (terminal)** (`truesense-tui.desktop`, runs `truesense tui` in your terminal). `contrib/noctalia/` holds Noctalia bar widgets (power mode, fan, RGB with panels) that read the state file and call the CLI. Copy them into a plugin that declares `profile`, `fan`, `rgb` widgets and panels. Any status bar can read `/tmp/truesense-state` or run `truesense --json status`.
 
 ## Troubleshooting
 * Run `truesense doctor` first.

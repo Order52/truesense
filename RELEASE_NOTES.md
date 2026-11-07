@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.3.16 (2026-11-07): CI/CD, verified downloads, service repair, model probe, TUI menu entry
 
 **CI/CD you can trust, and a safer way to get and keep TrueSense**
 - **One-command releases:** `python3 tools/release.py prepare X.Y.Z --title "..."` bumps every version (one table knows where they live), retitles the notes, runs the gate, commits and tags; pushing the tag publishes. A check (`release.py check`) runs in CI so the tag, the kernel module, DKMS, both PKGBUILDs, `get.sh`, the README and the notes can never disagree.
