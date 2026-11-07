@@ -6,6 +6,7 @@ package osd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"os/user"
@@ -59,7 +60,8 @@ func ExecRunner(ctx context.Context, env []string, asUser string, name string, a
 	}
 	out, err := cmd.Output()
 	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
 			return string(out), ee.ExitCode()
 		}
 		return "", -1

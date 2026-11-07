@@ -119,9 +119,10 @@ func (dm *Daemon) hFan(_ context.Context, a ipc.Args) (any, error) {
 		return "smart", nil
 	}
 	cpu, gpu := 0, 0
-	if mode == "off" {
+	switch mode {
+	case "off":
 		mode = "manual"
-	} else if mode == "manual" {
+	case "manual":
 		if !a.Has("cpu") || a["cpu"] == nil {
 			return nil, fail("manual fan duty is 20..100 %% per fan, or 0 to stop that fan")
 		}

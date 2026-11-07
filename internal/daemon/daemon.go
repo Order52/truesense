@@ -40,19 +40,17 @@ type Daemon struct {
 	reason   string
 
 	// decisions
-	engine   *autoprofile.Engine
-	fan      *fanctl.Smart
-	writer   *fanctl.Writer
-	gov      *thermal.Governor
-	fanOff   bool // a fan was stopped by the user: the watchdog gives it back when it gets warm
-	lastStep time.Time
+	engine *autoprofile.Engine
+	fan    *fanctl.Smart
+	writer *fanctl.Writer
+	gov    *thermal.Governor
+	fanOff bool // a fan was stopped by the user: the watchdog gives it back when it gets warm
 
 	// power limit
 	plOrig    *power.RawLimits
 	plTouched bool
 
 	// boot guards, resume detection
-	uvArmed       bool
 	lastWall      time.Time
 	lastMono      float64
 	opMode        string

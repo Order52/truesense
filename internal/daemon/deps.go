@@ -87,12 +87,14 @@ type PowerManagers interface {
 	Recorded() bool
 }
 
-// Curves and Profiles load the saved fan curves and Smart auto profiles.
+// Curves loads the saved fan curves and Profiles the saved Smart auto profiles.
 type (
+	// Curves lists and loads fan curves.
 	Curves interface {
 		Load(name string) (curves.Curve, error)
 		Names() ([]string, error)
 	}
+	// Profiles lists and loads Smart auto profiles.
 	Profiles interface {
 		Load(name string) (smartprofile.Profile, error)
 		Names() ([]string, error)

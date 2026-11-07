@@ -6,6 +6,7 @@ package assembly
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,7 +130,8 @@ func execPower(ctx context.Context, name string, args ...string) (power.Result, 
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
 	code := 0
-	if ee, ok := err.(*exec.ExitError); ok {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
 		code, err = ee.ExitCode(), nil
 	}
 	return power.Result{Stdout: out.String(), Stderr: errb.String(), ExitCode: code}, err

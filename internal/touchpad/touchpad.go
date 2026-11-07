@@ -73,7 +73,7 @@ func (s *Switch) Set(on bool) (bool, error) {
 		v = "0"
 	}
 	if err := os.WriteFile(f, []byte(v), 0o644); err != nil {
-		return false, fmt.Errorf("cannot switch the touchpad (%v); this needs root: go through the daemon", err)
+		return false, fmt.Errorf("cannot switch the touchpad (%w); this needs root: go through the daemon", err)
 	}
 	if got, ok := s.Enabled(); !ok || got != on {
 		return false, errors.New("touchpad readback mismatch")
