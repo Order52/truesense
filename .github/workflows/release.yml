@@ -84,7 +84,7 @@ jobs:
         run: |
           go version -m build/a/truesense
           go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.9.0
-          cyclonedx-gomod bin -json -reproducible -version "$V" -output "dist/truesense-$V.sbom.cdx.json" build/a/truesense
+          cyclonedx-gomod bin -json -noserial -version "$V" -output "dist/truesense-$V.sbom.cdx.json" build/a/truesense
           jq -e '.bomFormat == "CycloneDX" and (.components | length) > 0' "dist/truesense-$V.sbom.cdx.json" > /dev/null || { echo "::error::the SBOM is empty or not CycloneDX"; exit 1; }
       - name: Upload for the next jobs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -50,5 +50,5 @@ go-vuln:         ## known vulnerabilities in the code we actually call
 go-fuzz:         ## every fuzz target for a few seconds (FUZZTIME=30s for longer)
 	@for p in $$($(GO) list ./...); do for f in $$($(GO) test -list 'Fuzz.*' $$p 2>/dev/null | grep '^Fuzz'); do echo "fuzz $$p $$f"; $(GO) test -run '^$$' -fuzz "^$$f$$" -fuzztime $${FUZZTIME:-5s} $$p || exit 1; done; done
 go-js:           ## the window's front-end logic (needs Node; there is no npm step)
-	@if command -v node >/dev/null 2>&1; then node --test internal/gui/jstest/; else echo "skip the front-end tests (node not installed)"; fi
+	@if command -v node >/dev/null 2>&1; then node --test internal/gui/jstest/*.test.mjs; else echo "skip the front-end tests (node not installed)"; fi
 go-ci: go-lint go-race go-vuln go-js   ## what CI's Go jobs run
