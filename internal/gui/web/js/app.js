@@ -1,11 +1,10 @@
-// The window: shell (navigation, live strip, connection state), router, stream.
+// The window: one centred column (header with Back, the page), router, stream, connection state.
 
 import { initSession, startStream, onLiveError, call, tryCall } from "./api.js";
 import { store, ingest } from "./state.js";
 import { h, toast, errText, button } from "./ui.js";
 import { icon } from "./icons.js";
 import { PAGES, resolveRoute } from "./pages/index.js";
-import { fmtTemp, fmtRpm } from "./format.js";
 
 const session = await initSession();
 const root = document.getElementById("app");
@@ -19,43 +18,26 @@ if (!session.hasToken) {
 
 onLiveError((e) => toast(errText(e), "error"));
 
-// ---- shell ----
-const navLinks = PAGES.map((p) => h("a", { class: "nav-link", href: `#/${p.id}`, "data-page": p.id }, icon(p.icon, 20), h("span", { text: p.nav || p.title })));
-const nav = h("nav", { class: "nav", id: "nav", "aria-label": "Pages" }, h("div", { class: "brand" }, h("img", { src: "logo.svg", alt: "" }), h("b", { text: "TrueSense" })), h("div", { class: "nav-links" }, ...navLinks));
-const quitBtn = button("Quit", { icon: "power", kind: "quiet", onClick: quit, title: "Close TrueSense's window server" });
-const versionLine = h("span", { text: "" });
-nav.append(h("div", { class: "nav-foot" }, versionLine, quitBtn));
-
-const menuBtn = button("", { icon: "menu", kind: "quiet", title: "Menu", onClick: () => setNav(!nav.classList.contains("open")) });
-menuBtn.classList.add("menu-btn");
-menuBtn.setAttribute("aria-controls", "nav");
-menuBtn.setAttribute("aria-expanded", "false");
-const title = h("h1", { id: "page-title", text: "TrueSense" });
-const chipCpu = h("span", { class: "chip" }, "CPU ", h("b", { text: "–" }));
-const chipGpu = h("span", { class: "chip" }, "GPU ", h("b", { text: "–" }));
-const chipFan = h("span", { class: "chip optional" }, "Fans ", h("b", { text: "–" }));
-const chipSrc = h("span", { class: "chip optional" }, h("b", { text: "–" }));
-const strip = h("div", { class: "live-strip", "aria-label": "Live readings" }, chipCpu, chipGpu, chipFan, chipSrc);
-const topbar = h("header", { class: "topbar" }, menuBtn, title, strip);
+// ---- shell: a header (logo on Home, Back and the title elsewhere), banners, the page ----
+const head = h("header", { class: "head" });
 const bannerHost = h("div", { id: "banners" });
 const main = h("main", { id: "main", tabindex: "-1" });
+const col = h("div", { class: "col" }, head, bannerHost, main);
 const skip = h("a", { class: "skip", href: "#main", text: "Skip to content" });
 skip.addEventListener("click", (e) => {
   e.preventDefault();
   main.focus();
 });
-root.append(skip, h("div", { class: "shell" }, nav, h("div", { class: "main-col" }, topbar, bannerHost, main)));
+root.append(skip, col);
 
-function setNav(open) {
-  nav.classList.toggle("open", open);
-  menuBtn.setAttribute("aria-expanded", String(open));
+function paintHead(page) {
+  if (page.id === "home") {
+    head.replaceChildren(h("img", { src: "logo.svg", alt: "" }), h("h1", { class: "brand", id: "page-title", text: "TrueSense" }));
+    return;
+  }
+  const back = h("a", { class: "btn quiet", href: `#/${page.parent || "home"}`, title: "Back" }, icon("back", 16), h("span", { text: "Back" }));
+  head.replaceChildren(back, h("h1", { id: "page-title", text: page.title }));
 }
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && nav.classList.contains("open")) setNav(false);
-});
-nav.addEventListener("click", (e) => {
-  if (e.target.closest("a")) setNav(false);
-});
 
 async function quit() {
   try {
@@ -76,17 +58,17 @@ async function show() {
   const mine = ++routeToken;
   if (current && current.destroy) current.destroy();
   current = null;
-  navLinks.forEach((a) => (a.dataset.page === page.id ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-  title.textContent = page.title;
-  document.title = `TrueSense – ${page.title}`;
+  col.classList.remove("wide");
+  paintHead(page);
+  document.title = page.id === "home" ? "TrueSense" : `TrueSense - ${page.title}`;
   main.replaceChildren(h("p", { class: "hint", text: "Loading…" }));
   try {
     const mod = await page.load();
     if (mine !== routeToken) return;
-    const view = mod.default({ sub });
+    const view = mod.default({ sub, quit, wide: (on) => col.classList.toggle("wide", Boolean(on)) });
     current = view;
     main.replaceChildren(view.el);
-    if (view.el.classList.contains("page") === false) view.el.classList.add("page");
+    view.el.classList.add("page", page.id === "home" ? "home" : "sub");
   } catch (e) {
     if (mine !== routeToken) return;
     main.replaceChildren(h("div", { class: "notice error", role: "alert" }, icon("warn", 18), h("span", { text: `This page could not be shown: ${errText(e)}` })));
@@ -99,19 +81,7 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden && current && current.refresh) current.refresh();
 });
 
-// ---- live state ----
-function paintStrip(st) {
-  const msg = st.live;
-  const s = (msg && msg.sensors) || {};
-  chipCpu.lastChild.textContent = fmtTemp(s.cpu_temp);
-  chipGpu.lastChild.textContent = fmtTemp(s.gpu_temp);
-  chipCpu.classList.toggle("hot", s.cpu_temp >= 85);
-  chipGpu.classList.toggle("hot", s.gpu_temp >= 75);
-  chipFan.lastChild.textContent = fmtRpm(Math.max(s.cpu_fan_rpm || 0, s.gpu_fan_rpm || 0));
-  const src = msg ? (msg.ac === true ? "AC" : msg.ac === false ? "Battery" : "") : "";
-  chipSrc.lastChild.textContent = src ? `${src}${msg.battery_pct != null ? ` ${Math.round(msg.battery_pct)} %` : ""}` : "–";
-}
-
+// ---- connection state ----
 let connBanner = null;
 function paintConn(st) {
   const msg = {
@@ -125,10 +95,6 @@ function paintConn(st) {
     bannerHost.prepend(connBanner);
   }
 }
-
-store.subscribe((st) => {
-  paintStrip(st);
-});
 let lastConn = "";
 store.subscribe((st) => {
   if (st.conn !== lastConn) {
@@ -142,10 +108,6 @@ const stop = startStream(ingest, (conn) => store.set({ conn }), (page) => {
 });
 
 // ---- start-up extras ----
-tryCall("version", "get", {}, null).then((v) => {
-  if (v && v.truesense) versionLine.textContent = `TrueSense ${v.truesense}`;
-});
-
 async function checkUpdate() {
   const auto = await tryCall("update", "auto", { action: "status" }, false);
   if (auto !== true) return;

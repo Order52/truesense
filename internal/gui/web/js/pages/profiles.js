@@ -1,7 +1,7 @@
 // Profiles: one-click bundles of settings (power, fans, lights, battery, screen, audio).
 
 import { call, tryCall } from "../api.js";
-import { h, card, cols, row, hint, button, select, field, run, toast, confirmDialog, errText } from "../ui.js";
+import { h, card, row, hint, button, select, field, run, toast, confirmDialog, errText } from "../ui.js";
 import { describeProfile, validName, NAME_HELP, withSource } from "../format.js";
 
 export default function render() {
@@ -28,7 +28,7 @@ export default function render() {
   );
   const differs = card("How this differs");
   differs.add(hint("Smart auto profiles decide HOW the power mode follows load and heat. Fan curves are only the fan shape. Lighting profiles and key sets are only lights. Key bindings are only the PREDATOR key. A profile here sets all of it once; it does not keep watching."));
-  page.append(cols([choose.el, details.el], [own.el, differs.el]));
+  page.append(choose.el, details.el, own.el, differs.el);
 
   async function load(select_) {
     list = await tryCall("profile", "list", {}, []);

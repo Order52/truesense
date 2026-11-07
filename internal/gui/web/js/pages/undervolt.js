@@ -1,7 +1,7 @@
 // Undervolt: CPU and GPU profiles, CPU power limits, with safety zones and confirmations.
 
 import { call, tryCall } from "../api.js";
-import { h, card, row, hint, button, select, slider, field, numberField, switchRow, riskLine, tabs, run, toast, confirmDialog, errText, notice } from "../ui.js";
+import { h, card, row, hint, button, select, slider, field, numberField, switchRow, riskLine, tabs, run, toast, confirmDialog, errText } from "../ui.js";
 import { cpuRisk, gpuRisk, plRisk, CPU_MAX_MV, GPU_OFFSET_RANGE, GPU_CAP_RANGE } from "../risk.js";
 import { validName, NAME_HELP, fmtSigned } from "../format.js";
 
@@ -18,9 +18,7 @@ async function confirmRisk(title, what, risk, footer = "A reboot always returns 
 
 /** The profile card of one processor: list, sliders, risk line, save, apply, boot switch. */
 function profilePanel(cfg) {
-  const left = h("div", { class: "stack" });
-  const right = h("div", { class: "stack" });
-  const el = h("div", { class: "cols" }, left, right);
+  const el = h("div", { class: "stack" });
   let names = [];
   let name = "native";
   let locked = true;
@@ -49,8 +47,7 @@ function profilePanel(cfg) {
   const boot = switchRow("Apply the selected profile at boot", { onChange: bootSet }, "Off by default. Guarded: if the laptop does not stay up for 10 minutes after applying it, the next boot skips it and turns this off.");
   const bootCard = card("At boot");
   bootCard.add(boot.row);
-  left.append(nowCard.el, prof.el);
-  right.append(bootCard.el);
+  el.append(nowCard.el, prof.el, bootCard.el);
   if (cfg.intro) nowCard.body.prepend(hint(cfg.intro));
 
   const values = () => cfg.toValues(sliders.map((s) => s.get()));
@@ -145,7 +142,7 @@ function profilePanel(cfg) {
   }
   loadList("native");
   refresh();
-  return { el, refresh, addRight: (node) => right.append(node) };
+  return { el, refresh, addRight: (node) => el.append(node) };
 }
 
 const cpuPanel = () =>
@@ -250,7 +247,7 @@ function limitsCard() {
 
 export default function render() {
   const page = h("div", { class: "page" });
-  page.append(notice("Lowers CPU or GPU voltage to run cooler. Too much can freeze, reboot or crash games. Nothing is applied unless you confirm, and a reboot always returns to stock. Test a profile under load before relying on it.", "warn"));
+  page.append(hint("Lowers CPU or GPU voltage to run cooler. Too much can freeze, reboot or crash games. Nothing is applied unless you confirm, and a reboot always returns to stock. Test a profile under load before relying on it.", "warn"));
   const cpu = cpuPanel();
   const limits = limitsCard();
   const gpu = gpuPanel();

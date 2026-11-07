@@ -1,7 +1,7 @@
 // Audio: sound repair, output, DTS, 3.5 mm jack, microphones and Purified Voice.
 
 import { call, tryCall } from "../api.js";
-import { h, card, cols, row, hint, button, seg, select, slider, switchRow, run, toast, errText } from "../ui.js";
+import { h, card, row, sep, hint, button, seg, select, slider, switchRow, run, toast, errText } from "../ui.js";
 import { capitalize } from "../format.js";
 
 const DTS_MODES = ["Music", "Movie", "Voice", "Game1", "Game2", "Game3", "Plain"];
@@ -18,7 +18,7 @@ export default function render() {
   // ---- sound output ----
   const sndMsg = hint("Checking that the sound card has an output…");
   const fixBtn = button("Fix sound", { onClick: soundFix });
-  const c1 = card("Sound output", { icon: "audio" });
+  const c1 = card("Sound output");
   c1.add(sndMsg, row("No sound at all?", fixBtn, { sub: "Restarts the audio session manager (WirePlumber) so it probes the sound card again, and checks that an output exists. Nothing is written to the sound chip." }));
 
   // ---- output ----
@@ -30,6 +30,7 @@ export default function render() {
   const c2 = card("Output");
   c2.add(
     row("Play sound on", out.el),
+    sep(),
     spk.row,
     dts.row,
     row("DTS sound mode", dtsMode.el, { sub: "Applies to every output: speakers, the jack, USB and Bluetooth headsets, controllers. Plain is no processing." }),
@@ -54,8 +55,8 @@ export default function render() {
   const vArr = seg(vOpts, { label: "Built-in noise reduction", onChange: (v) => run(call("audio", "voice", { action: "set", a: "array", b: v }), `Built-in mics: ${v}`) });
   const vNote = switchRow("Notify when the microphone changes", { onChange: (on) => run(call("audio", "voice", { action: "notify", a: on ? "on" : "off" }), "Saved") });
   const c4 = card("Microphone");
-  c4.add(micVol.el, mute.row, row("Headset (AI noise reduction)", vHead.el), row("Built-in (AI noise reduction)", vArr.el), vNote.row);
-  page.append(cols([c1.el, c2.el], [c3.el, c4.el]));
+  c4.add(micVol.el, mute.row, sep(), row("Headset (AI noise reduction)", vHead.el), row("Built-in (AI noise reduction)", vArr.el), sep(), vNote.row);
+  page.append(c1.el, c2.el, c3.el, c4.el);
 
   async function soundFix() {
     try {

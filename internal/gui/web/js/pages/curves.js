@@ -2,12 +2,13 @@
 
 import { call, tryCall } from "../api.js";
 import { store } from "../state.js";
-import { h, card, cols, row, hint, button, select, slider, field, seg, run, toast, confirmDialog, svg, errText } from "../ui.js";
+import { h, card, row, hint, button, select, slider, field, seg, run, toast, confirmDialog, svg, errText } from "../ui.js";
 import { T0, T1, makeScale, linePoints, movePoint, addPoint, removePoint, nudge, validateCurve } from "../curve.js";
 import { validName, NAME_HELP, fmtTemp } from "../format.js";
 
 
-export default function render() {
+export default function render({ wide }) {
+  wide(true);
   const page = h("div", { class: "page" });
   let curve = null; // the curve in the editor (deep copy)
   let name = "native";
@@ -27,16 +28,13 @@ export default function render() {
   const marksG = svg("g");
   const ptsG = svg("g");
   root.append(gridG, linesG, marksG, ptsG);
-  const legend = h("div", { class: "legend" }, h("span", {}, h("i", { style: undefined }), "CPU curve"), h("span", {}, h("i"), "GPU curve"), h("span", { text: "Dashed lines: the temperatures now" }));
-  legend.children[0].firstChild.style.background = "var(--accent)";
-  legend.children[1].firstChild.style.background = "#b07cf0";
   const nowLine = hint("");
   const addBtn = button("Add point", { icon: "plus", onClick: addMiddle });
-  const plot = h("div", { class: "plot-wrap" }, root, legend);
+  const plot = h("div", { class: "plot-wrap" }, root);
 
   function resize() {
-    const w = Math.max(300, Math.round(plot.clientWidth - 16));
-    const h = Math.max(220, Math.min(420, Math.round(w * 0.5)));
+    const w = Math.max(300, Math.round(plot.clientWidth));
+    const h = Math.max(220, Math.min(380, Math.round(w * 0.56)));
     if (root.getAttribute("viewBox") === `0 0 ${w} ${h}`) return;
     root.setAttribute("viewBox", `0 0 ${w} ${h}`);
     SCALE = makeScale(w, h);
@@ -182,13 +180,13 @@ export default function render() {
   const list = card("Curves");
   list.add(
     row("Curve", [sel.el, button("Use", { kind: "primary", onClick: useCurve })]),
-    row("Edit", [copyBtn, delBtn, addBtn]),
+    row("Edit", [copyBtn, delBtn]),
     row("Save as", [nameIn.el, saveBtn], { sub: NAME_HELP }),
     row("Default", button("Reset to default", { onClick: resetCurve })),
     msg,
   );
 
-  page.append(sideSeg.el, plot, nowLine, cols([behave.el], [list.el]));
+  page.append(sideSeg.el, plot, h("div", { class: "row" }, nowLine, addBtn), behave.el, list.el);
 
   /** The curve as the editor shows it: the points and the settings the daemon knows. */
   function fromEditor() {

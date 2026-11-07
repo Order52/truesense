@@ -57,11 +57,6 @@ export function card(title, { icon: ic = "", right = false, id = "" } = {}) {
   };
 }
 
-/** Cards in columns that each keep their own height (no gaps like a plain grid); one column on a narrow screen, in reading order. */
-export function cols(...columns) {
-  return h("div", { class: "cols" }, ...columns.map((c) => h("div", { class: "stack" }, ...c)));
-}
-
 export const hint = (text, cls = "") => h("p", { class: `hint ${cls}`.trim(), text });
 
 export const sep = () => h("hr", { class: "sep" });
@@ -105,7 +100,7 @@ export function button(label, { onClick, kind = "", icon: ic = "", title = "", d
 
 export function toggle({ label = "", checked = false, onChange } = {}) {
   const input = h("input", { type: "checkbox", role: "switch", checked, "aria-label": label || undefined });
-  const el = h("label", { class: "switch" }, input, h("span", { class: "track", "aria-hidden": "true" }, h("span", { class: "thumb" })));
+  const el = h("label", { class: "switch" }, input, h("span", { class: "track", "aria-hidden": "true" }, h("span", { class: "ring" }), h("span", { class: "bar" }), h("span", { class: "thumb" })));
   const g = touchGuard();
   input.addEventListener("change", () => {
     g.touch();
@@ -219,7 +214,7 @@ export function slider({ label, min, max, step = 1, value = min, fmt = (v) => St
   const show = () => {
     out.textContent = fmt(Number(input.value));
     // the fill of the track up to the thumb
-    input.style.setProperty("--fill", `${((input.value - min) / (max - min || 1)) * 100}%`);
+    input.style.setProperty("--fill-at", `${((input.value - min) / (max - min || 1)) * 100}%`);
   };
   input.addEventListener("pointerdown", () => (dragging = true));
   const up = () => (dragging = false);

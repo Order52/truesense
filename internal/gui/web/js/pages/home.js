@@ -2,7 +2,7 @@
 
 import { call, tryCall, live } from "../api.js";
 import { store, history } from "../state.js";
-import { h, card, cols, row, seg, slider, select, button, hint, toggle, toast, run, confirmDialog, svg } from "../ui.js";
+import { h, card, row, seg, slider, select, button, hint, toggle, toast, run, confirmDialog, svg } from "../ui.js";
 import { icon } from "../icons.js";
 import { fmtTemp, fmtRpm, fmtPct, fmtWatt, fmtDuration, capitalize, AUTO_HINT, FAN_HINT, clamp } from "../format.js";
 import { sparkPath } from "../spark.js";
@@ -41,25 +41,23 @@ const store_ = {
   },
 };
 
-/** One live reading with a sparkline. */
-function gauge(label) {
-  const value = h("div", { class: "gauge-value", text: "–" });
-  const sub = h("div", { class: "gauge-sub" });
+/** One live reading: the name at the left, a small history graph and the value at the right. */
+function liveRow(label) {
+  const val = h("span", { text: "–" });
   const path = svg("path", { d: "" });
-  const sp = svg("svg", { class: "spark", viewBox: "0 0 120 30", preserveAspectRatio: "none", "aria-hidden": "true" }, path);
-  const el = h("div", { class: "gauge" }, h("div", { class: "gauge-label", text: label }), value, sub, sp);
+  const sp = svg("svg", { class: "spark", viewBox: "0 0 110 22", preserveAspectRatio: "none", "aria-hidden": "true" }, path);
+  const el = h("div", { class: "live-row" }, h("span", { text: label }), h("span", { class: "live-val" }, sp, val));
   return {
     el,
-    set(text, subText, hist, opts = {}) {
-      value.textContent = text;
-      sub.textContent = subText || "";
-      path.setAttribute("d", hist ? sparkPath(hist.values(), 120, 30, opts) : "");
+    set(text, hist, opts = {}) {
+      val.textContent = text;
+      path.setAttribute("d", hist ? sparkPath(hist.values(), 110, 22, opts) : "");
     },
     hot: (on) => el.classList.toggle("hot", on),
   };
 }
 
-export default function render() {
+export default function render({ quit }) {
   const page = h("div", { class: "page" });
   const unsub = [];
   let modes = MODE_ORDER;
@@ -68,7 +66,7 @@ export default function render() {
   const perf = card("Performance Mode", { icon: "performance", right: true });
   let powerSeg = seg(
     MODE_ORDER.map((m) => ({ value: m, label: capitalize(m), icon: m, color: MODE_COLORS[m], title: MODE_TIPS[m] })),
-    { tiles: true, tileMin: 84, label: "Performance mode", onChange: (m) => run(call("power", "set", { mode: m }), (r) => `Power mode: ${r || m} (held 30 min)`).then((r) => r === undefined && refreshStatus()) },
+    { tiles: true, label: "Performance mode", onChange: (m) => run(call("power", "set", { mode: m }), (r) => `Power mode: ${r || m} (held 30 min)`).then((r) => r === undefined && refreshStatus()) },
   );
   const autoHint = hint(AUTO_HINT.off);
   const smartSel = select([], {
@@ -205,15 +203,20 @@ export default function render() {
   }
 
   // ---- live readings ----
-  const liveCard = card("Live", { icon: "chip" });
-  const g = { cpu: gauge("CPU temperature"), gpu: gauge("GPU temperature"), fan: gauge("Fans"), cl: gauge("CPU load"), gl: gauge("GPU load"), pw: gauge("Power draw"), bat: gauge("Battery") };
-  liveCard.add(h("div", { class: "gauges" }, ...Object.values(g).map((x) => x.el)));
+  const liveCard = card("Live", { icon: "chip", right: true });
+  const g = { cpu: liveRow("CPU temperature"), gpu: liveRow("GPU temperature"), fan: liveRow("Fans"), cl: liveRow("CPU load"), gl: liveRow("GPU load"), pw: liveRow("Power draw"), bat: liveRow("Battery") };
+  liveCard.add(...Object.values(g).map((x) => x.el));
 
-  // ---- shortcuts ----
-  const links = [["Lighting", "keyboard", "lighting"], ["Fan curves", "fan", "curves"], ["PREDATOR key", "key", "predator"], ["Undervolt", "performance", "undervolt"], ["Profiles", "profiles", "profiles"], ["Battery and Screen", "battery", "battery"], ["Audio", "audio", "audio"], ["Settings", "settings", "settings"]];
-  const grid = h("div", { class: "btn-grid" }, ...links.map(([t, i, p]) => h("a", { class: "btn", href: `#/${p}` }, icon(i, 18), t)));
+  // ---- where to go ----
+  const links = [["Lighting", "keyboard", "lighting"], ["Fan curves", "fan", "curves"], ["PREDATOR key", "key", "predator"], ["Undervolt", "performance", "undervolt"], ["Battery and Screen", "battery", "battery"], ["Audio", "audio", "audio"], ["Settings", "settings", "settings"]];
+  const grid = h(
+    "div",
+    { class: "nav-grid" },
+    ...links.map(([t, i, p]) => h("a", { class: "btn", href: `#/${p}` }, icon(i, 18), t)),
+    button("Quit", { icon: "power", title: "Stop the TrueSense window server", onClick: quit }),
+  );
 
-  page.append(cols([perf.el, fans.el], [gpuCard.el, liveCard.el]), grid);
+  page.append(perf.el, gpuCard.el, fans.el, liveCard.el, grid);
   paintLink();
 
   // ---- data ----
@@ -224,7 +227,7 @@ export default function render() {
       if (!modes.length) modes = MODE_ORDER;
       const fresh = seg(
         modes.map((m) => ({ value: m, label: capitalize(m), icon: m, color: MODE_COLORS[m], title: MODE_TIPS[m] })),
-        { tiles: true, tileMin: 84, label: "Performance mode", onChange: (m) => run(call("power", "set", { mode: m }), (r) => `Power mode: ${r || m} (held 30 min)`).then((r) => r === undefined && refreshStatus()) },
+        { tiles: true, label: "Performance mode", onChange: (m) => run(call("power", "set", { mode: m }), (r) => `Power mode: ${r || m} (held 30 min)`).then((r) => r === undefined && refreshStatus()) },
       );
       fresh.set(p.mode, true);
       tilesHost.replaceChildren(fresh.el);
@@ -286,17 +289,18 @@ export default function render() {
       fanSeg.set(["auto", "max", "manual"].includes(fm) ? fm : "auto");
       paintFan(fanSeg.get());
     }
-    g.cpu.set(fmtTemp(s.cpu_temp), `board ${fmtTemp(s.sys_temp)}`, history.cpuTemp);
+    g.cpu.set(fmtTemp(s.cpu_temp), history.cpuTemp);
     g.cpu.hot(s.cpu_temp >= 85);
-    g.gpu.set(fmtTemp(s.gpu_temp), "", history.gpuTemp);
+    g.gpu.set(fmtTemp(s.gpu_temp), history.gpuTemp);
     g.gpu.hot(s.gpu_temp >= 75);
-    g.fan.set(fmtRpm(Math.max(s.cpu_fan_rpm || 0, s.gpu_fan_rpm || 0)), `CPU ${s.cpu_fan_rpm ?? "–"} · GPU ${s.gpu_fan_rpm ?? "–"}`, history.fanRpm, { min: 0, minSpan: 1000 });
+    g.fan.set(`${fmtRpm(Math.max(s.cpu_fan_rpm || 0, s.gpu_fan_rpm || 0))}`, history.fanRpm, { min: 0, minSpan: 1000 });
     const ld = msg.load || {};
-    g.cl.set(fmtPct(ld.cpu_pct), "", history.cpuLoad, { min: 0, max: 100 });
-    g.gl.set(fmtPct(ld.gpu_pct), "", history.gpuLoad, { min: 0, max: 100 });
+    g.cl.set(fmtPct(ld.cpu_pct), history.cpuLoad, { min: 0, max: 100 });
+    g.gl.set(fmtPct(ld.gpu_pct), history.gpuLoad, { min: 0, max: 100 });
     const pw = msg.power || {};
-    g.pw.set(fmtWatt((pw.cpu_w || 0) + (pw.gpu_w || 0) || null), `CPU ${fmtWatt(pw.cpu_w)} · GPU ${fmtWatt(pw.gpu_w)}`, history.power, { min: 0, minSpan: 40 });
-    g.bat.set(msg.battery_pct == null ? "–" : fmtPct(msg.battery_pct), msg.ac === true ? "on power" : msg.ac === false ? "on battery" : "", null);
+    g.pw.set(fmtWatt((pw.cpu_w || 0) + (pw.gpu_w || 0) || null), history.power, { min: 0, minSpan: 40 });
+    g.bat.set(msg.battery_pct == null ? "–" : `${fmtPct(msg.battery_pct)}${msg.ac === true ? " · on power" : msg.ac === false ? " · on battery" : ""}`, null);
+    liveCard.setRight(`${msg.ac === true ? "AC" : msg.ac === false ? "Battery" : ""}`);
   }
 
   unsub.push(store.subscribe((st) => applyLive(st.live)));

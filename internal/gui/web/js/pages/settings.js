@@ -1,8 +1,7 @@
 // Settings: start at login, what the lights do at login, touchpad, power managers, updates, reset.
 
 import { call, tryCall } from "../api.js";
-import { h, card, cols, row, hint, button, select, switchRow, run, toast, confirmDialog, errText } from "../ui.js";
-import { icon } from "../icons.js";
+import { h, card, row, hint, button, select, switchRow, run, toast, confirmDialog, errText } from "../ui.js";
 
 const STOCK = [["last", "Last used"], ["default", "Stock look"], ["none", "Leave as the firmware has it"], ["off", "Dark"]];
 const REPO = "https://github.com/Order52/truesense";
@@ -14,7 +13,7 @@ export default function render() {
   // ---- window ----
   const autostart = switchRow("Open this window at login", { onChange: (on) => run(call("gui", "autostart", { action: on ? "on" : "off" }), on ? "Window opens at login" : "Window does not open at login").then((r) => r === undefined && autostart.set(!on, true)) },
     "Writes ~/.config/autostart/truesense.desktop. Hyprland needs `exec-once = truesense gui` (or uwsm) to run autostart entries.");
-  const c1 = card("Window", { icon: "settings" });
+  const c1 = card("Start up");
   c1.add(autostart.row, hint("Lighting at login is set under At login below, and at boot in Lighting, Profiles. The PREDATOR key has its own page."));
 
   // ---- at login ----
@@ -49,7 +48,7 @@ export default function render() {
   updBtn.hidden = true;
   const auto = switchRow("Check for updates automatically", { onChange: (on) => run(call("update", "auto", { action: on ? "on" : "off" }), `Automatic update checks: ${on ? "on" : "off"}`) },
     "Once a day it asks GitHub for the newest release number (nothing else is sent) and shows a notification; nothing is installed without you pressing Update.");
-  const c5 = card("Updates", { icon: "refresh" });
+  const c5 = card("Updates");
   c5.add(row("Installed version", [version, button("Check now", { onClick: () => check(true) }), notes, updBtn]), updMsg, auto.row);
 
   // ---- about / reset ----
@@ -57,17 +56,21 @@ export default function render() {
   c6.add(
     row("TrueSense", [h("img", { src: "logo.svg", alt: "", width: 40, height: 40 })]),
     row("Credits and licence", [
-      h("a", { class: "btn", href: `${REPO}/blob/main/docs/CREDITS.md`, target: "_blank", rel: "noopener noreferrer" }, "Credits", icon("external", 16)),
-      h("a", { class: "btn", href: REPO, target: "_blank", rel: "noopener noreferrer" }, "Source", icon("external", 16)),
+      h("a", { class: "btn", href: `${REPO}/blob/main/docs/CREDITS.md`, target: "_blank", rel: "noopener noreferrer" }, "Credits"),
+      h("a", { class: "btn", href: REPO, target: "_blank", rel: "noopener noreferrer" }, "Source"),
     ]),
-    row("System check and diagnostics", h("a", { class: "btn", href: "#/health" }, icon("health", 18), "Open Health check")),
+  );
+  const c8 = card("System");
+  c8.add(
+    row("System check, services, self-test, log", h("a", { class: "btn", href: "#/health" }, "Open health check")),
+    row("One-click bundles of settings", h("a", { class: "btn", href: "#/profiles" }, "Profiles")),
   );
   const c7 = card("Reset");
   c7.add(
     row("Everything back to defaults", button("Reset all…", { kind: "danger", onClick: resetAll })),
     hint("Back to how a fresh install behaves, like PredatorSense on Windows: Native auto mode control, firmware fans, power limits left to the firmware, lighting stock, undervolt off, PREDATOR key `default`. Your saved profiles are kept."),
   );
-  page.append(cols([c1.el, c2.el, c3.el, c4.el], [c5.el, c6.el, c7.el]));
+  page.append(c1.el, c2.el, c3.el, c4.el, c5.el, c8.el, c6.el, c7.el);
 
   async function pick(target, value, sel) {
     const r = await run(call("startup", "set", { target, value }), () => `At login, ${target}: ${sel.el.selectedOptions[0]?.text ?? value}`);

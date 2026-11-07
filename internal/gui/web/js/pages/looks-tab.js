@@ -1,7 +1,7 @@
 // Lighting > Profiles: saved looks (keyboard and rear bar), per-key sets, and the boot look.
 
 import { call, tryCall } from "../api.js";
-import { h, card, cols, row, hint, button, select, field, run, toast, confirmDialog, errText } from "../ui.js";
+import { h, card, row, hint, button, select, field, run, toast, confirmDialog, errText } from "../ui.js";
 import { describeLook, validName, NAME_HELP } from "../format.js";
 
 export function createLooksTab() {
@@ -44,7 +44,7 @@ export function createLooksTab() {
     row("Boot lighting", button("Don't change at boot", { onClick: bootClear })),
     bootMsg,
   );
-  el.append(cols([c1.el, c2.el], [c3.el]));
+  el.append(c1.el, c2.el, c3.el);
 
   let builtin = false;
   async function reload(select_) {

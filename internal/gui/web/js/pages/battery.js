@@ -2,7 +2,7 @@
 
 import { call, tryCall } from "../api.js";
 import { store } from "../state.js";
-import { h, card, cols, row, hint, button, seg, switchRow, run, confirmDialog } from "../ui.js";
+import { h, card, row, sep, hint, button, seg, switchRow, run, confirmDialog } from "../ui.js";
 
 const USB_LEVELS = [0, 10, 20, 30];
 
@@ -10,7 +10,7 @@ export default function render() {
   const page = h("div", { class: "page" });
   let fullActive = false;
 
-  const bat = card("Battery", { icon: "battery", right: true });
+  const bat = card("Battery", { right: true });
   const limit = switchRow("80 % charge limit", { onChange: (on) => run(call("battery", "limit", { action: on ? "on" : "off" }), (r) => `80 % limit: ${r ? "on" : "off"}`).then(refresh) });
   const fullBtn = button("Charge to 100 % once", { onClick: fullToggle });
   const fullMsg = hint("");
@@ -21,19 +21,22 @@ export default function render() {
   const calib = switchRow("Calibration", { onChange: calibPicked }, "Needs AC power and takes hours. Switch off to cancel.");
   bat.add(
     limit.row,
+    sep(),
     row("Need a full battery", fullBtn),
     fullMsg,
     hint("The firmware offers two levels: 80 % or 100 %. Charge to 100 % once lifts the limit for one charge; the 80 % limit comes back by itself when you unplug, when the battery has been full for 5 minutes, or after 24 hours."),
+    sep(),
     row("USB charging while off", usb.el),
+    sep(),
     calib.row,
   );
 
-  const screen = card("Screen and boot", { icon: "settings" });
+  const screen = card("Screen and boot");
   const od = switchRow("LCD overdrive", { onChange: (on) => run(call("display", "overdrive", { action: on ? "on" : "off" }), (r) => `Overdrive: ${r ? "on" : "off"}`) });
   const bootSound = switchRow("Boot animation and sound", { onChange: (on) => run(call("boot", "sound", { action: on ? "on" : "off" }), (r) => `Boot sound: ${r ? "on" : "off"}`) });
   const kbTimeout = switchRow("Keyboard light off after 30 s", { onChange: (on) => run(call("keyboard", "timeout", { action: on ? "on" : "off" }), "Saved") });
-  screen.add(od.row, bootSound.row, kbTimeout.row);
-  page.append(cols([bat.el], [screen.el]));
+  screen.add(od.row, sep(), bootSound.row, sep(), kbTimeout.row);
+  page.append(bat.el, screen.el);
 
   async function calibPicked(on) {
     if (on) {

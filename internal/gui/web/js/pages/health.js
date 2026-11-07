@@ -1,7 +1,7 @@
 // Health check: every part of the stack, the services, a hardware self-test, the log, the configuration.
 
 import { call, tryCall } from "../api.js";
-import { h, card, cols, row, hint, button, run, toast, confirmDialog, errText, notice } from "../ui.js";
+import { h, card, row, hint, button, run, toast, confirmDialog, errText, notice } from "../ui.js";
 
 const BADGE = { OK: "ok", INFO: "", WARN: "warn", FAIL: "fail" };
 
@@ -36,7 +36,7 @@ export default function render() {
     row("Configuration", [button("Show", { onClick: showConfig }), button("Check", { onClick: checkConfig })]),
     selftestOut,
   );
-  page.append(cols([doctorCard.el], [svc.el, diag.el]));
+  page.append(doctorCard.el, svc.el, diag.el);
 
   function showOut(text) {
     selftestOut.hidden = false;

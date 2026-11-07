@@ -1,7 +1,7 @@
 // Lighting: keyboard effects, per-key editor, rear bar, saved profiles (one tab at a time).
 
 import { call, tryCall, live } from "../api.js";
-import { h, card, row, button, select, slider, switchRow, seg, colorField, tabs, run } from "../ui.js";
+import { h, card, row, sep, button, select, slider, switchRow, seg, colorField, tabs, run } from "../ui.js";
 import { capitalize } from "../format.js";
 import { createPerKey } from "./perkey.js";
 import { createLooksTab } from "./looks-tab.js";
@@ -13,7 +13,7 @@ const SPEED_MIN = 1, SPEED_MAX = 12;
 const REAR_DEFAULT = { effect: "breathing", color: "3723c7", speed: 3, brightness: 100, direction: 1 };
 
 function keyboardTab() {
-  const el = h("div", { class: "grid one" });
+  const el = h("div", { class: "stack" });
   const on = switchRow("Backlight", { onChange: (v) => run(v ? call("keyboard", "on", {}) : call("keyboard", "off", {}), (r) => (typeof r === "string" ? r : `Backlight ${v ? "on" : "off"}`)) });
   const level = slider({ label: "Brightness", min: 0, max: 50, step: 5, value: 25, onInput: (v) => live("kb-level", () => call("keyboard", "brightness", { level: v })) });
   const fx = select(KB_EFFECTS.map((e) => ({ value: e, label: capitalize(e) })), {
@@ -27,8 +27,8 @@ function keyboardTab() {
   const speed = slider({ label: "Effect speed", min: SPEED_MIN, max: SPEED_MAX, step: 1, value: 5, onInput: (v) => live("kb-speed", () => call("keyboard", "speed", { level: v })) });
   const follow = switchRow("Colour follows the power mode", { onChange: (v) => run(call("keyboard", "operating", { action: v ? "on" : "off" }), `Keyboard colour follows the power mode: ${v ? "on" : "off"}`) },
     "Eco green, Quiet blue, Balanced cyan, Performance orange, Turbo red. Off leaves the colours you picked.");
-  const c1 = card("Keyboard", { icon: "keyboard" });
-  c1.add(on.row, level.el, row("Lighting mode", fx.el), row("Colour", color.el), speed.el, follow.row, row("Default", button("Reset to default", { onClick: () => run(call("keyboard", "restore", {}), "Keyboard back to the stock look") })));
+  const c1 = card("");
+  c1.add(on.row, sep(), level.el, sep(), row("Lighting mode", fx.el), row("Colour", color.el), speed.el, sep(), follow.row, row("Default", button("Reset to default", { onClick: () => run(call("keyboard", "restore", {}), "Keyboard back to the stock look") })));
   el.append(c1.el);
 
   /** Grey out what the current look cannot use: wave and neon have no colour; static and per-key looks have no animation speed. */
@@ -59,7 +59,7 @@ function keyboardTab() {
 }
 
 function rearTab() {
-  const el = h("div", { class: "grid one" });
+  const el = h("div", { class: "stack" });
   let lastBrightness = 100;
   const on = switchRow("Light", { onChange: (v) => run(v ? call("rear", "on", {}) : call("rear", "off", {}), (r) => (typeof r === "string" ? r : `Rear light ${v ? "on" : "off"}`)) });
   const fx = seg(REAR_EFFECTS.map((e) => ({ value: e, label: capitalize(e) })), { label: "Rear light effect", onChange: () => apply() });
@@ -67,14 +67,17 @@ function rearTab() {
   const color = colorField({ value: "00aec7", label: "Colour", onInput: () => apply() });
   const speed = slider({ label: "Speed", min: 1, max: 5, step: 1, value: 3, onInput: () => apply() });
   const bright = slider({ label: "Brightness", min: 0, max: 100, step: 10, value: 100, fmt: (v) => `${v} %`, onInput: () => apply() });
-  const c = card("Rear bar", { icon: "bar" });
+  const c = card("");
   c.add(
     on.row,
+    sep(),
     row("Effect", fx.el),
+    sep(),
     row("Static: left, middle, right", zones.map((z) => z.el)),
     row("Colour (other effects)", color.el),
     speed.el,
     bright.el,
+    sep(),
     row("Default", button("Reset to default", { onClick: () => run(call("rear", "set", { ...REAR_DEFAULT }), "Rear light back to the stock look").then(refresh) })),
   );
   el.append(c.el);
@@ -110,7 +113,7 @@ function rearTab() {
   return { el, refresh };
 }
 
-export default function render({ sub }) {
+export default function render({ sub, wide }) {
   const page = h("div", { class: "page" });
   const kb = keyboardTab();
   const pk = createPerKey();
@@ -123,13 +126,15 @@ export default function render({ sub }) {
       { value: "rear", label: "Rear bar", icon: "bar" },
       { value: "profiles", label: "Profiles", icon: "manual" },
     ],
-    { value: sub === "keys" || sub === "rear" || sub === "profiles" ? sub : "keyboard", label: "Lighting section", onChange: () => refresh() },
+    { value: sub === "keys" || sub === "rear" || sub === "profiles" ? sub : "keyboard", label: "Lighting section", onChange: () => (paintWide(), refresh()) },
   );
   t.panel("keyboard").append(kb.el);
   t.panel("keys").append(pk.el);
   t.panel("rear").append(rear.el);
   t.panel("profiles").append(looks.el);
   page.append(t.el);
+  const paintWide = () => wide(t.value() === "keys");
+  paintWide();
   const parts = { keyboard: kb, keys: pk, rear, profiles: looks };
   function refresh() {
     const p = parts[t.value()];

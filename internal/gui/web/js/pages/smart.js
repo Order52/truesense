@@ -1,7 +1,7 @@
 // Smart auto profiles: how Smart auto chooses the power mode, and game rules.
 
 import { call, tryCall } from "../api.js";
-import { h, card, cols, row, hint, button, select, slider, field, switchRow, run, toast, confirmDialog, errText } from "../ui.js";
+import { h, card, row, hint, button, select, slider, field, switchRow, run, toast, confirmDialog, errText } from "../ui.js";
 import { capitalize, validName, NAME_HELP } from "../format.js";
 
 const MODES = ["eco", "quiet", "balanced", "performance", "turbo"];
@@ -70,7 +70,7 @@ export default function render() {
     row("Rules", [gList.el, button("Remove", { onClick: removeRule })]),
     gMsg,
   );
-  page.append(cols([c3.el, c1.el, c4.el], [c2.el]));
+  page.append(c1.el, c2.el, c3.el, c4.el);
 
   function fromEditor() {
     const p = Object.fromEntries(Object.entries(modeSel).map(([k, s]) => [k, s.get()]));
