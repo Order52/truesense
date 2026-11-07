@@ -1,5 +1,17 @@
 # Release notes
 
+## Unreleased
+
+**TrueSense is now one static Go program**
+- **Everything except the kernel module was ported from Python to Go**, behaviour for behaviour: the root service, the command line, the terminal UI, the window and the user services are one binary, `truesense` (`truesense-fast` is the same file under another name). The kernel module (C, DKMS) and its protocol are unchanged, and so are the control-socket protocol, every file location and every setting: an update from 0.3.x keeps working, and your saved profiles, curves, looks and key bindings load unchanged.
+- **Nothing else to install.** No Python, no Qt, no `socat`: the installer needs only dkms, a compiler and the kernel headers (for the module). It installs a prebuilt, reproducible static binary, keeps the previous one for rollback and removes the old Python tree after the new service starts.
+- **Faster and lighter.** A command starts in a few milliseconds instead of about a hundred, and the service, key service and audio watcher share one small runtime instead of three Python interpreters (see docs/PERFORMANCE.md for the measured numbers).
+- **Safer by construction.** The daemon's decisions are pure, deterministic functions tested at any speed with the firmware simulator; every parser of untrusted input (socket requests, firmware replies, release archives, checksum lists, profiles) is fuzzed; the whole suite runs under the race detector; the update download is checked against `SHA256SUMS` and unpacked by an extractor that refuses links, special files and path traversal by construction; and a step that fails while the machine is hot drives the fans to full speed without ever deadlocking.
+- **The window is now a local web page** served by the program itself (a random port on 127.0.0.1, a one-time token, Host and cross-site checks, a strict Content-Security-Policy, no external requests) and opened as an app window: no Qt, works in any browser. The terminal UI keeps everything from 0.3.17.
+- **Releases** are built reproducibly by CI (the binary twice, byte-compared), with `SHA256SUMS`, an SBOM and signed build provenance; the full CI runs `go vet`, `staticcheck`, `golangci-lint`, `govulncheck`, the race-detector tests and a fuzz pass on every push.
+- **Changes you may notice:** `truesense doctor` no longer lists "Python" or "Start-up speed" (meaningless for a static binary), and its "Window" and "Status bars" checks now look for `xdg-open` and `truesense-fast`; a saved lighting that no longer exists no longer aborts the whole login setup (the other lights still apply); an invalid value that crashed the Python code (a design colour that is not text, a rear look missing a field, a direction out of range) is now an error message.
+- The migration is documented in docs/GO-MIGRATION.md and the layers in docs/ARCHITECTURE.md.
+
 ## 0.3.17 (2026-11-07): Terminal UI rebuilt: brightness 0, safe fan stops, ordered writes, drag sliders
 
 **The terminal UI, rebuilt around one safe way to change a value**
