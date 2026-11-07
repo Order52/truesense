@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 # Publish/update the AUR package "truesense" for a released tag (the PKGBUILD builds the Go program from the tag archive). Run by the maintainer or by the release workflow (needs the AUR SSH key).
-#   tools/aur-publish.sh 0.3.17
+#   tools/aur-publish.sh 0.4.0
 set -Eeuo pipefail
 VER=${1:?usage: aur-publish.sh X.Y.Z}; ROOT=$(realpath "$(dirname "$0")/.."); W=$(mktemp -d)
 curl -fsSL -o "$W/src.tgz" "https://github.com/Order52/truesense/archive/refs/tags/v$VER.tar.gz"; SHA=$(sha256sum "$W/src.tgz" | cut -d' ' -f1)

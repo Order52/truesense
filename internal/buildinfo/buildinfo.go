@@ -4,7 +4,7 @@
 package buildinfo
 
 // Version is the TrueSense release this source tree is.
-const Version = "0.3.17"
+const Version = "0.4.0"
 
 // Commit is the git commit of the build ("" for a plain `go build`).
 var Commit = ""

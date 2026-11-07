@@ -4,7 +4,7 @@
 # SHA256SUMS, and runs the bundle's tools/install.sh.
 #   curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
 #   ... | sudo bash -s -- --no-gui          (extra options go to install.sh)
-# Environment: TRUESENSE_VERSION=0.3.17 (pin a version), TRUESENSE_SHA256=<hash> (also require this exact hash),
+# Environment: TRUESENSE_VERSION=0.4.0 (pin a version), TRUESENSE_SHA256=<hash> (also require this exact hash),
 #              TRUESENSE_VERIFY_ATTESTATION=1 (also check the build provenance with the GitHub CLI: gh attestation verify)
 # Releases from 0.3.16 on are published by CI with a SHA256SUMS file and the download MUST match it; older releases (no list) are fetched from the tag archive.
 set -Eeuo pipefail

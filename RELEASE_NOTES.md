@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.4.0 (2026-11-07): TrueSense is now one static Go program
 
 **TrueSense is now one static Go program**
 - **Everything except the kernel module was ported from Python to Go**, behaviour for behaviour: the root service, the command line, the terminal UI, the window and the user services are one binary, `truesense` (`truesense-fast` is the same file under another name). The kernel module (C, DKMS) and its protocol are unchanged, and so are the control-socket protocol, every file location and every setting: an update from 0.3.x keeps working, and your saved profiles, curves, looks and key bindings load unchanged.
