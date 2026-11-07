@@ -60,7 +60,7 @@ func (s *Server) Listen() error {
 		return err
 	}
 	old := syscall.Umask(0)
-	ln, err := net.Listen("unix", s.Path)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", s.Path)
 	syscall.Umask(old)
 	if err != nil {
 		return err
@@ -91,7 +91,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			s.serveConn(ctx, conn)
 		}()
 	}
@@ -150,7 +150,7 @@ func readLine(r io.Reader) ([]byte, error) {
 	if len(line) > MaxLine {
 		return nil, errors.New("request too large")
 	}
-	if err != nil && !(errors.Is(err, io.EOF) && len(line) > 0) {
+	if err != nil && (!errors.Is(err, io.EOF) || len(line) == 0) {
 		if errors.Is(err, io.EOF) {
 			return []byte("{}"), nil
 		}

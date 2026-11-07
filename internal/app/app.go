@@ -13,9 +13,9 @@ import (
 // returns the process exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 1 && (args[1] == "--version" || args[1] == "version") {
-		fmt.Fprintf(stdout, "truesense %s\n", buildinfo.Version)
+		_, _ = fmt.Fprintf(stdout, "truesense %s\n", buildinfo.Version)
 		return 0
 	}
-	fmt.Fprintln(stderr, "truesense: the Go port is under construction")
+	_, _ = fmt.Fprintln(stderr, "truesense: the Go port is under construction")
 	return 2
 }

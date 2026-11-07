@@ -208,8 +208,10 @@ func (h *HW) SetOverdrive(on bool) (bool, error) {
 	return h.setBool("set_overdrive", "overdrive", h.overdriveKnown, on)
 }
 
-// GetBootSound / SetBootSound: the firmware's start-up chime.
+// GetBootSound reports the firmware's start-up chime.
 func (h *HW) GetBootSound() (bool, error) { return h.getBool("get_boot", "boot") }
+
+// SetBootSound switches the start-up chime and verifies it.
 func (h *HW) SetBootSound(on bool) (bool, error) {
 	return h.setBool("set_boot", "boot sound", h.GetBootSound, on)
 }
@@ -247,8 +249,10 @@ func (h *HW) SetKBTimeout(on bool) (bool, error) {
 	return settle(h, h.GetKBTimeout, on, "backlight timeout")
 }
 
-// GetUSBCharge / SetUSBCharge: charge phones over USB while the laptop is off, down to this battery level (0 = off).
+// GetUSBCharge reports the battery level down to which USB ports charge phones while the laptop is off (0 = off).
 func (h *HW) GetUSBCharge() (int, error) { return h.get("get_usb", "usb") }
+
+// SetUSBCharge sets that level (0, 10, 20 or 30) and verifies it.
 func (h *HW) SetUSBCharge(level int) (int, error) {
 	ok := false
 	for _, l := range USBLevels {
@@ -263,14 +267,18 @@ func (h *HW) SetUSBCharge(level int) (int, error) {
 	return settle(h, h.GetUSBCharge, level, "usb charging")
 }
 
-// GetBatteryLimit / SetBatteryLimit: stop charging at 80 %.
+// GetBatteryLimit reports whether charging stops at 80 %.
 func (h *HW) GetBatteryLimit() (bool, error) { return h.getBool("get_battery 1", "battery") }
+
+// SetBatteryLimit turns the 80 % charge limit on or off and verifies it.
 func (h *HW) SetBatteryLimit(on bool) (bool, error) {
 	return h.setBool("set_battery 1", "battery limit", h.GetBatteryLimit, on)
 }
 
-// GetCalibration / SetCalibration: the firmware's battery calibration cycle (needs AC power; takes hours).
+// GetCalibration reports whether the firmware's battery calibration cycle (needs AC power; takes hours) is running.
 func (h *HW) GetCalibration() (bool, error) { return h.getBool("get_battery 2", "battery") }
+
+// SetCalibration starts or stops that cycle and verifies it.
 func (h *HW) SetCalibration(on bool) (bool, error) {
 	return h.setBool("set_battery 2", "battery calibration", h.GetCalibration, on)
 }

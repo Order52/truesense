@@ -26,7 +26,7 @@ func (w *WMI) Run(command string) (string, error) {
 		}
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.WriteString(command); err != nil {
 		// The module rejected the command; its reason is waiting in the reply buffer.
 		buf := make([]byte, 256)

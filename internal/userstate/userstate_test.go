@@ -1,6 +1,7 @@
 package userstate
 
 import (
+	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -21,7 +22,7 @@ func TestSetGetRoundTrip(t *testing.T) {
 	if err := s.GetInto("rear_last", &out); err != nil || out.Mode != "wave" || out.Brightness != 60 {
 		t.Fatalf("got %+v, %v", out, err)
 	}
-	if err := s.GetInto("missing", &out); err != ErrNotFound {
+	if err := s.GetInto("missing", &out); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v", err)
 	}
 }

@@ -70,7 +70,7 @@ func (s *Store) Set(key string, value any) error {
 		return err
 	}
 	if lock, err := os.OpenFile(s.Path+".lock", os.O_CREATE|os.O_RDWR, 0o644); err == nil {
-		defer lock.Close() // closing releases the flock
+		defer func() { _ = lock.Close() }() // closing releases the flock
 		if unix.Flock(int(lock.Fd()), unix.LOCK_EX) != nil {
 			_ = err // no lock possible: carry on, the worst case is a lost update of a convenience file
 		}

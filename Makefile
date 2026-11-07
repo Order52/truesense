@@ -23,3 +23,33 @@ doctor:
 	./truesense doctor
 module-test:     ## build the kernel module for every installed kernel (warnings on)
 	@tools/ci/build-modules.sh
+
+# ---- the Go program ---------------------------------------------------------------------------------------------------------------------------
+.PHONY: build go-test go-race go-cover go-lint go-vuln go-fuzz go-ci
+GO       ?= go
+COMMIT   := $(shell git rev-parse --short=12 HEAD 2>/dev/null)
+DATE     := $(shell git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
+PKG      := github.com/Order52/truesense/internal/buildinfo
+LDFLAGS  := -s -w -X $(PKG).Commit=$(COMMIT) -X $(PKG).Date=$(DATE)
+GOFILES  := $(shell find cmd internal -name '*.go' -not -name '*_test.go') go.mod go.sum
+build: dist/truesense   ## the static, reproducible binary (dist/truesense; truesense-fast is a link to it)
+dist/truesense: $(GOFILES)
+	@mkdir -p dist
+	CGO_ENABLED=0 $(GO) build -trimpath -buildvcs=false -ldflags "$(LDFLAGS)" -o $@ ./cmd/truesense
+	@ln -sf truesense dist/truesense-fast
+go-test:         ## unit tests (the firmware simulator stands in for the hardware)
+	$(GO) test -count=1 -shuffle=on ./...
+go-race:         ## the same with the race detector (what CI runs)
+	$(GO) test -race -count=1 -shuffle=on ./...
+go-cover:        ## coverage report
+	$(GO) test -count=1 -coverprofile=coverage.out ./... && $(GO) tool cover -func=coverage.out | tail -1
+go-lint:         ## vet, staticcheck and golangci-lint (the ones that are installed) and gofmt
+	$(GO) vet ./...
+	@if command -v staticcheck >/dev/null 2>&1; then staticcheck ./... && echo "ok  staticcheck"; else echo "skip staticcheck"; fi
+	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run ./... && echo "ok  golangci-lint"; else echo "skip golangci-lint"; fi
+	@test -z "$$(gofmt -l cmd internal)" || { gofmt -l cmd internal; echo "gofmt: the files above need formatting"; exit 1; }
+go-vuln:         ## known vulnerabilities in the code we actually call
+	@if command -v govulncheck >/dev/null 2>&1; then govulncheck ./...; else echo "skip govulncheck (go install golang.org/x/vuln/cmd/govulncheck@latest)"; fi
+go-fuzz:         ## every fuzz target for a few seconds (FUZZTIME=30s for longer)
+	@for p in $$($(GO) list ./...); do for f in $$($(GO) test -list 'Fuzz.*' $$p 2>/dev/null | grep '^Fuzz'); do echo "fuzz $$p $$f"; $(GO) test -run '^$$' -fuzz "^$$f$$" -fuzztime $${FUZZTIME:-5s} $$p || exit 1; done; done
+go-ci: go-lint go-race go-vuln   ## what CI's Go jobs run

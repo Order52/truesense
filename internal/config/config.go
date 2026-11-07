@@ -49,7 +49,7 @@ type Config struct {
 	Compat   CompatCfg   `toml:"compat"`
 }
 
-// DaemonCfg: what the service does by itself. A first install behaves like PredatorSense:
+// DaemonCfg covers what the service does by itself. A first install behaves like PredatorSense:
 // firmware fans, native auto mode, nothing of ours in the way.
 type DaemonCfg struct {
 	SmartFan    bool `toml:"smart_fan"`
@@ -73,7 +73,7 @@ type FanCfg struct {
 	CalmHold     int   `toml:"calm_hold"`
 }
 
-// CPUCfg: power limits and the thermal clock governor.
+// CPUCfg covers power limits and the thermal clock governor.
 type CPUCfg struct {
 	PLNormalW  int  `toml:"pl_normal_w"`
 	PLGamingW  int  `toml:"pl_gaming_w"`
@@ -112,7 +112,7 @@ type SmartCfg struct {
 	DownDwellS      int    `toml:"down_dwell_s"`
 }
 
-// ProfileCfg: how a picked power mode is held against the automatic one, and the OSD.
+// ProfileCfg covers how a picked power mode is held against the automatic one, and the OSD.
 type ProfileCfg struct {
 	OSD         bool        `toml:"osd"`
 	HoldMinutes int         `toml:"hold_minutes"`
@@ -127,7 +127,7 @@ type ProfileAuto struct {
 	BatteryIdle string `toml:"battery_idle"`
 }
 
-// KeysCfg: the PREDATOR key gestures and their actions.
+// KeysCfg covers the PREDATOR key gestures and their actions.
 type KeysCfg struct {
 	Profile    string   `toml:"profile"`
 	Tap        string   `toml:"tap"`
@@ -140,20 +140,20 @@ type KeysCfg struct {
 	PowerCycle []string `toml:"power_cycle"`
 }
 
-// StartupCfg: what is applied at login (last | default | none | profile:NAME | look:NAME | off).
+// StartupCfg covers what is applied at login (last | default | none | profile:NAME | look:NAME | off).
 type StartupCfg struct {
 	Profile  string `toml:"profile"`
 	Keyboard string `toml:"keyboard"`
 	Rear     string `toml:"rear"`
 }
 
-// KeyboardCfg: keyboard lighting behaviour.
+// KeyboardCfg covers keyboard lighting behaviour.
 type KeyboardCfg struct {
 	OperatingFollow bool           `toml:"operating_follow"`
 	OperatingColors map[string]any `toml:"operating_colors"`
 }
 
-// AudioCfg: jack handling, DTS and microphone noise reduction defaults.
+// AudioCfg covers jack handling, DTS and microphone noise reduction defaults.
 type AudioCfg struct {
 	Jack        string `toml:"jack"`
 	Notify      bool   `toml:"notify"`
@@ -162,19 +162,19 @@ type AudioCfg struct {
 	ArrayMode   string `toml:"array_mode"`
 }
 
-// UpdateCfg: update checks (off until switched on) and where releases come from.
+// UpdateCfg covers update checks (off until switched on) and where releases come from.
 type UpdateCfg struct {
 	AutoCheck  bool   `toml:"auto_check"`
 	CheckHours int    `toml:"check_hours"`
 	Repo       string `toml:"repo"`
 }
 
-// OSDCfg: how on-screen notifications are shown (native | noctalia | none).
+// OSDCfg covers how on-screen notifications are shown (native | noctalia | none).
 type OSDCfg struct {
 	Style string `toml:"style"`
 }
 
-// CompatCfg: compatibility shims for old status-bar widgets.
+// CompatCfg covers compatibility shims for old status-bar widgets.
 type CompatCfg struct {
 	PredatorWidgets bool `toml:"predator_widgets"`
 }

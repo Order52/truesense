@@ -2,6 +2,7 @@ package ipc
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,7 +49,7 @@ func (c *Client) Call(cmd string, args Args) (json.RawMessage, error) {
 	if timeout == 0 {
 		timeout = 3 * time.Second
 	}
-	conn, err := net.DialTimeout("unix", c.path(), timeout)
+	conn, err := (&net.Dialer{Timeout: timeout}).DialContext(context.Background(), "unix", c.path())
 	if err != nil {
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
@@ -58,7 +59,7 @@ func (c *Client) Call(cmd string, args Args) (json.RawMessage, error) {
 		}
 		return nil, fmt.Errorf("daemon not answering: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	req, _ := json.Marshal(Request{Cmd: cmd, Args: args})
 	if _, err := conn.Write(append(req, '\n')); err != nil {

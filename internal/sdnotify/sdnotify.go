@@ -24,7 +24,7 @@ func Notify(state string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Write([]byte(state)); err != nil {
 		return false, err
 	}

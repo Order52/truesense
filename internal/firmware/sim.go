@@ -199,7 +199,7 @@ func (m *Simulator) dispatch(name, a string) string {
 		return "ok raw=00000564000100aec700000000000000\n"
 	case "set_rear":
 		b, err := hex.DecodeString(a)
-		if err != nil || len(b) != 16 || !(b[0] <= 3 || b[0] == 7) || b[1] < 1 || b[1] > 5 || b[2] > 100 || b[3] != 0 || b[4] > 1 || b[8] != 3 || b[9] != 2 || anyNonZero(b[10:]) {
+		if err != nil || len(b) != 16 || (b[0] > 3 && b[0] != 7) || b[1] < 1 || b[1] > 5 || b[2] > 100 || b[3] != 0 || b[4] > 1 || b[8] != 3 || b[9] != 2 || anyNonZero(b[10:]) {
 			return errInvalid
 		}
 		s.rear = append([]byte{0}, b[:15]...)
