@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.3.17 (2026-11-07): Terminal UI rebuilt: brightness 0, safe fan stops, ordered writes, drag sliders
 
 **The terminal UI, rebuilt around one safe way to change a value**
 - **Brightness 0 works.** Every slider that reached 0 was treated as "stop this fan" (the light bar and keyboard brightness, the microphone volume): it asked about a fan and never wrote. Only the fan sliders mean a stop now, and a light at 0 is off. Choosing an effect or colour while a light is off turns it back on at a usable brightness.

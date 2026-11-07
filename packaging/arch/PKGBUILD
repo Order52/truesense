@@ -2,7 +2,7 @@
 # Acer Predator Helios 16 (PH16-71): fans, power modes, battery, GPU mode, lighting, Fn keys, audio helpers.
 # Build from a checkout:  cd packaging/arch && makepkg -si
 pkgname=truesense
-pkgver=0.3.16
+pkgver=0.3.17
 pkgrel=1
 pkgdesc='Hardware control for the Acer Predator Helios 16 PH16-71: fans, power, battery, lighting, undervolt, kernel module, daemon, CLI and window'
 arch=('any')
@@ -43,8 +43,8 @@ WRAP
     install -Dm644 "$_src/packaging/truesense.modules-load.conf" "$pkgdir/usr/lib/modules-load.d/truesense.conf"
     install -d "$pkgdir/usr/share/truesense/profiles"
     install -m644 "$_src"/packaging/profiles/*.toml "$pkgdir/usr/share/truesense/profiles/"
-    install -d "$pkgdir/usr/src/truesense-wmi-0.3.16"
-    install -m644 "$_src"/kernel/truesense-wmi/{truesense_wmi.c,Makefile,dkms.conf} "$pkgdir/usr/src/truesense-wmi-0.3.16/"
+    install -d "$pkgdir/usr/src/truesense-wmi-0.3.17"
+    install -m644 "$_src"/kernel/truesense-wmi/{truesense_wmi.c,Makefile,dkms.conf} "$pkgdir/usr/src/truesense-wmi-0.3.17/"
     install -Dm644 /dev/stdin "$pkgdir/etc/truesense/config.toml" <<'CFG'
 # TrueSense system configuration. Built-in defaults apply to everything not set here.
 # user = "your-login-name"   # who may talk to the daemon besides root

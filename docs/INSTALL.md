@@ -7,7 +7,7 @@ Requires: an Acer Predator Helios 16 **PH16-71**, systemd, Linux with kernel hea
 curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash
 curl -fsSL https://raw.githubusercontent.com/Order52/truesense/main/tools/get.sh | sudo bash -s -- --no-gui   # extra options
 ```
-`get.sh` finds the newest release, downloads it, **checks it against the release's `SHA256SUMS`** (a mismatch, or a missing list on a new release, stops the install), and runs `tools/install.sh`. Pin a version with `TRUESENSE_VERSION=0.3.16`, also require an exact hash with `TRUESENSE_SHA256=<hash>`, and with the GitHub CLI installed add `TRUESENSE_VERIFY_ATTESTATION=1` to check the signed build provenance too. Read the script first if you like: it is ~20 lines.
+`get.sh` finds the newest release, downloads it, **checks it against the release's `SHA256SUMS`** (a mismatch, or a missing list on a new release, stops the install), and runs `tools/install.sh`. Pin a version with `TRUESENSE_VERSION=0.3.17`, also require an exact hash with `TRUESENSE_SHA256=<hash>`, and with the GitHub CLI installed add `TRUESENSE_VERIFY_ATTESTATION=1` to check the signed build provenance too. Read the script first if you like: it is ~20 lines.
 
 ## From a clone
 ```
