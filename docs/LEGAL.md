@@ -11,7 +11,7 @@ Contributions are accepted under the same terms. Please do not submit code you d
 ## Where the code and data come from
 
 - The code is original work written for this project. Facts about how the laptop behaves (WMI GUIDs and method numbers, argument encodings, keyboard packet formats; see [PROTOCOL.md](PROTOCOL.md)) were gathered by reading public Linux drivers and documentation and by checking every value against the maintainer's own laptop. Facts about an interface are not copyrightable expression, and no code was copied from the projects listed in [CREDITS.md](CREDITS.md). If you believe something here is derived from your work, please say so (see "Contact").
-- The key map (`src/truesense/data/keymap_ph16-71_verified.json`) is the maintainer's own measurement of which lighting cell is which key.
+- The key map (`internal/keymap/keymap_ph16-71_verified.json`) is the maintainer's own measurement of which lighting cell is which key.
 - The logo, icons and the picture of the keyboard in the window are drawn by the project; no vendor image, photograph, font or logo is included.
 - **No vendor material is included**: no Acer, Realtek, DTS, Intel, NVIDIA or Microsoft software, drivers, firmware, firmware tables, documentation or captured vendor files. Raw firmware dumps are never published (they can contain licence keys).
 

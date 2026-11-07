@@ -35,6 +35,7 @@ func Table() []Entry {
 	}
 	return []Entry{
 		e("internal/buildinfo/buildinfo.go", `const Version = "(SEMVER)"`, 1),
+		e("src/truesense/__init__.py", `__version__ = "(SEMVER)"`, 1), // legacy updater shim: see that file
 		e("README.md", `badge/version-(SEMVER)-`, 1),
 		e("docs/INSTALL.md", `TRUESENSE_VERSION=(SEMVER)`, 1),
 		e("kernel/truesense-wmi/dkms.conf", `PACKAGE_VERSION="(SEMVER)"`, 1),
